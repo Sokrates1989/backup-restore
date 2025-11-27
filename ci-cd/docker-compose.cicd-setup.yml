@@ -1,0 +1,13 @@
+services:
+  cicd-setup:
+    build:
+      context: ..
+      dockerfile: interactive-scripts/Dockerfile
+    container_name: cicd-setup-wizard
+    stdin_open: true    # Enable interactive mode (docker run -i)
+    tty: true           # Allocate a pseudo-TTY (docker run -t)
+    volumes:
+      # Mount project directory
+      - ..:/workspace
+    working_dir: /workspace
+    command: sh -c "chmod +x ci-cd/setup/setup-cicd-wizard.sh && ci-cd/setup/setup-cicd-wizard.sh"

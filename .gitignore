@@ -1,0 +1,43 @@
+# Environments
+.env
+.env.backup.*
+.venv/
+venv/
+
+# Setup marker
+.setup-complete
+
+# Docker volumes (local directories)
+.docker/
+
+# Database backups (sensitive data)
+backups/*.sql
+backups/*.sql.gz
+backups/*.db
+backups/*.db.gz
+backups/*.backup
+backups/*.cypher.gz
+
+# IDE / Editor specific
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+*.db
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# OS specific
+.DS_Store
+
+# Dependency Management
+python-dependency-management/config.env
+"pyproject 2.toml"

@@ -1,0 +1,21 @@
+services:
+  build-image:
+    build:
+      context: ..
+      dockerfile: interactive-scripts/Dockerfile
+    container_name: api-image-builder
+    stdin_open: true    # Enable interactive mode (docker run -i)
+    tty: true           # Allocate a pseudo-TTY (docker run -t)
+    volumes:
+      # Mount Docker socket to allow building images
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount project directory
+      - ..:/workspace
+    working_dir: /workspace
+    environment:
+      # Pass through environment variable to trigger version update prompt
+      - UPDATE_VERSION=${UPDATE_VERSION:-true}
+      # Pass through PUSH_IMAGE if set
+      - PUSH_IMAGE=${PUSH_IMAGE:-}
+    command: sh -c "chmod +x build-image/build-image.sh && build-image/build-image.sh"
+    network_mode: host

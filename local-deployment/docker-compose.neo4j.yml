@@ -1,0 +1,63 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION}
+    ports:
+      - "${PORT}:8000"
+    env_file:
+      - ../.env
+    environment:
+      DB_TYPE: ${DB_TYPE}
+      NEO4J_URL: ${NEO4J_URL}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_URL: ${REDIS_URL}
+      DEBUG: ${DEBUG}
+    volumes:
+      # Mount individual directories for live-reloading of code.
+      - ../app/main.py:/app/main.py
+      - ../app/api:/app/api
+      - ../app/backend:/app/backend
+      - ../app/models:/app/models
+      - ../app/mounted_data:/mnt/data
+      # Mount backups directory to host for persistence and easy access
+      - ../backups:/app/backups
+      # Note: .venv is built into the image, not mounted as a volume
+      # This ensures dependencies always match pdm.lock from the build
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  neo4j:
+    image: neo4j:5-community
+    environment:
+      NEO4J_AUTH: ${DB_USER:-neo4j}/${DB_PASSWORD:-password}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    volumes:
+      # Map Neo4j data and logs to local directories (NOT named volumes)
+      - ../.docker/neo4j-data:/data
+      - ../.docker/neo4j-logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u ${DB_USER:-neo4j} -p ${DB_PASSWORD:-password} 'RETURN 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5

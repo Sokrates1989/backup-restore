@@ -1,0 +1,126 @@
+# Production Docker Compose Configuration
+# This file is used for deploying to Linux servers or Docker Swarm clusters
+
+services:
+  api:
+    image: ${IMAGE_NAME}:${IMAGE_TAG:-latest}
+    container_name: python-api-prod
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      # Application Settings
+      - PORT=8000
+      - DEBUG=false
+      
+      # Database Configuration
+      # ⚠️  IMPORTANT: Use production database credentials!
+      # Set these via environment variables or Docker secrets
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      
+      # Security
+      # ⚠️  IMPORTANT: Use a strong, unique API key for production!
+      - ADMIN_API_KEY=${ADMIN_API_KEY}
+    
+    # Uncomment to use Docker secrets (recommended for production)
+    # secrets:
+    #   - database_url
+    #   - redis_url
+    #   - admin_api_key
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Resource limits (adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      # For Docker Swarm: uncomment to enable rolling updates
+      # update_config:
+      #   parallelism: 1
+      #   delay: 10s
+      #   failure_action: rollback
+      #   order: start-first
+      # rollback_config:
+      #   parallelism: 1
+      #   delay: 10s
+      # restart_policy:
+      #   condition: on-failure
+      #   delay: 5s
+      #   max_attempts: 3
+    
+    networks:
+      - api-network
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: Add production database (PostgreSQL example)
+  # Uncomment if you want to run database in the same stack
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: postgres-prod
+  #   restart: unless-stopped
+  #   environment:
+  #     - POSTGRES_DB=${DB_NAME:-apidb}
+  #     - POSTGRES_USER=${DB_USER:-postgres}
+  #     - POSTGRES_PASSWORD=${DB_PASSWORD}
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   networks:
+  #     - api-network
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '1.0'
+  #         memory: 1G
+
+  # Optional: Add production Redis
+  # Uncomment if you want to run Redis in the same stack
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: redis-prod
+  #   restart: unless-stopped
+  #   command: redis-server --appendonly yes
+  #   volumes:
+  #     - redis-data:/data
+  #   networks:
+  #     - api-network
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '0.5'
+  #         memory: 512M
+
+networks:
+  api-network:
+    driver: bridge
+
+# Uncomment if using database/redis volumes
+# volumes:
+#   postgres-data:
+#   redis-data:
+
+# Uncomment to use Docker secrets (recommended for production)
+# secrets:
+#   database_url:
+#     external: true
+#   redis_url:
+#     external: true
+#   admin_api_key:
+#     external: true

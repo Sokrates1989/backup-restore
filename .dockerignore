@@ -1,0 +1,29 @@
+# NOTE: app/ directory is NOT ignored - it must be copied into the image for swarm deployment
+# For local development with volume mounts, the mounted volume will override the image contents
+
+# Ignore common development files
+.env
+.env.local
+*.log
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git/
+.mypy_cache/
+.pytest_cache/
+.hypothesis/ 

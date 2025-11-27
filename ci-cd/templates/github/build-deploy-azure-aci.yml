@@ -1,0 +1,152 @@
+name: 🚀 Build and Deploy to Azure Container Instances
+
+on:
+  push:
+    branches: [ main, master, dev ]
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      image_version:
+        description: 'Image version/tag to build'
+        required: true
+        default: 'latest'
+
+env:
+  IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/api-name
+  
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.image_tag.outputs.tag }}
+    
+    steps:
+      - name: ⬇️ Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🧪 Load CI Environment Variables
+        run: |
+          if [ -f .ci.env ]; then
+            while IFS='=' read -r key value
+            do
+              [[ $key =~ ^#.*$ ]] && continue
+              [[ -z $key ]] && continue
+              value=$(echo "$value" | sed 's/#.*//' | xargs)
+              echo "$key=$value" >> $GITHUB_ENV
+            done < .ci.env
+          fi
+      
+      - name: 🏷️ Determine Image Tag
+        id: image_tag
+        run: |
+          if [ -n "${{ github.event.inputs.image_version }}" ]; then
+            echo "tag=${{ github.event.inputs.image_version }}" >> $GITHUB_OUTPUT
+          elif [[ $GITHUB_REF == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          elif [ -n "$IMAGE_VERSION" ]; then
+            echo "tag=$IMAGE_VERSION" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: 🐳 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🔐 Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: 🚀 Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE_PATH || 'Dockerfile' }}
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ steps.image_tag.outputs.tag }}
+            ${{ env.IMAGE_NAME }}:latest
+          build-args: |
+            PYTHON_VERSION=${{ env.PYTHON_VERSION || '3.13' }}-slim
+            IMAGE_TAG=${{ steps.image_tag.outputs.tag }}
+
+  deploy-to-azure:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    steps:
+      - name: ⬇️ Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🧪 Load CI Environment Variables
+        run: |
+          if [ -f .ci.env ]; then
+            while IFS='=' read -r key value
+            do
+              [[ $key =~ ^#.*$ ]] && continue
+              [[ -z $key ]] && continue
+              value=$(echo "$value" | sed 's/#.*//' | xargs)
+              echo "$key=$value" >> $GITHUB_ENV
+            done < .ci.env
+          fi
+
+      - name: 🔐 Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: 🚀 Deploy to Azure Container Instances
+        env:
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
+        run: |
+          echo "Deploying to Azure Container Instances..."
+          
+          # Check if container instance exists
+          if az container show --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --name ${{ env.AZURE_CONTAINER_NAME }} &>/dev/null; then
+            echo "Updating existing container instance..."
+            az container delete \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --name ${{ env.AZURE_CONTAINER_NAME }} \
+              --yes
+          fi
+          
+          # Create new container instance
+          az container create \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.AZURE_CONTAINER_NAME }} \
+            --image ${{ env.IMAGE_NAME }}:${IMAGE_TAG} \
+            --dns-name-label ${{ env.AZURE_CONTAINER_NAME }} \
+            --ports 8000 \
+            --location ${{ env.AZURE_LOCATION }} \
+            --environment-variables \
+              PORT=8000 \
+              DEBUG=false \
+            --secure-environment-variables \
+              DATABASE_URL="${{ secrets.PROD_DATABASE_URL }}" \
+              REDIS_URL="${{ secrets.PROD_REDIS_URL }}" \
+              ADMIN_API_KEY="${{ secrets.PROD_ADMIN_API_KEY }}" \
+            --registry-login-server docker.io \
+            --registry-username ${{ secrets.DOCKER_USERNAME }} \
+            --registry-password ${{ secrets.DOCKER_PASSWORD }}
+          
+          # Get FQDN
+          FQDN=$(az container show \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --name ${{ env.AZURE_CONTAINER_NAME }} \
+            --query ipAddress.fqdn \
+            --output tsv)
+          
+          echo "Container deployed at: http://${FQDN}:8000"
+          echo "FQDN=${FQDN}" >> $GITHUB_ENV
+
+      - name: ✅ Deployment Summary
+        run: |
+          echo "### 🎉 Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Azure Container Instance:** \`${{ env.AZURE_CONTAINER_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Resource Group:** \`${{ env.AZURE_RESOURCE_GROUP }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** http://${{ env.FQDN }}:8000" >> $GITHUB_STEP_SUMMARY

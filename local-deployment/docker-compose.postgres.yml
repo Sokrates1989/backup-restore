@@ -1,0 +1,62 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION}
+    ports:
+      - "${PORT}:8000"
+    env_file:
+      - ../.env
+    environment:
+      DB_TYPE: ${DB_TYPE}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      DEBUG: ${DEBUG}
+    volumes:
+      # Mount individual directories for live-reloading of code.
+      - ../app/main.py:/app/main.py
+      - ../app/api:/app/api
+      - ../app/backend:/app/backend
+      - ../app/models:/app/models
+      - ../app/mounted_data:/mnt/data
+      # Mount alembic for live-reloading of migrations
+      - ../alembic:/app/alembic
+      - ../alembic.ini:/app/alembic.ini
+      # Mount backups directory to host for persistence and easy access
+      - ../backups:/app/backups
+      # Note: .venv is built into the image, not mounted as a volume
+      # This ensures dependencies always match pdm.lock from the build
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-apidb}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      # Map PostgreSQL data to local directory (NOT a named volume)
+      - ../.docker/postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5

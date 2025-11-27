@@ -1,0 +1,27 @@
+# docker-compose.yml for Python Dependency Management
+#
+# This file defines a service for an interactive Python project management environment.
+# It mounts the project root to /workspace and allows running Poetry/PDM commands inside Docker.
+# Usage: docker-compose run --rm dev bash
+
+services:
+  dev:
+    build:
+      context: ../python-dependency-management
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION}
+    image: python-dependency-management:latest
+    volumes:
+      - ..:/workspace
+    working_dir: /workspace
+    tty: true
+    stdin_open: true
+    user: "${UID:-1000}:${GID:-1000}"
+    env_file:
+      - ../python-dependency-management/config.env
+      - ../.env
+    environment:
+      - PIPX_HOME=/home/devuser/.local/pipx
+      - PIPX_BIN_DIR=/home/devuser/.local/bin
+      - PATH=/home/devuser/.local/bin:$PATH
