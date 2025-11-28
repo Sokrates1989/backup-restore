@@ -1,16 +1,14 @@
 # Entry point for the FastAPI app
-from fastapi import FastAPI, Request, HTTPException, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
-import uvicorn
-import redis
 from api.settings import settings
-from api.routes import test, files, packages
+from api.routes import sql_backup, neo4j_backup
 from backend.database import initialize_database, close_database
 from backend.database.migrations import run_migrations
 
 app = FastAPI(
-    title="Python API Template",
-    description="A flexible API template with SQL and Neo4j support, including database backup/restore",
+    title="Backup & Restore Service",
+    description="Database backup and restore service supporting SQL (PostgreSQL, MySQL, SQLite) and Neo4j databases, both local and remote",
     version=settings.IMAGE_TAG
 )
 
@@ -44,9 +42,9 @@ def custom_openapi():
         }
     }
     
-    # Add security requirements to backup and packages endpoints
+    # Add security requirements to backup endpoints
     for path, path_item in openapi_schema.get("paths", {}).items():
-        if path.startswith("/backup/") or path.startswith("/packages/"):
+        if path.startswith("/backup/"):
             for method, operation in path_item.items():
                 if method in ["get", "post", "delete", "put", "patch"]:
                     # Determine which security scheme based on endpoint
@@ -80,29 +78,11 @@ async def shutdown_event():
     """Close database connection on shutdown."""
     await close_database()
 
-# Include core routers (work with any database)
-app.include_router(test.router)
-app.include_router(files.router)
-app.include_router(packages.router)
-
-# Conditionally include database-specific routers
-if settings.DB_TYPE in ["postgresql", "postgres", "mysql", "sqlite"]:
-    # SQL-specific routes - uses relational database tables
-    from api.routes.sql import examples, backup, users
-    app.include_router(examples.router)
-    app.include_router(backup.router)
-    app.include_router(users.router)
-    print(f"✅ Registered SQL-specific routes (/examples/, /backup/, /users/) for {settings.DB_TYPE}")
-elif settings.DB_TYPE == "neo4j":
-    # Neo4j-specific routes - uses graph database nodes
-    from api.routes.neo4j import examples, backup, users
-    app.include_router(examples.router)
-    app.include_router(backup.router)
-    app.include_router(users.router)
-    print(f"✅ Registered Neo4j-specific routes (/example-nodes/, /backup/, /users/) for {settings.DB_TYPE}")
-else:
-    print(f"ℹ️  No database-specific example routes registered - DB_TYPE={settings.DB_TYPE}")
-
+# Include backup routers
+app.include_router(sql_backup.router)
+print(f"✅ Registered SQL backup/restore routes (/backup/sql/*)")
+app.include_router(neo4j_backup.router)
+print(f"✅ Registered Neo4j backup/restore routes (/backup/neo4j/*)")
 
 # Middleware to block write operations during restore
 @app.middleware("http")
@@ -117,17 +97,13 @@ async def block_writes_during_restore(request: Request, call_next):
     - /backup/* (all backup/restore management endpoints)
     - /health (health check)
     - /version (version info)
-    - /cache/* (Redis operations for testing)
     """
     # Allow all backup endpoints to proceed (they manage the restore operation)
     if request.url.path.startswith("/backup/"):
         return await call_next(request)
     
-    # Allow health, version, and cache endpoints
-    if request.url.path in ["/health", "/version", "/"]:
-        return await call_next(request)
-    
-    if request.url.path.startswith("/cache/"):
+    # Allow health and version endpoints
+    if request.url.path in ["/health", "/version"]:
         return await call_next(request)
     
     # Check if restore is in progress for write operations
@@ -162,9 +138,6 @@ async def block_writes_during_restore(request: Request, call_next):
     
     return await call_next(request)
 
-
-print(f"🔧 Connecting to Redis at: {settings.REDIS_URL}")
-r = redis.Redis.from_url(settings.REDIS_URL)
 
 # Middleware to log request headers, if Debug is enabled in env variables.
 if settings.DEBUG:
@@ -212,35 +185,20 @@ if settings.DEBUG:
 
         # call_next returns a streaming Response whose body_iterator can only be consumed once.
         # We iterate above to log the payload, so we must rebuild the Response to forward the body.
-        new_response = Response(
-            content=response_body,
-            status_code=response.status_code,
-            headers=dict(response.headers),
-            media_type=response.media_type,
-            background=response.background,
-        )
-
+        # Only pass background if it exists to avoid "await None" error.
+        response_kwargs = {
+            "content": response_body,
+            "status_code": response.status_code,
+            "headers": dict(response.headers),
+            "media_type": response.media_type,
+        }
+        
+        # Only add background if it's not None (avoids TypeError: object NoneType can't be used in 'await' expression)
+        if response.background is not None:
+            response_kwargs["background"] = response.background
+        
+        new_response = Response(**response_kwargs)
         return new_response
-
-
-# Redis test Endpoints.
-@app.get("/")
-def read_root():
-    visits = r.incr("visits")
-    return {"message": f"Hello from FastAPI! This page has been visited {visits} times."}
-
-@app.get("/cache/{key}")
-def get_cache(key: str):
-    value = r.get(key)
-    if value is None:
-        raise HTTPException(status_code=404, detail="Key not found")
-    return {"key": key, "value": value.decode()}
-
-@app.post("/cache/{key}")
-def set_cache(key: str, value: str):
-    r.set(key, value)
-    return {"message": f"Stored key '{key}' with value '{value}'"}
-
 
 
 # Health check endpoint.

@@ -433,44 +433,48 @@ class Neo4jBackupService:
                 except Exception as e:
                     print(f"Warning: Failed to unlock target API: {e}")
     
-    def get_database_stats(self) -> dict:
-        """
-        Get current database statistics.
-        
+    def get_database_stats(self, neo4j_url: str, db_user: str, db_password: str) -> dict:
+        """Get current database statistics for a specific Neo4j instance.
+
+        Args:
+            neo4j_url: Neo4j connection URL (e.g., bolt://host:7687)
+            db_user: Database username
+            db_password: Database password
+
         Returns:
-            Dictionary with node and relationship counts
+            Dictionary with node and relationship counts and basic metadata.
         """
         try:
             driver = GraphDatabase.driver(
-                settings.get_neo4j_uri(),
-                auth=(settings.DB_USER, settings.get_db_password())
+                neo4j_url,
+                auth=(db_user, db_password)
             )
-            
+
             with driver.session() as session:
                 # Count nodes
                 node_result = session.run("MATCH (n) RETURN count(n) as count")
                 node_count = node_result.single()["count"]
-                
+
                 # Count relationships
                 rel_result = session.run("MATCH ()-[r]->() RETURN count(r) as count")
                 rel_count = rel_result.single()["count"]
-                
+
                 # Get node labels
                 labels_result = session.run("CALL db.labels()")
                 labels = [record["label"] for record in labels_result]
-                
+
                 # Get relationship types
                 types_result = session.run("CALL db.relationshipTypes()")
                 rel_types = [record["relationshipType"] for record in types_result]
-            
+
             driver.close()
-            
+
             return {
                 "node_count": node_count,
                 "relationship_count": rel_count,
                 "labels": labels,
                 "relationship_types": rel_types
             }
-            
+
         except Exception as e:
             raise Exception(f"Failed to get database stats: {str(e)}")

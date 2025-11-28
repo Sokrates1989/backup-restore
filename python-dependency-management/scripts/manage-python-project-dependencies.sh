@@ -124,8 +124,8 @@ docker compose --env-file .env -f local-deployment/docker-compose-python-depende
 
 print_color $YELLOW "[python-dependency-management] Running setup script to generate lock files..."
 
-# Run the setup script in a container
-docker compose --env-file .env -f local-deployment/docker-compose-python-dependency-management.yml run --rm dev ./python-dependency-management/dev-setup.sh
+# Run the setup script in a container - first fix CRLF and BOM issues, then execute
+docker compose --env-file .env -f local-deployment/docker-compose-python-dependency-management.yml run --rm dev /bin/bash -c "for f in \$(find python-dependency-management -name '*.sh' -type f); do dos2unix \$f 2>/dev/null || sed -i 's/\r$//' \$f; if [ \$(head -c 3 \$f | od -An -tx1 | tr -d ' ') = 'efbbbf' ]; then tail -c +4 \$f > \$f.tmp && mv \$f.tmp \$f; fi; chmod +x \$f; done && /bin/bash ./python-dependency-management/dev-setup.sh"
 
 print_color $GREEN "[python-dependency-management] Setup complete!"
 

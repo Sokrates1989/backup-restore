@@ -1,10 +1,10 @@
-# Basic Docker Compose - App + Redis only
+# Basic Docker Compose - App only
 # Use this for:
 #   - External databases (DB_MODE=external)
 #   - Custom database setups
 # For local Docker databases, use:
-#   - docker-compose.postgres.yml (PostgreSQL + Redis + App)
-#   - docker-compose.neo4j.yml (Neo4j + Redis + App)
+#   - docker-compose.postgres.yml (PostgreSQL + App)
+#   - docker-compose.neo4j.yml (Neo4j + App)
 # See docs/DOCKER_SETUP.md for detailed instructions
 
 services:
@@ -24,7 +24,6 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
-      REDIS_URL: ${REDIS_URL}
       DEBUG: ${DEBUG}
     volumes:
       # Mount individual directories for live-reloading of code.
@@ -38,15 +37,3 @@ services:
       - ../backups:/app/backups
       # Note: .venv is built into the image, not mounted as a volume
       # This ensures dependencies always match pdm.lock from the build
-    depends_on:
-      - redis
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5

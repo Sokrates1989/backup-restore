@@ -9,6 +9,9 @@ from datetime import datetime
 from typing import Optional, Dict
 import gzip
 import shutil
+import sqlite3
+
+import psycopg2
 from api.settings import settings
 
 
@@ -278,6 +281,177 @@ class BackupService:
             
         except Exception as e:
             raise Exception(f"SQLite backup failed: {str(e)}")
+    
+    def get_database_stats(
+        self,
+        db_type: str,
+        db_host: str,
+        db_port: int,
+        db_name: str,
+        db_user: str,
+        db_password: str
+    ) -> Dict:
+        """Collect high-level statistics for the specified database."""
+        db_type_lower = db_type.lower()
+
+        if db_type_lower in ["postgresql", "postgres"]:
+            return self._get_postgresql_stats(db_host, db_port, db_name, db_user, db_password)
+        if db_type_lower == "mysql":
+            return self._get_mysql_stats(db_host, db_port, db_name, db_user, db_password)
+        if db_type_lower == "sqlite":
+            return self._get_sqlite_stats(db_name)
+
+        raise ValueError(f"Database stats not supported for database type: {db_type}")
+
+    def _get_postgresql_stats(self, db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) -> Dict:
+        conn = psycopg2.connect(
+            host=db_host,
+            port=db_port,
+            dbname=db_name,
+            user=db_user,
+            password=db_password,
+            connect_timeout=10,
+        )
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        relname AS table_name,
+                        COALESCE(n_live_tup, 0)::bigint AS row_estimate,
+                        pg_total_relation_size(relid) AS total_bytes
+                    FROM pg_stat_user_tables
+                    ORDER BY relname;
+                    """
+                )
+                table_rows = cur.fetchall()
+
+                tables = []
+                total_rows = 0
+                total_table_bytes = 0
+                for table_name, row_estimate, total_bytes in table_rows:
+                    row_count = int(row_estimate)
+                    tables.append({
+                        "name": table_name,
+                        "row_count": row_count,
+                        "size_mb": round(total_bytes / (1024 * 1024), 2)
+                    })
+                    total_rows += row_count
+                    total_table_bytes += total_bytes
+
+                cur.execute("SELECT pg_database_size(%s)", (db_name,))
+                database_size_bytes = cur.fetchone()[0]
+
+            return {
+                "table_count": len(tables),
+                "total_rows": total_rows,
+                "database_size_mb": round(database_size_bytes / (1024 * 1024), 2),
+                "tables": tables,
+            }
+        finally:
+            conn.close()
+
+    def _get_mysql_stats(self, db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) -> Dict:
+        mysql_cmd = None
+        for candidate in ["mysql", "mariadb"]:
+            if shutil.which(candidate):
+                mysql_cmd = candidate
+                break
+
+        if not mysql_cmd:
+            raise Exception("MySQL client (mysql or mariadb) not found on system")
+
+        escaped_db = db_name.replace("'", "''")
+        query = (
+            "SELECT table_name, IFNULL(table_rows, 0) AS rows, "
+            "IFNULL(data_length + index_length, 0) AS total_bytes "
+            "FROM information_schema.tables "
+            f"WHERE table_schema = '{escaped_db}';"
+        )
+
+        cmd = [
+            mysql_cmd,
+            '-h', db_host,
+            '-P', str(db_port),
+            '-u', db_user,
+            f'-p{db_password}',
+            '--batch',
+            '--raw',
+            '--silent',
+            '-N',
+            '-e', query,
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise Exception(f"MySQL stats query failed: {result.stderr.strip()}")
+
+        tables = []
+        total_rows = 0
+        total_bytes = 0
+        for line in result.stdout.strip().splitlines():
+            if not line.strip():
+                continue
+            parts = line.split('\t')
+            if len(parts) < 3:
+                continue
+            name, rows_str, bytes_str = parts[:3]
+            try:
+                row_count = int(float(rows_str))
+            except ValueError:
+                row_count = 0
+            try:
+                size_bytes = int(float(bytes_str))
+            except ValueError:
+                size_bytes = 0
+
+            tables.append({
+                "name": name,
+                "row_count": row_count,
+                "size_mb": round(size_bytes / (1024 * 1024), 2)
+            })
+            total_rows += row_count
+            total_bytes += size_bytes
+
+        return {
+            "table_count": len(tables),
+            "total_rows": total_rows,
+            "database_size_mb": round(total_bytes / (1024 * 1024), 2),
+            "tables": tables,
+        }
+
+    def _get_sqlite_stats(self, db_name: str) -> Dict:
+        db_path = Path(db_name)
+        if not db_path.exists():
+            raise Exception(f"SQLite database file not found: {db_path}")
+
+        conn = sqlite3.connect(db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
+            table_names = [row[0] for row in cursor.fetchall()]
+
+            tables = []
+            total_rows = 0
+            for table_name in table_names:
+                cursor.execute(f"SELECT COUNT(*) FROM \"{table_name}\"")
+                row_count = cursor.fetchone()[0]
+                total_rows += row_count
+                tables.append({
+                    "name": table_name,
+                    "row_count": row_count,
+                })
+        finally:
+            conn.close()
+
+        size_bytes = db_path.stat().st_size if db_path.exists() else 0
+        return {
+            "table_count": len(tables),
+            "total_rows": total_rows,
+            "database_size_mb": round(size_bytes / (1024 * 1024), 2),
+            "tables": tables,
+        }
+
     
     def restore_backup(
         self,

@@ -8,7 +8,6 @@ class Settings(BaseSettings):
     # API Settings
     PORT: int = 8000
     IMAGE_TAG: str = "local non docker"
-    REDIS_URL: str = "redis://localhost:6379"
     DEBUG: bool = False
     
     # Security Settings - Tiered API Keys
@@ -22,17 +21,6 @@ class Settings(BaseSettings):
     # Database Type Configuration
     DB_TYPE: Literal["neo4j", "postgresql", "mysql", "sqlite"] = "neo4j"
     DB_MODE: Literal["local", "external"] = "local"
-
-    # AWS Cognito Configuration
-    AWS_REGION: Optional[str] = None
-    COGNITO_USER_POOL_ID: Optional[str] = None
-    COGNITO_USER_POOL_ID_FILE: str = ""  # Path to file containing Cognito User Pool ID
-    COGNITO_APP_CLIENT_ID: Optional[str] = None
-    COGNITO_APP_CLIENT_ID_FILE: str = ""  # Path to file containing Cognito App Client ID
-    AWS_ACCESS_KEY_ID: Optional[str] = None
-    AWS_ACCESS_KEY_ID_FILE: str = ""  # Path to file containing AWS Access Key ID
-    AWS_SECRET_ACCESS_KEY: Optional[str] = None
-    AWS_SECRET_ACCESS_KEY_FILE: str = ""  # Path to file containing AWS Secret Access Key
 
     # Neo4j Configuration
     NEO4J_URL: str = ""
@@ -72,30 +60,6 @@ class Settings(BaseSettings):
         if self.DB_PASSWORD_FILE and Path(self.DB_PASSWORD_FILE).exists():
             return Path(self.DB_PASSWORD_FILE).read_text().strip()
         return self.DB_PASSWORD
-    
-    def get_cognito_user_pool_id(self) -> Optional[str]:
-        """Get Cognito User Pool ID from file or environment variable"""
-        if self.COGNITO_USER_POOL_ID_FILE and Path(self.COGNITO_USER_POOL_ID_FILE).exists():
-            return Path(self.COGNITO_USER_POOL_ID_FILE).read_text().strip()
-        return self.COGNITO_USER_POOL_ID
-    
-    def get_cognito_app_client_id(self) -> Optional[str]:
-        """Get Cognito App Client ID from file or environment variable"""
-        if self.COGNITO_APP_CLIENT_ID_FILE and Path(self.COGNITO_APP_CLIENT_ID_FILE).exists():
-            return Path(self.COGNITO_APP_CLIENT_ID_FILE).read_text().strip()
-        return self.COGNITO_APP_CLIENT_ID
-    
-    def get_aws_access_key_id(self) -> Optional[str]:
-        """Get AWS Access Key ID from file or environment variable"""
-        if self.AWS_ACCESS_KEY_ID_FILE and Path(self.AWS_ACCESS_KEY_ID_FILE).exists():
-            return Path(self.AWS_ACCESS_KEY_ID_FILE).read_text().strip()
-        return self.AWS_ACCESS_KEY_ID
-    
-    def get_aws_secret_access_key(self) -> Optional[str]:
-        """Get AWS Secret Access Key from file or environment variable"""
-        if self.AWS_SECRET_ACCESS_KEY_FILE and Path(self.AWS_SECRET_ACCESS_KEY_FILE).exists():
-            return Path(self.AWS_SECRET_ACCESS_KEY_FILE).read_text().strip()
-        return self.AWS_SECRET_ACCESS_KEY
     
     def get_neo4j_uri(self) -> str:
         """Resolve Neo4j Bolt URI, preferring explicit NEO4J_URL when set."""

@@ -145,11 +145,11 @@ if [ "$DB_MODE" = "local" ]; then
         read -p "Database name [apidb]: " DB_NAME
         DB_NAME="${DB_NAME:-apidb}"
         
-        read -p "Database user [apiuser]: " DB_USER
-        DB_USER="${DB_USER:-apiuser}"
+        read -p "Database user [postgres]: " DB_USER
+        DB_USER="${DB_USER:-postgres}"
         
-        read -p "Database password [changeme]: " DB_PASSWORD
-        DB_PASSWORD="${DB_PASSWORD:-changeme}"
+        read -p "Database password [postgres]: " DB_PASSWORD
+        DB_PASSWORD="${DB_PASSWORD:-postgres}"
         
         read -p "Database port [5432]: " DB_PORT
         DB_PORT="${DB_PORT:-5432}"
@@ -159,6 +159,12 @@ if [ "$DB_MODE" = "local" ]; then
         sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=$DB_PASSWORD|" .env
         sed -i "s|^DB_PORT=.*|DB_PORT=$DB_PORT|" .env
         
+        CURRENT_DB_HOST=$(grep '^DB_HOST=' .env | tail -n 1 | cut -d '=' -f2-)
+        CURRENT_DB_HOST="${CURRENT_DB_HOST:-postgres}"
+        DATABASE_URL_VALUE="postgresql://$DB_USER:$DB_PASSWORD@$CURRENT_DB_HOST:$DB_PORT/$DB_NAME"
+        sed -i "s|^DATABASE_URL=.*|DATABASE_URL=$DATABASE_URL_VALUE|" .env
+        echo "🔗 DATABASE_URL updated to match local PostgreSQL credentials"
+
         echo "✅ PostgreSQL configured"
         echo ""
     elif [ "$DB_TYPE" = "neo4j" ]; then

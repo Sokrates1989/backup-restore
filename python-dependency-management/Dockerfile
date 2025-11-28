@@ -11,12 +11,15 @@
 ARG PYTHON_VERSION=3.13-slim
 FROM python:${PYTHON_VERSION}
 
-# Install system dependencies, including bash for interactive shells
+# Install system dependencies, including bash for interactive shells, dos2unix for line ending conversion, and findutils for file traversal
 RUN apt-get update && apt-get install -y \
     bash \
     curl \
     git \
     build-essential \
+    dos2unix \
+    findutils \
+    sed \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a non-root user to match host UID/GID for file permissions
