@@ -43,15 +43,39 @@ if (-not (Test-Path .setup-complete)) {
     Write-Host "  - API configuration" -ForegroundColor Gray
     Write-Host ""
     
-    $runSetup = Read-Host "Run setup wizard now? (Y/n)"
-    if ($runSetup -ne "n" -and $runSetup -ne "N") {
+    $runSetup = Read-Host "Run full interactive setup wizard in Docker? (y/N)"
+    if ($runSetup -match "^[Yy]$") {
         Write-Host ""
         Write-Host "Starting setup wizard..." -ForegroundColor Cyan
         docker compose -f setup/docker-compose.setup.yml run --rm setup
-        Write-Host ""
-        if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
-            Invoke-CognitoSetup
-            Write-Host "" -ForegroundColor Gray
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Setup wizard failed inside Docker (exit code: $LASTEXITCODE)." -ForegroundColor Red
+            Write-Host "You can still continue with a simple setup using the .env template." -ForegroundColor Yellow
+            $fallback = Read-Host "Create basic .env from template instead and continue? (Y/n)"
+            if ($fallback -eq "n" -or $fallback -eq "N") {
+                Write-Host "Setup aborted. Please inspect the setup container logs and fix the issues." -ForegroundColor Red
+                exit 1
+            }
+            Write-Host ""
+            Write-Host "Creating basic .env from template..." -ForegroundColor Yellow
+            if (Test-Path setup\.env.template) {
+                Copy-Item setup\.env.template .env
+                Write-Host ".env file created from template." -ForegroundColor Green
+                Write-Host "  Please edit .env to configure your environment before continuing." -ForegroundColor Yellow
+                if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
+                    Invoke-CognitoSetup
+                    Write-Host "" -ForegroundColor Gray
+                }
+            } else {
+                Write-Host "[ERROR] setup\.env.template not found!" -ForegroundColor Red
+                exit 1
+            }
+        } else {
+            Write-Host ""
+            if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
+                Invoke-CognitoSetup
+                Write-Host "" -ForegroundColor Gray
+            }
         }
     } else {
         Write-Host ""
@@ -117,57 +141,72 @@ Write-Host ""
 
 # Check if this is the first setup run
 if (-not (Test-Path .setup-complete)) {
-    Write-Host "First setup detected - Running automatic dependency configuration..." -ForegroundColor Cyan
-    Write-Host "The first start may take a bit longer, but it will be much faster afterwards." -ForegroundColor Yellow
+    Write-Host "First setup detected!" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Would you like to run optional diagnostics and dependency checks?" -ForegroundColor Yellow
+    Write-Host "  This can take 1-2 minutes but helps validate your configuration." -ForegroundColor Gray
+    Write-Host "  You can skip this and dependencies will be installed during Docker build." -ForegroundColor Gray
     Write-Host ""
     
-    # Run diagnostics to validate Docker/build configuration first
-    $diagnosticsScript = "python-dependency-management\scripts\run-docker-build-diagnostics.ps1"
-    if (Test-Path $diagnosticsScript) {
-        Write-Host "Running Docker/Build diagnostics..." -ForegroundColor Yellow
-        Write-Host "Collecting diagnostic information..." -ForegroundColor Gray
-        try {
-            & .\$diagnosticsScript
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "Diagnostics completed successfully" -ForegroundColor Green
-            } else {
-                throw "Diagnostics reported issues"
+    $runDiagnostics = Read-Host "Run diagnostics and dependency checks? (y/N)"
+    
+    if ($runDiagnostics -match "^[Yy]$") {
+        Write-Host ""
+        Write-Host "Running diagnostics and dependency configuration..." -ForegroundColor Cyan
+        Write-Host ""
+        
+        # Run diagnostics to validate Docker/build configuration first
+        $diagnosticsScript = "python-dependency-management\scripts\run-docker-build-diagnostics.ps1"
+        if (Test-Path $diagnosticsScript) {
+            Write-Host "Running Docker/Build diagnostics..." -ForegroundColor Yellow
+            Write-Host "Collecting diagnostic information..." -ForegroundColor Gray
+            try {
+                & .\$diagnosticsScript
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "Diagnostics completed successfully" -ForegroundColor Green
+                } else {
+                    throw "Diagnostics reported issues"
+                }
+            } catch {
+                Write-Host "Diagnostics reported issues with your Docker or build configuration!" -ForegroundColor Red
+                Write-Host "Please address the reported problems before continuing." -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "Troubleshooting steps:" -ForegroundColor Yellow
+                Write-Host "1. Ensure Docker Desktop/daemon is running" -ForegroundColor Gray
+                Write-Host "2. Verify .env values (especially PYTHON_VERSION and DB settings)" -ForegroundColor Gray
+                Write-Host "3. Review missing files noted in the diagnostics output" -ForegroundColor Gray
+                Write-Host "4. Re-run manually via: .\$diagnosticsScript" -ForegroundColor Gray
+                Write-Host "" -ForegroundColor Gray
+                $continue = Read-Host "Continue anyway? (y/N)"
+                if ($continue -notmatch "^[Yy]$") {
+                    Write-Host "Setup aborted. Please fix the reported diagnostics issues first." -ForegroundColor Red
+                    exit 1
+                }
+                Write-Host "Continuing with potentially broken configuration..." -ForegroundColor Yellow
             }
-        } catch {
-            Write-Host "Diagnostics reported issues with your Docker or build configuration!" -ForegroundColor Red
-            Write-Host "Please address the reported problems before continuing." -ForegroundColor Yellow
-            Write-Host ""
-            Write-Host "Troubleshooting steps:" -ForegroundColor Yellow
-            Write-Host "1. Ensure Docker Desktop/daemon is running" -ForegroundColor Gray
-            Write-Host "2. Verify .env values (especially PYTHON_VERSION and DB settings)" -ForegroundColor Gray
-            Write-Host "3. Review missing files noted in the diagnostics output" -ForegroundColor Gray
-            Write-Host "4. Re-run manually via: .\$diagnosticsScript" -ForegroundColor Gray
-            Write-Host "" -ForegroundColor Gray
-            $continue = Read-Host "Continue anyway? (y/N)"
-            if ($continue -notmatch "^[Yy]$") {
-                Write-Host "Setup aborted. Please fix the reported diagnostics issues first." -ForegroundColor Red
-                exit 1
-            }
-            Write-Host "Continuing with potentially broken configuration..." -ForegroundColor Yellow
+        } else {
+            Write-Host "$diagnosticsScript not found - skipping diagnostics" -ForegroundColor Yellow
         }
-    } else {
-        Write-Host "$diagnosticsScript not found - skipping diagnostics" -ForegroundColor Yellow
-    }
-    
-    Write-Host ""
-    
-    # Run Dependency Management in initial-run mode
-    if (Test-Path python-dependency-management\scripts\manage-python-project-dependencies.ps1) {
-        Write-Host "Starting Dependency Management for initial setup..." -ForegroundColor Cyan
-        try {
-            & .\python-dependency-management\scripts\manage-python-project-dependencies.ps1 -InitialRun
-        } catch {
-            Write-Host "Error running dependency management: $_" -ForegroundColor Red
+        
+        Write-Host ""
+        
+        # Run Dependency Management in initial-run mode
+        if (Test-Path python-dependency-management\scripts\manage-python-project-dependencies.ps1) {
+            Write-Host "Starting Dependency Management for initial setup..." -ForegroundColor Cyan
+            try {
+                & .\python-dependency-management\scripts\manage-python-project-dependencies.ps1 -InitialRun
+            } catch {
+                Write-Host "Error running dependency management: $_" -ForegroundColor Red
+                Write-Host "Dependencies will be installed when Docker builds the container" -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "python-dependency-management\scripts\manage-python-project-dependencies.ps1 not found - skipping" -ForegroundColor Yellow
             Write-Host "Dependencies will be installed when Docker builds the container" -ForegroundColor Yellow
         }
     } else {
-        Write-Host "python-dependency-management\scripts\manage-python-project-dependencies.ps1 not found - skipping" -ForegroundColor Yellow
-        Write-Host "Dependencies will be installed when Docker builds the container" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "Skipping diagnostics and dependency checks." -ForegroundColor Yellow
+        Write-Host "Dependencies will be installed during Docker container build." -ForegroundColor Gray
     }
     
     # Mark setup as complete

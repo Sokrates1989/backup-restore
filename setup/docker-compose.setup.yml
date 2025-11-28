@@ -10,4 +10,5 @@ services:
       # Mount project directory
       - ..:/workspace
     working_dir: /workspace
-    command: sh -c "chmod +x setup/setup.sh && setup/setup.sh"
+    # Fix Windows line endings (CRLF) and BOM in all shell scripts, then run setup
+    command: bash -c "for f in $$(find setup -name '*.sh' -type f); do dos2unix $$f 2>/dev/null || sed -i 's/\r$$//' $$f; if [ $$(head -c 3 $$f | od -An -tx1 | tr -d ' ') = 'efbbbf' ]; then tail -c +4 $$f > $$f.tmp && mv $$f.tmp $$f; fi; chmod +x $$f; done && bash setup/setup.sh"

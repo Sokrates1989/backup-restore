@@ -1,6 +1,6 @@
-# 🚀 FastAPI Python API Template
+# 🔄 Database Backup & Restore Service
 
-A production-ready FastAPI template with multi-database support, Redis cache, Docker-based development, and modern Python dependency management.
+A standalone FastAPI service for backing up and restoring databases with configurable connection settings and optional API locking during restore operations.
 
 ## 📚 Table of Contents
 
@@ -20,15 +20,16 @@ A production-ready FastAPI template with multi-database support, Redis cache, Do
 
 ## 📖 Overview
 
-This template is a clean and extensible FastAPI project with:
+This service provides centralized database backup and restore functionality with:
 
-- ✅ FastAPI framework with automatic documentation
+- ✅ **Standalone service** - No tight coupling to any specific application
 - ✅ **Multi-database support**: Neo4j, PostgreSQL, MySQL, SQLite
-- ✅ Redis integration as caching layer
-- ✅ Docker & Docker Compose for reproducible environments
-- ✅ Environment variable-based configuration
-- ✅ Modular architecture with clean separation of concerns
-- ✅ Modern Python dependency management with PDM
+- ✅ **Configurable connections** - Pass database credentials per request
+- ✅ **Target API locking** - Optional write-lock coordination during restore
+- ✅ **FastAPI GUI** - Interactive Swagger UI for easy operation
+- ✅ **Background processing** - Non-blocking restore operations
+- ✅ **Progress tracking** - Monitor restore status in real-time
+- ✅ **Docker-ready** - Containerized deployment
 
 ## 📋 Prerequisites
 
@@ -246,20 +247,57 @@ DB_TYPE=postgresql
 DATABASE_URL=postgresql://user:password@localhost:5432/mydb
 ```
 
-## 🧪 API Tests
+## 🧪 API Usage
 
-**Available endpoints:**
-- `GET /` - Visitor counter (Redis)
-- `GET /cache/{key}` - Get cache value
-- `POST /cache/{key}` - Set cache value
-- `GET /health` - Health check
-- `GET /version` - Show version
-- `GET /test/db-test` - Test database connection
-- `POST /examples/` - Create example (CRUD demo)
-- `GET /examples/` - List examples (CRUD demo)
-- `GET /examples/{id}` - Get example (CRUD demo)
-- `PUT /examples/{id}` - Update example (CRUD demo)
-- `DELETE /examples/{id}` - Delete example (CRUD demo)
+### Backup & Restore Endpoints
+
+**Neo4j Backup/Restore:**
+- `POST /backup/neo4j/download` - Download Neo4j backup
+- `POST /backup/neo4j/restore-upload` - Upload and restore Neo4j backup
+- `GET /backup/neo4j/restore-status` - Check restore progress
+- `GET /backup/neo4j/stats` - Get database statistics
+
+**SQL Backup/Restore:**
+- `POST /backup/sql/download` - Download SQL backup
+- `POST /backup/sql/restore-upload` - Upload and restore SQL backup
+- `GET /backup/sql/restore-status` - Check restore progress
+
+### Example: Backup Neo4j Database
+
+```bash
+curl -X POST "http://localhost:8000/backup/neo4j/download?compress=true" \
+  -H "X-Admin-Key: your-admin-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "neo4j_url": "bolt://target-server:7687",
+    "db_user": "neo4j",
+    "db_password": "password"
+  }' \
+  --output backup.cypher.gz
+```
+
+### Example: Restore with API Locking
+
+```bash
+curl -X POST "http://localhost:8000/backup/sql/restore-upload" \
+  -H "X-Restore-Key: your-restore-key" \
+  -F "file=@backup.sql.gz" \
+  -F "db_type=postgresql" \
+  -F "db_host=target-server" \
+  -F "db_port=5432" \
+  -F "db_name=mydb" \
+  -F "db_user=postgres" \
+  -F "db_password=password" \
+  -F "target_api_url=http://target-api:8000" \
+  -F "target_api_key=admin-key"
+```
+
+### Check Restore Status
+
+```bash
+curl -X GET "http://localhost:8000/backup/sql/restore-status" \
+  -H "X-Restore-Key: your-restore-key"
+```
 
 ## 🐳 Docker Commands
 

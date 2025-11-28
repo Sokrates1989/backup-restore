@@ -4,8 +4,9 @@
 
 FROM docker:28-cli
 
-# Install bash for running interactive scripts
-RUN apk add --no-cache bash
+# Install bash and dos2unix for running interactive scripts
+# dos2unix helps handle Windows line ending issues
+RUN apk add --no-cache bash dos2unix
 
 # Set working directory
 WORKDIR /workspace

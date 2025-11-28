@@ -97,7 +97,7 @@ class Neo4jBackupService:
             print(f"Warning: Failed to check lock: {e}")
             return None
         
-    def create_backup_to_temp(self, compress: bool = True) -> Tuple[str, Path]:
+    def create_backup_to_temp(self, neo4j_url: str, db_user: str, db_password: str, compress: bool = True) -> Tuple[str, Path]:
         """
         Create a Neo4j database backup to a temporary file.
         
@@ -105,6 +105,9 @@ class Neo4jBackupService:
         to a temporary file that should be deleted after download.
         
         Args:
+            neo4j_url: Neo4j connection URL (e.g., bolt://localhost:7687)
+            db_user: Database username
+            db_password: Database password
             compress: Whether to compress the backup with gzip
             
         Returns:
@@ -134,10 +137,10 @@ class Neo4jBackupService:
         temp_file.close()  # Close it so we can write to it properly
         
         try:
-            # Connect to Neo4j
+            # Connect to Neo4j with provided credentials
             driver = GraphDatabase.driver(
-                settings.get_neo4j_uri(),
-                auth=(settings.DB_USER, settings.get_db_password())
+                neo4j_url,
+                auth=(db_user, db_password)
             )
             
             cypher_statements = []
@@ -244,7 +247,15 @@ class Neo4jBackupService:
         props_str = ", ".join([f"{k}: {self._format_value(v)}" for k, v in props.items()])
         return f"{{{props_str}}}"
     
-    def restore_backup(self, backup_file: Path):
+    def restore_backup(
+        self,
+        backup_file: Path,
+        neo4j_url: str,
+        db_user: str,
+        db_password: str,
+        target_api_url: str = None,
+        target_api_key: str = None
+    ):
         """
         Restore Neo4j database from backup file.
         
@@ -252,6 +263,11 @@ class Neo4jBackupService:
         
         Args:
             backup_file: Path to backup file
+            neo4j_url: Neo4j connection URL (e.g., bolt://localhost:7687)
+            db_user: Database username
+            db_password: Database password
+            target_api_url: Optional URL of target API to unlock after restore
+            target_api_key: Optional API key for target API unlock endpoint
             
         Returns:
             List of warnings encountered during restore
@@ -291,10 +307,10 @@ class Neo4jBackupService:
                 with open(backup_file, 'r', encoding='utf-8') as f:
                     cypher_statements = f.read()
             
-            # Connect to Neo4j
+            # Connect to Neo4j with provided credentials
             driver = GraphDatabase.driver(
-                settings.get_neo4j_uri(),
-                auth=(settings.DB_USER, settings.get_db_password())
+                neo4j_url,
+                auth=(db_user, db_password)
             )
             
             warnings = []
@@ -391,6 +407,31 @@ class Neo4jBackupService:
                     backup_file.unlink()
                 except Exception as e:
                     print(f"Warning: Failed to clean up temp file: {e}")
+            
+            # Unlock target API if it was provided
+            if target_api_url and target_api_key:
+                try:
+                    import httpx
+                    import asyncio
+                    
+                    async def unlock_api():
+                        try:
+                            async with httpx.AsyncClient(timeout=10.0) as client:
+                                await client.post(
+                                    f"{target_api_url}/database/unlock",
+                                    headers={"X-Admin-Key": target_api_key}
+                                )
+                                print(f"✅ Unlocked target API: {target_api_url}")
+                        except Exception as e:
+                            print(f"Warning: Failed to unlock target API: {e}")
+                    
+                    # Run async unlock in sync context
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(unlock_api())
+                    loop.close()
+                except Exception as e:
+                    print(f"Warning: Failed to unlock target API: {e}")
     
     def get_database_stats(self) -> dict:
         """

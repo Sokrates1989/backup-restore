@@ -6,10 +6,12 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -f "${SCRIPT_DIR}/modules/cognito_setup.sh" ]; then
+SETUP_DIR="${SCRIPT_DIR}"  # Save original SCRIPT_DIR before sourcing
+if [ -f "${SETUP_DIR}/modules/cognito_setup.sh" ]; then
     # shellcheck disable=SC1091
-    source "${SCRIPT_DIR}/modules/cognito_setup.sh"
+    source "${SETUP_DIR}/modules/cognito_setup.sh"
 fi
+SCRIPT_DIR="${SETUP_DIR}"  # Restore SCRIPT_DIR after sourcing
 
 echo "🚀 Python API Template - Initial Setup"
 echo "======================================"

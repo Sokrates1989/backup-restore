@@ -99,11 +99,26 @@ class BackupService:
             print(f"Warning: Failed to check lock: {e}")
             return None
         
-    def create_backup_to_temp(self, compress: bool = True) -> tuple[str, Path]:
+    def create_backup_to_temp(
+        self,
+        db_type: str,
+        db_host: str,
+        db_port: int,
+        db_name: str,
+        db_user: str,
+        db_password: str,
+        compress: bool = True
+    ) -> tuple[str, Path]:
         """
         Create a database backup to a temporary file.
         
         Args:
+            db_type: Database type (postgresql, mysql, sqlite)
+            db_host: Database host
+            db_port: Database port
+            db_name: Database name
+            db_user: Database username
+            db_password: Database password
             compress: Whether to compress the backup with gzip
             
         Returns:
@@ -123,21 +138,21 @@ class BackupService:
         
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            db_type = settings.DB_TYPE.lower()
+            db_type_lower = db_type.lower()
             
-            if db_type in ["postgresql", "postgres"]:
-                return self._backup_postgresql(timestamp, compress)
-            elif db_type == "mysql":
-                return self._backup_mysql(timestamp, compress)
-            elif db_type == "sqlite":
-                return self._backup_sqlite(timestamp, compress)
+            if db_type_lower in ["postgresql", "postgres"]:
+                return self._backup_postgresql(timestamp, compress, db_host, db_port, db_name, db_user, db_password)
+            elif db_type_lower == "mysql":
+                return self._backup_mysql(timestamp, compress, db_host, db_port, db_name, db_user, db_password)
+            elif db_type_lower == "sqlite":
+                return self._backup_sqlite(timestamp, compress, db_name)
             else:
                 raise ValueError(f"Backup not supported for database type: {db_type}")
         finally:
             # Always release lock when done
             self._release_lock()
     
-    def _backup_postgresql(self, timestamp: str, compress: bool) -> tuple[str, Path]:
+    def _backup_postgresql(self, timestamp: str, compress: bool, db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) -> tuple[str, Path]:
         """Create PostgreSQL backup using pg_dump."""
         filename = f"backup_postgresql_{timestamp}.sql"
         if compress:
@@ -151,14 +166,14 @@ class BackupService:
         
         # Build pg_dump command
         env = os.environ.copy()
-        env['PGPASSWORD'] = settings.get_db_password()
+        env['PGPASSWORD'] = db_password
         
         cmd = [
             'pg_dump',
-            '-h', settings.DB_HOST,
-            '-p', str(settings.DB_PORT),
-            '-U', settings.DB_USER,
-            '-d', settings.DB_NAME,
+            '-h', db_host,
+            '-p', str(db_port),
+            '-U', db_user,
+            '-d', db_name,
             '--no-owner',  # Don't include ownership commands
             '--no-acl',    # Don't include access privileges
             '-F', 'p',     # Plain text format
@@ -187,7 +202,7 @@ class BackupService:
         except subprocess.CalledProcessError as e:
             raise Exception(f"PostgreSQL backup failed: {e.stderr}")
     
-    def _backup_mysql(self, timestamp: str, compress: bool) -> tuple[str, Path]:
+    def _backup_mysql(self, timestamp: str, compress: bool, db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) -> tuple[str, Path]:
         """Create MySQL backup using mariadb-dump (MySQL-compatible)."""
         filename = f"backup_mysql_{timestamp}.sql"
         if compress:
@@ -204,11 +219,11 @@ class BackupService:
         
         cmd = [
             dump_cmd,
-            '-h', settings.DB_HOST,
-            '-P', str(settings.DB_PORT),
-            '-u', settings.DB_USER,
-            f'-p{settings.get_db_password()}',
-            settings.DB_NAME,
+            '-h', db_host,
+            '-P', str(db_port),
+            '-u', db_user,
+            f'-p{db_password}',
+            db_name,
             '--single-transaction',  # Consistent backup
             '--skip-lock-tables',    # Don't lock tables
         ]
@@ -233,7 +248,7 @@ class BackupService:
         except subprocess.CalledProcessError as e:
             raise Exception(f"MySQL backup failed: {e.stderr}")
     
-    def _backup_sqlite(self, timestamp: str, compress: bool) -> tuple[str, Path]:
+    def _backup_sqlite(self, timestamp: str, compress: bool, db_name: str) -> tuple[str, Path]:
         """Create SQLite backup by copying the database file."""
         filename = f"backup_sqlite_{timestamp}.db"
         if compress:
@@ -246,7 +261,7 @@ class BackupService:
         temp_file.close()
         
         # SQLite database is a file, just copy it
-        db_file = Path(settings.DB_NAME)
+        db_file = Path(db_name)
         
         if not db_file.exists():
             raise Exception(f"SQLite database file not found: {db_file}")
@@ -264,12 +279,31 @@ class BackupService:
         except Exception as e:
             raise Exception(f"SQLite backup failed: {str(e)}")
     
-    def restore_backup(self, backup_file: Path) -> dict:
+    def restore_backup(
+        self,
+        backup_file: Path,
+        db_type: str,
+        db_host: str,
+        db_port: int,
+        db_name: str,
+        db_user: str,
+        db_password: str,
+        target_api_url: str = None,
+        target_api_key: str = None
+    ) -> dict:
         """
         Restore database from backup file.
         
         Args:
             backup_file: Path to backup file
+            db_type: Database type (postgresql, mysql, sqlite)
+            db_host: Database host
+            db_port: Database port
+            db_name: Database name
+            db_user: Database username
+            db_password: Database password
+            target_api_url: Optional URL of target API to unlock after restore
+            target_api_key: Optional API key for target API unlock endpoint
             
         Returns:
             dict: Information about the restore operation including warnings
@@ -289,7 +323,7 @@ class BackupService:
         if not self._acquire_lock("restore"):
             raise Exception("Failed to acquire lock for restore operation")
         
-        db_type = settings.DB_TYPE.lower()
+        db_type_lower = db_type.lower()
         warnings = []
         
         try:
@@ -310,23 +344,23 @@ class BackupService:
                     message="Dropping existing database data...",
                     warnings=warnings
                 )
-                self._drop_database()
+                self._drop_database(db_type_lower, db_host, db_port, db_name, db_user, db_password)
             except Exception as e:
                 raise Exception(f"Failed to drop existing database: {str(e)}")
             
             # Restore from backup
             self._update_restore_progress(
                 status="in_progress",
-                message=f"Restoring {db_type} database from backup...",
+                message=f"Restoring {db_type_lower} database from backup...",
                 warnings=warnings
             )
             
-            if db_type in ["postgresql", "postgres"]:
-                self._restore_postgresql(backup_file, is_compressed)
-            elif db_type == "mysql":
-                self._restore_mysql(backup_file, is_compressed)
-            elif db_type == "sqlite":
-                self._restore_sqlite(backup_file, is_compressed)
+            if db_type_lower in ["postgresql", "postgres"]:
+                self._restore_postgresql(backup_file, is_compressed, db_host, db_port, db_name, db_user, db_password)
+            elif db_type_lower == "mysql":
+                self._restore_mysql(backup_file, is_compressed, db_host, db_port, db_name, db_user, db_password)
+            elif db_type_lower == "sqlite":
+                self._restore_sqlite(backup_file, is_compressed, db_name)
             else:
                 raise ValueError(f"Restore not supported for database type: {db_type}")
             
@@ -358,18 +392,43 @@ class BackupService:
                     backup_file.unlink()
                 except Exception as e:
                     print(f"Warning: Failed to clean up temp file: {e}")
+            
+            # Unlock target API if it was provided
+            if target_api_url and target_api_key:
+                try:
+                    import httpx
+                    import asyncio
+                    
+                    async def unlock_api():
+                        try:
+                            async with httpx.AsyncClient(timeout=10.0) as client:
+                                await client.post(
+                                    f"{target_api_url}/database/unlock",
+                                    headers={"X-Admin-Key": target_api_key}
+                                )
+                                print(f"✅ Unlocked target API: {target_api_url}")
+                        except Exception as e:
+                            print(f"Warning: Failed to unlock target API: {e}")
+                    
+                    # Run async unlock in sync context
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(unlock_api())
+                    loop.close()
+                except Exception as e:
+                    print(f"Warning: Failed to unlock target API: {e}")
     
-    def _restore_postgresql(self, backup_file: Path, is_compressed: bool) -> None:
+    def _restore_postgresql(self, backup_file: Path, is_compressed: bool, db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) -> None:
         """Restore PostgreSQL database using psql."""
         env = os.environ.copy()
-        env['PGPASSWORD'] = settings.get_db_password()
+        env['PGPASSWORD'] = db_password
         
         cmd = [
             'psql',
-            '-h', settings.DB_HOST,
-            '-p', str(settings.DB_PORT),
-            '-U', settings.DB_USER,
-            '-d', settings.DB_NAME,
+            '-h', db_host,
+            '-p', str(db_port),
+            '-U', db_user,
+            '-d', db_name,
         ]
         
         try:
@@ -394,18 +453,18 @@ class BackupService:
         except subprocess.CalledProcessError as e:
             raise Exception(f"PostgreSQL restore failed: {e.stderr}")
     
-    def _restore_mysql(self, backup_file: Path, is_compressed: bool) -> None:
+    def _restore_mysql(self, backup_file: Path, is_compressed: bool, db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) -> None:
         """Restore MySQL database using mariadb (MySQL-compatible)."""
         # Try mariadb first (newer), fall back to mysql
         mysql_cmd = 'mariadb' if shutil.which('mariadb') else 'mysql'
         
         cmd = [
             mysql_cmd,
-            '-h', settings.DB_HOST,
-            '-P', str(settings.DB_PORT),
-            '-u', settings.DB_USER,
-            f'-p{settings.get_db_password()}',
-            settings.DB_NAME,
+            '-h', db_host,
+            '-P', str(db_port),
+            '-u', db_user,
+            f'-p{db_password}',
+            db_name,
         ]
         
         try:
@@ -427,9 +486,9 @@ class BackupService:
         except subprocess.CalledProcessError as e:
             raise Exception(f"MySQL restore failed: {e.stderr}")
     
-    def _restore_sqlite(self, backup_file: Path, is_compressed: bool) -> None:
+    def _restore_sqlite(self, backup_file: Path, is_compressed: bool, db_name: str) -> None:
         """Restore SQLite database by replacing the database file."""
-        db_file = Path(settings.DB_NAME)
+        db_file = Path(db_name)
         
         # Backup current database before replacing
         if db_file.exists():
@@ -452,25 +511,25 @@ class BackupService:
                     shutil.copy2(backup_current, db_file)
             raise Exception(f"SQLite restore failed: {str(e)}")
     
-    def _drop_database(self) -> None:
+    def _drop_database(self, db_type: str, db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) -> None:
         """
         Drop all tables/data from the database before restore.
         
         This ensures a clean restore without conflicts from existing data.
         """
-        db_type = settings.DB_TYPE.lower()
+        db_type_lower = db_type.lower()
         
-        if db_type in ["postgresql", "postgres"]:
-            self._drop_postgresql_tables()
-        elif db_type == "mysql":
-            self._drop_mysql_tables()
-        elif db_type == "sqlite":
-            self._drop_sqlite_tables()
+        if db_type_lower in ["postgresql", "postgres"]:
+            self._drop_postgresql_tables(db_host, db_port, db_name, db_user, db_password)
+        elif db_type_lower == "mysql":
+            self._drop_mysql_tables(db_host, db_port, db_name, db_user, db_password)
+        elif db_type_lower == "sqlite":
+            self._drop_sqlite_tables(db_name)
     
-    def _drop_postgresql_tables(self) -> None:
+    def _drop_postgresql_tables(self, db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) -> None:
         """Drop all tables in PostgreSQL database."""
         env = os.environ.copy()
-        env['PGPASSWORD'] = settings.get_db_password()
+        env['PGPASSWORD'] = db_password
         
         # Drop all tables using CASCADE
         drop_sql = """
@@ -485,10 +544,10 @@ class BackupService:
         
         cmd = [
             'psql',
-            '-h', settings.DB_HOST,
-            '-p', str(settings.DB_PORT),
-            '-U', settings.DB_USER,
-            '-d', settings.DB_NAME,
+            '-h', db_host,
+            '-p', str(db_port),
+            '-U', db_user,
+            '-d', db_name,
         ]
         
         try:
@@ -503,10 +562,10 @@ class BackupService:
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to drop PostgreSQL tables: {e.stderr}")
     
-    def _drop_mysql_tables(self) -> None:
+    def _drop_mysql_tables(self, db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) -> None:
         """Drop all tables in MySQL database."""
         env = os.environ.copy()
-        env['MYSQL_PWD'] = settings.get_db_password()
+        env['MYSQL_PWD'] = db_password
         
         # Get list of tables and drop them
         drop_sql = f"""
@@ -514,7 +573,7 @@ class BackupService:
         SET @tables = NULL;
         SELECT GROUP_CONCAT(table_name) INTO @tables
         FROM information_schema.tables
-        WHERE table_schema = '{settings.DB_NAME}';
+        WHERE table_schema = '{db_name}';
         SET @tables = CONCAT('DROP TABLE IF EXISTS ', @tables);
         PREPARE stmt FROM @tables;
         EXECUTE stmt;
@@ -528,10 +587,10 @@ class BackupService:
             if shutil.which(mysql_cmd):
                 cmd = [
                     mysql_cmd,
-                    '-h', settings.DB_HOST,
-                    '-P', str(settings.DB_PORT),
-                    '-u', settings.DB_USER,
-                    settings.DB_NAME,
+                    '-h', db_host,
+                    '-P', str(db_port),
+                    '-u', db_user,
+                    db_name,
                 ]
                 break
         
@@ -550,11 +609,11 @@ class BackupService:
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to drop MySQL tables: {e.stderr}")
     
-    def _drop_sqlite_tables(self) -> None:
+    def _drop_sqlite_tables(self, db_name: str) -> None:
         """Drop all tables in SQLite database."""
         import sqlite3
         
-        db_file = Path(settings.DB_NAME)
+        db_file = Path(db_name)
         if not db_file.exists():
             return  # Nothing to drop
         

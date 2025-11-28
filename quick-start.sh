@@ -123,50 +123,65 @@ echo ""
 
 # Prüfen, ob dies der erste Setup-Lauf ist
 if [ ! -f ".setup-complete" ]; then
-    echo "🎯 Erstes Setup erkannt - Führe automatische Dependency-Konfiguration durch..."
-    echo "⚡ Beim ersten Start kann es etwas länger dauern, danach geht es meist deutlich schneller."
+    echo "🎯 First setup detected!"
     echo ""
+    echo "Would you like to run optional diagnostics and dependency checks?"
+    echo "  This can take 1-2 minutes but helps validate your configuration."
+    echo "  You can skip this and dependencies will be installed during Docker build."
+    echo ""
+    read -p "Run diagnostics and dependency checks? (y/N): " run_diagnostics
     
-    # Run diagnostics to validate Docker/build configuration first
-    echo "🔍 Running Docker/Build diagnostics..."
-    DIAGNOSTICS_SCRIPT="python-dependency-management/scripts/run-docker-build-diagnostics.sh"
-    if [ -f "$DIAGNOSTICS_SCRIPT" ]; then
-        echo "Collecting diagnostic information..."
-        if ./$DIAGNOSTICS_SCRIPT; then
-            echo "✅ Diagnostics completed successfully"
-        else
-            echo ""
-            echo "❌ Diagnostics reported issues with your Docker or build configuration!"
-            echo "Please address the reported problems before continuing."
-            echo ""
-            echo "🔧 Troubleshooting steps:"
-            echo "1. Ensure Docker Desktop/daemon is running"
-            echo "2. Verify .env values (especially PYTHON_VERSION and DB settings)"
-            echo "3. Review missing files noted in the diagnostics output"
-            echo "4. Re-run manually via: ./$DIAGNOSTICS_SCRIPT"
-            echo ""
-            echo "Subsequent steps may fail until the diagnostics succeed."
-            read -p "Continue anyway? (y/N): " continue_anyway
-            if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
-                echo "Setup aborted. Please fix the reported diagnostics issues first."
-                exit 1
+    if [[ "$run_diagnostics" =~ ^[Yy]$ ]]; then
+        echo ""
+        echo "Running diagnostics and dependency configuration..."
+        echo ""
+        
+        # Run diagnostics to validate Docker/build configuration first
+        echo "🔍 Running Docker/Build diagnostics..."
+        DIAGNOSTICS_SCRIPT="python-dependency-management/scripts/run-docker-build-diagnostics.sh"
+        if [ -f "$DIAGNOSTICS_SCRIPT" ]; then
+            echo "Collecting diagnostic information..."
+            if ./$DIAGNOSTICS_SCRIPT; then
+                echo "✅ Diagnostics completed successfully"
+            else
+                echo ""
+                echo "❌ Diagnostics reported issues with your Docker or build configuration!"
+                echo "Please address the reported problems before continuing."
+                echo ""
+                echo "🔧 Troubleshooting steps:"
+                echo "1. Ensure Docker Desktop/daemon is running"
+                echo "2. Verify .env values (especially PYTHON_VERSION and DB settings)"
+                echo "3. Review missing files noted in the diagnostics output"
+                echo "4. Re-run manually via: ./$DIAGNOSTICS_SCRIPT"
+                echo ""
+                echo "Subsequent steps may fail until the diagnostics succeed."
+                read -p "Continue anyway? (y/N): " continue_anyway
+                if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
+                    echo "Setup aborted. Please fix the reported diagnostics issues first."
+                    exit 1
+                fi
+                echo "⚠️  Continuing with potentially broken configuration..."
             fi
-            echo "⚠️  Continuing with potentially broken configuration..."
+        else
+            echo "⚠️  $DIAGNOSTICS_SCRIPT not found - skipping diagnostics"
         fi
+        echo ""
+        echo "📦 Starte Dependency Management für initiales Setup..."
+        
+        # Führe das Dependency Management im initial-run Modus aus
+        ./python-dependency-management/scripts/manage-python-project-dependencies.sh initial-run
     else
-        echo "⚠️  $DIAGNOSTICS_SCRIPT not found - skipping diagnostics"
+        echo ""
+        echo "Skipping diagnostics and dependency checks."
+        echo "Dependencies will be installed during Docker container build."
     fi
-    echo ""
-    echo "📦 Starte Dependency Management für initiales Setup..."
-    
-    # Führe das Dependency Management im initial-run Modus aus
-    ./python-dependency-management/scripts/manage-python-project-dependencies.sh initial-run
     
     # Markiere Setup als abgeschlossen
     touch .setup-complete
     
     echo ""
-    echo "🎉 Erstes Setup abgeschlossen!"
+    echo "🎉 First setup completed!"
+    echo "🐳 Starting backend..."
     echo "🐳 Starte nun das Backend..."
     echo ""
     echo "========================================"
