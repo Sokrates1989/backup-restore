@@ -4,6 +4,55 @@
 #
 # Module for handling menu actions in quick-start script
 
+open_browser_incognito() {
+    local port="$1"
+    local compose_file="$2"
+
+    local api_url="http://localhost:$port/docs"
+    local neo4j_url="http://localhost:7474"
+    local urls=("$api_url")
+
+    if [[ "$compose_file" == *neo4j* ]]; then
+        urls+=("$neo4j_url")
+        echo "Neo4j Browser will open at $neo4j_url using the same private window."
+    fi
+
+    echo "Opening browser..."
+
+    if command -v microsoft-edge &> /dev/null; then
+        microsoft-edge --inprivate "${urls[@]}" >/dev/null 2>&1 &
+        return
+    fi
+
+    if command -v google-chrome &> /dev/null; then
+        google-chrome --incognito "${urls[@]}" >/dev/null 2>&1 &
+        return
+    fi
+
+    if command -v chromium-browser &> /dev/null; then
+        chromium-browser --incognito "${urls[@]}" >/dev/null 2>&1 &
+        return
+    fi
+
+    if command -v open &> /dev/null; then
+        open -na "Google Chrome" --args --incognito "${urls[@]}" 2>/dev/null || \
+        open -na "Safari" --args --private "${urls[@]}" 2>/dev/null || \
+        open "${urls[0]}"
+        return
+    fi
+
+    if command -v xdg-open &> /dev/null; then
+        for url in "${urls[@]}"; do
+            xdg-open "$url" &
+        done
+    else
+        echo "Could not detect browser command. Please open manually: $api_url"
+        if [[ "$compose_file" == *neo4j* ]]; then
+            echo "Neo4j Browser: $neo4j_url"
+        fi
+    fi
+}
+
 handle_backend_start() {
     local port="$1"
     local compose_file="$2"
@@ -19,17 +68,8 @@ handle_backend_start() {
     echo "(The API may take a few seconds to start. Please refresh the page if needed.)"
     read -r
     
-    # Open browser in incognito/private mode
-    echo "Opening browser..."
-    if command -v xdg-open &> /dev/null; then
-        xdg-open "http://localhost:$port/docs" &
-    elif command -v open &> /dev/null; then
-        open -na "Google Chrome" --args --incognito "http://localhost:$port/docs" 2>/dev/null || \
-        open -na "Safari" --args --private "http://localhost:$port/docs" 2>/dev/null || \
-        open "http://localhost:$port/docs"
-    else
-        echo "Could not detect browser command. Please open manually: http://localhost:$port/docs"
-    fi
+    # Open browser in incognito/private mode using shared window
+    open_browser_incognito "$port" "$compose_file"
     
     echo ""
     docker compose --env-file .env -f "$compose_file" up --build
@@ -60,17 +100,8 @@ handle_dependency_and_backend() {
     echo "(The API may take a few seconds to start. Please refresh the page if needed.)"
     read -r
     
-    # Open browser in incognito/private mode
-    echo "Opening browser..."
-    if command -v xdg-open &> /dev/null; then
-        xdg-open "http://localhost:$port/docs" &
-    elif command -v open &> /dev/null; then
-        open -na "Google Chrome" --args --incognito "http://localhost:$port/docs" 2>/dev/null || \
-        open -na "Safari" --args --private "http://localhost:$port/docs" 2>/dev/null || \
-        open "http://localhost:$port/docs"
-    else
-        echo "Could not detect browser command. Please open manually: http://localhost:$port/docs"
-    fi
+    # Open browser in incognito/private mode using shared window
+    open_browser_incognito "$port" "$compose_file"
     
     echo ""
     docker compose --env-file .env -f "$compose_file" up --build
@@ -112,17 +143,8 @@ handle_backend_start_no_cache() {
     echo "(The API may take a few seconds to start. Please refresh the page if needed.)"
     read -r
     
-    # Open browser in incognito/private mode
-    echo "Opening browser..."
-    if command -v xdg-open &> /dev/null; then
-        xdg-open "http://localhost:$port/docs" &
-    elif command -v open &> /dev/null; then
-        open -na "Google Chrome" --args --incognito "http://localhost:$port/docs" 2>/dev/null || \
-        open -na "Safari" --args --private "http://localhost:$port/docs" 2>/dev/null || \
-        open "http://localhost:$port/docs"
-    else
-        echo "Could not detect browser command. Please open manually: http://localhost:$port/docs"
-    fi
+    # Open browser in incognito/private mode using shared window
+    open_browser_incognito "$port" "$compose_file"
     
     echo ""
     docker compose --env-file .env -f "$compose_file" build --no-cache

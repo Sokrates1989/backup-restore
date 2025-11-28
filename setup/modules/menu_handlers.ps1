@@ -1,6 +1,33 @@
 # menu_handlers.ps1
 # PowerShell module for handling menu actions in quick-start script
 
+function Open-BrowserInIncognito {
+    param(
+        [string]$Port,
+        [string]$ComposeFile
+    )
+
+    $apiUrl = "http://localhost:$Port/docs"
+    $neo4jUrl = "http://localhost:7474"
+    $includeNeo4j = $ComposeFile -like "*neo4j*"
+
+    Write-Host "Opening browser..." -ForegroundColor Cyan
+
+    $edgeArgs = "--inprivate $apiUrl"
+    $chromeArgs = "--incognito $apiUrl"
+
+    if ($includeNeo4j) {
+        $edgeArgs = "$edgeArgs $neo4jUrl"
+        $chromeArgs = "$chromeArgs $neo4jUrl"
+        Write-Host "Neo4j Browser will open at $neo4jUrl using the same private window." -ForegroundColor Gray
+    }
+
+    Start-Process "msedge" $edgeArgs -ErrorAction SilentlyContinue
+    if ($LASTEXITCODE -ne 0) {
+        Start-Process "chrome" $chromeArgs -ErrorAction SilentlyContinue
+    }
+}
+
 function Start-Backend {
     param(
         [string]$Port,
@@ -23,16 +50,8 @@ function Start-Backend {
     Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
     $null = Read-Host
     
-    # Open browser in incognito/private mode
-    Write-Host "Opening browser..." -ForegroundColor Cyan
-    Start-Process "msedge" "--inprivate http://localhost:$Port/docs" -ErrorAction SilentlyContinue
-    if ($LASTEXITCODE -ne 0) {
-        Start-Process "chrome" "--incognito http://localhost:$Port/docs" -ErrorAction SilentlyContinue
-    }
-    if ($ComposeFile -like "*neo4j*") {
-        Write-Host "Opening Neo4j Browser at http://localhost:7474 ..." -ForegroundColor Cyan
-        Start-Process "http://localhost:7474" -ErrorAction SilentlyContinue
-    }
+    # Open browser in incognito/private mode, reusing the same window for Neo4j if needed
+    Open-BrowserInIncognito -Port $Port -ComposeFile $ComposeFile
     
     Write-Host ""
     docker compose --env-file .env -f $ComposeFile up --build
@@ -70,16 +89,8 @@ function Start-DependencyAndBackend {
     Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
     $null = Read-Host
     
-    # Open browser in incognito/private mode
-    Write-Host "Opening browser..." -ForegroundColor Cyan
-    Start-Process "msedge" "--inprivate http://localhost:$Port/docs" -ErrorAction SilentlyContinue
-    if ($LASTEXITCODE -ne 0) {
-        Start-Process "chrome" "--incognito http://localhost:$Port/docs" -ErrorAction SilentlyContinue
-    }
-    if ($ComposeFile -like "*neo4j*") {
-        Write-Host "Opening Neo4j Browser at http://localhost:7474 ..." -ForegroundColor Cyan
-        Start-Process "http://localhost:7474" -ErrorAction SilentlyContinue
-    }
+    # Open browser in incognito/private mode, reusing the same window for Neo4j if needed
+    Open-BrowserInIncognito -Port $Port -ComposeFile $ComposeFile
     
     Write-Host ""
     docker compose --env-file .env -f $ComposeFile up --build
@@ -135,16 +146,8 @@ function Start-BackendNoCache {
     Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
     $null = Read-Host
     
-    # Open browser in incognito/private mode
-    Write-Host "Opening browser..." -ForegroundColor Cyan
-    Start-Process "msedge" "--inprivate http://localhost:$Port/docs" -ErrorAction SilentlyContinue
-    if ($LASTEXITCODE -ne 0) {
-        Start-Process "chrome" "--incognito http://localhost:$Port/docs" -ErrorAction SilentlyContinue
-    }
-    if ($ComposeFile -like "*neo4j*") {
-        Write-Host "Opening Neo4j Browser at http://localhost:7474 ..." -ForegroundColor Cyan
-        Start-Process "http://localhost:7474" -ErrorAction SilentlyContinue
-    }
+    # Open browser in incognito/private mode, reusing the same window for Neo4j if needed
+    Open-BrowserInIncognito -Port $Port -ComposeFile $ComposeFile
     
     Write-Host ""
     docker compose --env-file .env -f $ComposeFile build --no-cache
