@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-Get started with this FastAPI template in minutes.
+Get started with the **Database Backup & Restore Service** in minutes.
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ Get started with this FastAPI template in minutes.
 
 ```bash
 git clone <your-repo-url>
-cd python-api-template
+cd backup-restore
 ```
 
 ### 2. Configure Environment
@@ -95,24 +95,20 @@ open http://localhost:8000/docs
 ## Project Structure
 
 ```
-python-api-template/
+backup-restore/
 ├── app/
 │   ├── api/                    # API layer
-│   │   ├── routes/            # Route handlers
+│   │   ├── routes/            # Backup/restore endpoints
+│   │   │   ├── sql_backup.py  # SQL backup & restore
+│   │   │   └── neo4j_backup.py# Neo4j backup & restore
 │   │   └── settings.py        # Configuration
-│   ├── backend/               # Backend layer
-│   │   └── database/          # Database handlers
-│   │       ├── base.py        # Abstract base class
-│   │       ├── factory.py     # Database factory
-│   │       ├── neo4j_handler.py
-│   │       ├── sql_handler.py
-│   │       ├── init_db.py     # Initialization
-│   │       └── queries.py     # Query helpers
-│   ├── models/                # Data models
-│   │   └── example_sql_models.py
-│   └── main.py               # Application entry point
+│   ├── backend/               # Backup services
+│   │   └── services/
+│   │       ├── sql/backup_service.py
+│   │       └── neo4j/backup_service.py
+│   └── main.py                # Application entry point
 ├── docs/                      # Documentation
-│   ├── DATABASE.md           # Database guide
+│   ├── DATABASE_BACKUP.md    # Backup & restore guide
 │   └── QUICK_START.md        # This file
 ├── .env.template             # Environment template
 └── docker-compose.yml        # Docker configuration

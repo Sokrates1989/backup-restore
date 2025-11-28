@@ -82,11 +82,11 @@ async def lock_target_api(api_url: str, api_key: str, operation: str = "restore"
             if response.status_code == 200:
                 return True, None
             else:
-                warning = f"Failed to lock target API (HTTP {response.status_code}). Proceeding without lock."
+                warning = f"Failed to lock target API (HTTP {response.status_code})."
                 print(f"⚠️  {warning}")
                 return False, warning
     except Exception as e:
-        warning = f"Failed to lock target API: {e}. Proceeding without lock."
+        warning = f"Failed to lock target API: {e}."
         print(f"⚠️  {warning}")
         return False, warning
 
@@ -126,9 +126,34 @@ async def download_sql_backup(
         The backup file for download
     """
     temp_filepath = None
+    locked_api = False
     try:
+        # Optionally lock target API to improve snapshot consistency
+        if getattr(db_config, "lock_target_db", False):
+            if not db_config.target_api_url or not db_config.target_api_key:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "lock_target_db is True but target_api_url and/or "
+                        "target_api_key are missing"
+                    ),
+                )
+            locked_api, locking_warning = await lock_target_api(
+                db_config.target_api_url,
+                db_config.target_api_key,
+                "backup",
+            )
+            if not locked_api:
+                raise HTTPException(
+                    status_code=502,
+                    detail=(
+                        locking_warning
+                        or "Failed to lock target API for backup. Backup was not started. Check /database/lock endpoint."
+                    ),
+                )
+
         backup_service = BackupService()
-        
+
         # Create backup in temporary file off the main event loop
         filename, temp_filepath = await run_in_threadpool(
             backup_service.create_backup_to_temp,
@@ -140,20 +165,32 @@ async def download_sql_backup(
             db_password=db_config.db_password,
             compress=compress,
         )
-        
+
         media_type = "application/gzip" if compress else "application/sql"
-        
+
         return FileResponse(
             path=temp_filepath,
             filename=filename,
             media_type=media_type,
             background=BackgroundTask(_cleanup_temp_file, temp_filepath)
         )
-        
+
+    except HTTPException:
+        # HTTP errors are propagated as-is
+        raise
     except Exception as e:
         if temp_filepath and temp_filepath.exists():
             temp_filepath.unlink()
         raise HTTPException(status_code=500, detail=f"Backup download failed: {str(e)}")
+    finally:
+        # Always attempt to unlock target API if we previously locked it
+        if locked_api and getattr(db_config, "target_api_url", None) and getattr(db_config, "target_api_key", None):
+            unlock_ok = await unlock_target_api(db_config.target_api_url, db_config.target_api_key)
+            if not unlock_ok:
+                print(
+                    "\u26a0\ufe0f  Warning: backup completed but failed to unlock target API. "
+                    "Please check /database/lock-status on the target service."
+                )
 
 
 @router.post("/restore-upload", response_model=RestoreResponse)
@@ -166,6 +203,7 @@ async def restore_sql_from_uploaded_backup(
     db_name: str = Body(...),
     db_user: str = Body(...),
     db_password: str = Body(...),
+    lock_target_db: bool = Body(False),
     target_api_url: Optional[str] = Body(None),
     target_api_key: Optional[str] = Body(None),
     _: str = Depends(verify_restore_key)
@@ -180,8 +218,9 @@ async def restore_sql_from_uploaded_backup(
     This endpoint starts the restore in the background and returns immediately.
     Use GET /backup/sql/restore-status to monitor progress.
     
-    Optional locking: If target_api_url and target_api_key are provided, attempts to lock
-    the remote API during restore. If locking fails, proceeds with a warning.
+    Optional locking: If lock_target_db is true, attempts to lock the remote API during
+    restore using target_api_url and target_api_key. If locking fails, the restore
+    request fails and no restore is started.
     """
     temp_file = None
     locked_api = False
@@ -198,10 +237,30 @@ async def restore_sql_from_uploaded_backup(
                 detail=f"Cannot start restore: {lock_operation} operation is already in progress locally"
             )
         
-        # Attempt to lock target API if provided (non-blocking)
-        if target_api_url and target_api_key:
-            locked_api, locking_warning = await lock_target_api(target_api_url, target_api_key, "restore")
-        
+        # Optionally lock target API before starting restore
+        if lock_target_db:
+            if not target_api_url or not target_api_key:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "lock_target_db is True but target_api_url and/or "
+                        "target_api_key are missing"
+                    ),
+                )
+            locked_api, locking_warning = await lock_target_api(
+                target_api_url,
+                target_api_key,
+                "restore",
+            )
+            if not locked_api:
+                raise HTTPException(
+                    status_code=502,
+                    detail=(
+                        locking_warning
+                        or "Failed to lock target API for restore. Check /database/lock endpoint."
+                    ),
+                )
+
         # Save uploaded file to temporary location
         suffix = '.sql.gz' if file.filename and file.filename.endswith('.gz') else '.sql'
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp:
@@ -235,13 +294,23 @@ async def restore_sql_from_uploaded_backup(
         
     except HTTPException:
         if locked_api and target_api_url and target_api_key:
-            await unlock_target_api(target_api_url, target_api_key)
+            unlock_ok = await unlock_target_api(target_api_url, target_api_key)
+            if not unlock_ok:
+                print(
+                    "\u26a0\ufe0f  Warning: restore failed and target API could not be unlocked. "
+                    "Please check /database/lock-status on the target service."
+                )
         raise
     except Exception as e:
         if temp_file and temp_file.exists():
             temp_file.unlink()
         if locked_api and target_api_url and target_api_key:
-            await unlock_target_api(target_api_url, target_api_key)
+            unlock_ok = await unlock_target_api(target_api_url, target_api_key)
+            if not unlock_ok:
+                print(
+                    "\u26a0\ufe0f  Warning: restore failed and target API could not be unlocked. "
+                    "Please check /database/lock-status on the target service."
+                )
         raise HTTPException(status_code=500, detail=f"Failed to start restore: {str(e)}")
 
 

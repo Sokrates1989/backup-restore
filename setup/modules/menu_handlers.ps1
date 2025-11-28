@@ -13,6 +13,11 @@ function Start-Backend {
     Write-Host "  API will be accessible at:" -ForegroundColor Cyan
     Write-Host "  http://localhost:$Port/docs" -ForegroundColor Yellow
     Write-Host "========================================" -ForegroundColor Green
+    if ($ComposeFile -like "*neo4j*") {
+        Write-Host "  Neo4j Browser will be accessible at:" -ForegroundColor Cyan
+        Write-Host "  http://localhost:7474" -ForegroundColor Yellow
+        Write-Host "========================================" -ForegroundColor Green
+    }
     Write-Host ""
     Write-Host "Press ENTER to open the API documentation in your browser..." -ForegroundColor Yellow
     Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
@@ -23,6 +28,10 @@ function Start-Backend {
     Start-Process "msedge" "--inprivate http://localhost:$Port/docs" -ErrorAction SilentlyContinue
     if ($LASTEXITCODE -ne 0) {
         Start-Process "chrome" "--incognito http://localhost:$Port/docs" -ErrorAction SilentlyContinue
+    }
+    if ($ComposeFile -like "*neo4j*") {
+        Write-Host "Opening Neo4j Browser at http://localhost:7474 ..." -ForegroundColor Cyan
+        Start-Process "http://localhost:7474" -ErrorAction SilentlyContinue
     }
     
     Write-Host ""
@@ -51,6 +60,11 @@ function Start-DependencyAndBackend {
     Write-Host "  API will be accessible at:" -ForegroundColor Cyan
     Write-Host "  http://localhost:$Port/docs" -ForegroundColor Yellow
     Write-Host "========================================" -ForegroundColor Green
+    if ($ComposeFile -like "*neo4j*") {
+        Write-Host "  Neo4j Browser will be accessible at:" -ForegroundColor Cyan
+        Write-Host "  http://localhost:7474" -ForegroundColor Yellow
+        Write-Host "========================================" -ForegroundColor Green
+    }
     Write-Host ""
     Write-Host "Press ENTER to open the API documentation in your browser..." -ForegroundColor Yellow
     Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
@@ -61,6 +75,10 @@ function Start-DependencyAndBackend {
     Start-Process "msedge" "--inprivate http://localhost:$Port/docs" -ErrorAction SilentlyContinue
     if ($LASTEXITCODE -ne 0) {
         Start-Process "chrome" "--incognito http://localhost:$Port/docs" -ErrorAction SilentlyContinue
+    }
+    if ($ComposeFile -like "*neo4j*") {
+        Write-Host "Opening Neo4j Browser at http://localhost:7474 ..." -ForegroundColor Cyan
+        Start-Process "http://localhost:7474" -ErrorAction SilentlyContinue
     }
     
     Write-Host ""
@@ -80,6 +98,57 @@ function Invoke-EnvironmentDiagnostics {
     } else {
         Write-Host "$diagnosticsScript not found" -ForegroundColor Yellow
     }
+}
+
+function Invoke-DockerComposeDown {
+    param(
+        [string]$ComposeFile
+    )
+    
+    Write-Host "Stopping and removing containers..." -ForegroundColor Yellow
+    Write-Host "   Using compose file: $ComposeFile" -ForegroundColor Gray
+    Write-Host ""
+    docker compose --env-file .env -f $ComposeFile down
+    Write-Host ""
+    Write-Host "Containers stopped and removed" -ForegroundColor Green
+}
+
+function Start-BackendNoCache {
+    param(
+        [string]$Port,
+        [string]$ComposeFile
+    )
+    
+    Write-Host "Starting backend directly (with --no-cache)..." -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Green
+    Write-Host "  API will be accessible at:" -ForegroundColor Cyan
+    Write-Host "  http://localhost:$Port/docs" -ForegroundColor Yellow
+    Write-Host "========================================" -ForegroundColor Green
+    if ($ComposeFile -like "*neo4j*") {
+        Write-Host "  Neo4j Browser will be accessible at:" -ForegroundColor Cyan
+        Write-Host "  http://localhost:7474" -ForegroundColor Yellow
+        Write-Host "========================================" -ForegroundColor Green
+    }
+    Write-Host ""
+    Write-Host "Press ENTER to open the API documentation in your browser..." -ForegroundColor Yellow
+    Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
+    $null = Read-Host
+    
+    # Open browser in incognito/private mode
+    Write-Host "Opening browser..." -ForegroundColor Cyan
+    Start-Process "msedge" "--inprivate http://localhost:$Port/docs" -ErrorAction SilentlyContinue
+    if ($LASTEXITCODE -ne 0) {
+        Start-Process "chrome" "--incognito http://localhost:$Port/docs" -ErrorAction SilentlyContinue
+    }
+    if ($ComposeFile -like "*neo4j*") {
+        Write-Host "Opening Neo4j Browser at http://localhost:7474 ..." -ForegroundColor Cyan
+        Start-Process "http://localhost:7474" -ErrorAction SilentlyContinue
+    }
+    
+    Write-Host ""
+    docker compose --env-file .env -f $ComposeFile build --no-cache
+    docker compose --env-file .env -f $ComposeFile up
 }
 
 function Build-ProductionImage {
@@ -113,16 +182,18 @@ function Show-MainMenu {
     $hasCognito = [bool](Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue)
     Write-Host "Choose an option:" -ForegroundColor Yellow
     Write-Host "1) Start backend directly (docker compose up)" -ForegroundColor Gray
-    Write-Host "2) Open Dependency Management only" -ForegroundColor Gray
-    Write-Host "3) Both - Dependency Management and then start backend" -ForegroundColor Gray
-    Write-Host "4) Run Docker/Build Diagnostics" -ForegroundColor Gray
-    Write-Host "5) Configure AWS Cognito" -ForegroundColor Gray
-    Write-Host "6) Build Production Docker Image" -ForegroundColor Gray
-    Write-Host "7) Setup CI/CD Pipeline" -ForegroundColor Gray
-    Write-Host "8) Bump release version for docker image" -ForegroundColor Gray
-    Write-Host "9) Exit" -ForegroundColor Gray
+    Write-Host "2) Start backend with --no-cache (fixes caching issues)" -ForegroundColor Gray
+    Write-Host "3) Docker Compose Down (stop and remove containers)" -ForegroundColor Gray
+    Write-Host "4) Open Dependency Management only" -ForegroundColor Gray
+    Write-Host "5) Both - Dependency Management and then start backend" -ForegroundColor Gray
+    Write-Host "6) Run Docker/Build Diagnostics" -ForegroundColor Gray
+    Write-Host "7) Configure AWS Cognito" -ForegroundColor Gray
+    Write-Host "8) Build Production Docker Image" -ForegroundColor Gray
+    Write-Host "9) Setup CI/CD Pipeline" -ForegroundColor Gray
+    Write-Host "10) Bump release version for docker image" -ForegroundColor Gray
+    Write-Host "11) Exit" -ForegroundColor Gray
     Write-Host ""
-    $choice = Read-Host "Your choice (1-9)"
+    $choice = Read-Host "Your choice (1-11)"
 
     $summary = $null
     $exitCode = 0
@@ -133,19 +204,27 @@ function Show-MainMenu {
             $summary = "Backend start triggered (docker compose up)"
         }
         "2" {
+            Start-BackendNoCache -Port $Port -ComposeFile $ComposeFile
+            $summary = "Backend start with --no-cache triggered"
+        }
+        "3" {
+            Invoke-DockerComposeDown -ComposeFile $ComposeFile
+            $summary = "Docker Compose Down executed"
+        }
+        "4" {
             Start-DependencyManagement
             Write-Host "To start the backend, run: docker compose -f $ComposeFile up --build" -ForegroundColor Yellow
             $summary = "Dependency Management executed"
         }
-        "3" {
+        "5" {
             Start-DependencyAndBackend -Port $Port -ComposeFile $ComposeFile
             $summary = "Dependency Management and backend start executed"
         }
-        "4" {
+        "6" {
             Invoke-EnvironmentDiagnostics
             $summary = "Docker/Build diagnostics launched"
         }
-        "5" {
+        "7" {
             if ($hasCognito) {
                 Invoke-CognitoSetup
                 $summary = "AWS Cognito setup executed"
@@ -156,19 +235,19 @@ function Show-MainMenu {
                 $exitCode = 1
             }
         }
-        "6" {
+        "8" {
             Build-ProductionImage
             $summary = "Production Docker image build triggered"
         }
-        "7" {
+        "9" {
             Start-CICDSetup
             $summary = "CI/CD setup started"
         }
-        "8" {
+        "10" {
             Update-ImageVersion
             $summary = "IMAGE_VERSION updated"
         }
-        "9" {
+        "11" {
             Write-Host "Exiting script." -ForegroundColor Cyan
             exit 0
         }

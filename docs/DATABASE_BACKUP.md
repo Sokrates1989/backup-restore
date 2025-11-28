@@ -1,6 +1,6 @@
 ## Database Backup and Restore
 
-This template includes a complete backup and restore system with API endpoints for SQL databases (PostgreSQL, MySQL, SQLite).
+This service includes a complete backup and restore system with API endpoints for SQL databases (PostgreSQL, MySQL, SQLite) and Neo4j.
 
 ## Features
 
@@ -300,9 +300,9 @@ curl -X DELETE "http://localhost:8081/backup/delete/backup_postgresql_20241110_1
 
 Backups are stored in the `backups/` directory at the project root.
 
-**Volume Mount:** The backups directory is mounted as a Docker volume, making backups accessible on the host system at:
+**Volume Mount:** The `backups/` directory is typically mounted as a Docker volume, making backups accessible on the host system at, for example:
 ```
-d:\Development\Code\python\python-api-template\backups\
+/path/to/backup-restore/backups/
 ```
 
 ### File Types

@@ -86,6 +86,49 @@ handle_environment_diagnostics() {
     fi
 }
 
+handle_docker_compose_down() {
+    local compose_file="$1"
+    
+    echo "🛑 Stoppe und entferne Container..."
+    echo "   Using compose file: $compose_file"
+    echo ""
+    docker compose --env-file .env -f "$compose_file" down
+    echo ""
+    echo "✅ Container gestoppt und entfernt"
+}
+
+handle_backend_start_no_cache() {
+    local port="$1"
+    local compose_file="$2"
+    
+    echo "🚀 Starte Backend direkt (mit --no-cache)..."
+    echo ""
+    echo "========================================"
+    echo "  API will be accessible at:"
+    echo "  http://localhost:$port/docs"
+    echo "========================================"
+    echo ""
+    echo "Press ENTER to open the API documentation in your browser..."
+    echo "(The API may take a few seconds to start. Please refresh the page if needed.)"
+    read -r
+    
+    # Open browser in incognito/private mode
+    echo "Opening browser..."
+    if command -v xdg-open &> /dev/null; then
+        xdg-open "http://localhost:$port/docs" &
+    elif command -v open &> /dev/null; then
+        open -na "Google Chrome" --args --incognito "http://localhost:$port/docs" 2>/dev/null || \
+        open -na "Safari" --args --private "http://localhost:$port/docs" 2>/dev/null || \
+        open "http://localhost:$port/docs"
+    else
+        echo "Could not detect browser command. Please open manually: http://localhost:$port/docs"
+    fi
+    
+    echo ""
+    docker compose --env-file .env -f "$compose_file" build --no-cache
+    docker compose --env-file .env -f "$compose_file" up
+}
+
 handle_build_production_image() {
     echo "🏗️  Building production Docker image..."
     echo ""
@@ -124,17 +167,19 @@ show_main_menu() {
     while true; do
         echo "Wähle eine Option:"
         echo "1) Backend direkt starten (docker compose up)"
-        echo "2) Nur Dependency Management öffnen"
-        echo "3) Beides - Dependency Management und dann Backend starten"
-        echo "4) Docker/Build Diagnose ausführen"
-        echo "5) AWS Cognito konfigurieren"
-        echo "6) Production Docker Image bauen"
-        echo "7) CI/CD Pipeline einrichten"
-        echo "8) Bump release version for docker image"
-        echo "9) Skript beenden"
+        echo "2) Backend starten mit --no-cache (behebt Caching-Probleme)"
+        echo "3) Docker Compose Down (Container stoppen und entfernen)"
+        echo "4) Nur Dependency Management öffnen"
+        echo "5) Beides - Dependency Management und dann Backend starten"
+        echo "6) Docker/Build Diagnose ausführen"
+        echo "7) AWS Cognito konfigurieren"
+        echo "8) Production Docker Image bauen"
+        echo "9) CI/CD Pipeline einrichten"
+        echo "10) Bump release version for docker image"
+        echo "11) Skript beenden"
         echo ""
 
-        read -p "Deine Wahl (1-9): " choice
+        read -p "Deine Wahl (1-11): " choice
 
         case $choice in
           1)
@@ -143,22 +188,32 @@ show_main_menu() {
             break
             ;;
           2)
+            handle_backend_start_no_cache "$port" "$compose_file"
+            summary_msg="Backend start mit --no-cache ausgelöst"
+            break
+            ;;
+          3)
+            handle_docker_compose_down "$compose_file"
+            summary_msg="Docker Compose Down ausgeführt"
+            break
+            ;;
+          4)
             handle_dependency_management
             echo "💡 Um das Backend zu starten, führe aus: docker compose -f $compose_file up --build"
             summary_msg="Dependency Management ausgeführt"
             break
             ;;
-          3)
+          5)
             handle_dependency_and_backend "$port" "$compose_file"
             summary_msg="Dependency Management und Backendstart ausgeführt"
             break
             ;;
-          4)
+          6)
             handle_environment_diagnostics
             summary_msg="Docker/Build Diagnose gestartet"
             break
             ;;
-          5)
+          7)
             if [ $has_cognito -eq 1 ]; then
                 run_cognito_setup
                 echo ""
@@ -171,22 +226,22 @@ show_main_menu() {
             fi
             break
             ;;
-          6)
+          8)
             handle_build_production_image
             summary_msg="Production Docker Image Build ausgeführt"
             break
             ;;
-          7)
+          9)
             handle_cicd_setup
             summary_msg="CI/CD Setup ausgeführt"
             break
             ;;
-          8)
+          10)
             update_image_version
             summary_msg="IMAGE_VERSION aktualisiert"
             break
             ;;
-          9)
+          11)
             echo "👋 Skript wird beendet."
             exit 0
             ;;

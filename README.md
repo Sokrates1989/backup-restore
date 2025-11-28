@@ -184,35 +184,30 @@ exit
 ## 📁 Project Structure
 
 ```
-python-api-template/
+backup-restore/
 ├── app/                          # Main application code
 │   ├── api/                      # API layer
-│   │   ├── routes/              # Route handlers
-│   │   ├── schemas/             # Pydantic request/response models
-│   │   └── settings.py          # Configuration
-│   ├── backend/                  # Backend layer
-│   │   └── database/            # Database handlers
-│   │       ├── base.py          # Abstract base class
-│   │       ├── factory.py       # Database factory
-│   │       ├── neo4j_handler.py # Neo4j implementation
-│   │       ├── sql_handler.py   # SQL implementation
-│   │       ├── init_db.py       # Initialization
-│   │       └── queries.py       # Query helpers
-│   ├── models/                   # Data models
-│   │   └── example_sql_models.py
-│   ├── mounted_data/             # Example data for volume mounts
-│   └── main.py                   # FastAPI application entrypoint
-├── docs/                         # Documentation
-│   ├── DATABASE.md              # Database guide
-│   ├── QUICK_START.md           # Quick start guide
-│   └── README-DE.md             # German README
-├── python-dependency-management/ # Dockerized dependency management tools
-├── .env.template                # Environment variable template
-├── docker-compose.yml           # Docker services configuration
-├── Dockerfile                   # Docker build file
-├── pyproject.toml              # Project metadata and dependencies
-├── quick-start.sh              # Smart onboarding script
-└── manage-python-project-dependencies.sh # Dependency management
+│   │   ├── routes/              # Backup/restore endpoints
+│   │   │   ├── sql_backup.py    # SQL backup & restore API
+│   │   │   └── neo4j_backup.py  # Neo4j backup & restore API
+│   │   └── settings.py          # Configuration (via pydantic-settings)
+│   ├── backend/                 # Backend layer
+│   │   └── services/            # Backup/restore implementations
+│   │       ├── sql/             # SQL backup service implementation
+│   │       │   └── backup_service.py
+│   │       └── neo4j/           # Neo4j backup service implementation
+│   │           └── backup_service.py
+│   ├── models/                  # Shared models (if needed)
+│   ├── mounted_data/            # Example data for testing
+│   └── main.py                  # FastAPI application entrypoint
+├── docs/                        # Documentation for this service
+├── backups/                     # Local backup directory (mounted into the container)
+├── local-deployment/           # Docker Compose files for local runs
+├── .env.template               # Environment variable template
+├── docker-compose.yml          # Base Docker services configuration
+├── Dockerfile                  # Docker build file
+├── pyproject.toml             # Project metadata and dependencies
+└── quick-start.sh / .ps1      # Smart onboarding scripts
 ```
 
 ## ⚙️ Configuration

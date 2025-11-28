@@ -5,7 +5,7 @@ Clear explanation of the project structure and how everything fits together.
 ## Directory Structure
 
 ```
-python-api-template/
+backup-restore/
 ├── app/                              # Application code
 │   ├── api/                          # 🌐 API Layer (HTTP)
 │   │   ├── routes/                   # Route handlers

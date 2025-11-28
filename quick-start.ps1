@@ -7,6 +7,14 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $setupDir = Join-Path $scriptDir "setup"
 
+# Ensure a unique Docker Compose project name per repository to avoid clashes.
+$composeProjectName = Split-Path $scriptDir -Leaf
+if (-not $composeProjectName) {
+    $composeProjectName = "backup-restore-local"
+}
+$env:COMPOSE_PROJECT_NAME = $composeProjectName
+Write-Host "Using Docker Compose project: $composeProjectName" -ForegroundColor Gray
+
 # Import modules
 Import-Module "$setupDir\modules\docker_helpers.ps1" -Force
 Import-Module "$setupDir\modules\version_manager.ps1" -Force
