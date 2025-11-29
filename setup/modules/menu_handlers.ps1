@@ -135,17 +135,11 @@ function Invoke-SetupWizard {
         Write-Host ".setup-complete was not found, continuing." -ForegroundColor Gray
     }
 
-    $projectRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-    $quickStart = Join-Path $projectRoot "quick-start.ps1"
-
-    if (-not (Test-Path $quickStart)) {
-        Write-Host "quick-start.ps1 not found at $quickStart" -ForegroundColor Red
-        return 1
-    }
-
-    Write-Host "Restarting quick-start.ps1 so you can walk through the wizard again..." -ForegroundColor Cyan
-    & $quickStart
-    return $LASTEXITCODE
+    Write-Host "" 
+    Write-Host "Now re-run quick-start to start the wizard again:" -ForegroundColor Cyan
+    Write-Host "  Windows: .\quick-start.ps1" -ForegroundColor Gray
+    Write-Host "  Mac/Linux: ./quick-start.sh" -ForegroundColor Gray
+    return 0
 }
 
 function Invoke-DockerComposeDown {
