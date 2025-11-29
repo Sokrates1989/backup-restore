@@ -18,12 +18,6 @@ source "${SETUP_DIR}/modules/docker_helpers.sh"
 source "${SETUP_DIR}/modules/version_manager.sh"
 source "${SETUP_DIR}/modules/menu_handlers.sh"
 
-# Source Cognito setup script if available
-if [ -f "${SETUP_DIR}/modules/cognito_setup.sh" ]; then
-    # shellcheck disable=SC1091
-    source "${SETUP_DIR}/modules/cognito_setup.sh"
-fi
-
 echo "🚀 FastAPI Redis API Test - Quick Start"
 echo "======================================"
 
@@ -45,37 +39,49 @@ if [ ! -f .setup-complete ]; then
     echo "  • Docker Image-Name und Version"
     echo "  • Python-Version"
     echo "  • Datenbanktyp (PostgreSQL oder Neo4j)"
-    echo "  • Datenbankmodus (lokal oder extern)"
+    echo "  • ob eine lokale Datenbank in Docker gestartet werden soll oder nur die API (externe DB)"
     echo "  • API-Konfiguration"
     echo ""
     
+    EXISTING_ENV_BEFORE_PROMPT=false
+    if [ -f .env ]; then
+        EXISTING_ENV_BEFORE_PROMPT=true
+    fi
+    
     read -p "Setup-Assistenten jetzt ausführen? (Y/n): " runSetup
-    if [[ ! "$runSetup" =~ ^[Nn]$ ]]; then
+    if [[ "$runSetup" =~ ^[Yy]$ ]]; then
         echo ""
-        echo "Starte Setup-Assistenten..."
+        echo "Running interactive setup wizard..."
         docker compose -f setup/docker-compose.setup.yml run --rm setup
         echo ""
-        if declare -F run_cognito_setup >/dev/null; then
-            run_cognito_setup
-            echo ""
-        fi
     else
         echo ""
-        echo "Setup-Assistent übersprungen. Erstelle einfache .env aus Vorlage..."
-        if [ -f setup/.env.template ]; then
-            cp setup/.env.template .env
-            echo "✅ .env wurde aus Vorlage erstellt."
-            echo "⚠️  Bitte bearbeite .env, um deine Umgebung zu konfigurieren, bevor du fortfährst."
-            if declare -F run_cognito_setup >/dev/null; then
-                run_cognito_setup
-                echo ""
+        if [ "$EXISTING_ENV_BEFORE_PROMPT" = true ]; then
+            echo "Skipping setup wizard. Existing .env detected, keeping current values."
+        else
+            echo "Skipping setup wizard. Creating basic .env from template..."
+            if [ -f setup/.env.template ]; then
+                cp setup/.env.template .env
+                echo "✅ .env created from template."
+                echo "⚠️  Please edit .env to configure your environment before continuing."
+            else
+                echo "❌ setup/.env.template not found!"
+                exit 1
+            fi
+        fi
+
+        if [ -f .env ]; then
+            read -p "Detected .env. Re-create .setup-complete now and skip the wizard? (y/N): " recreate_setup
+            if [[ "$recreate_setup" =~ ^[Yy]$ ]]; then
+                touch .setup-complete
+                echo ".setup-complete recreated from existing .env."
             fi
         else
-            echo "❌ setup/.env.template nicht gefunden!"
-            exit 1
+            echo "No .env detected, so .setup-complete cannot be recreated automatically."
         fi
     fi
     echo ""
+fi
 elif [ ! -f .env ]; then
     # Setup complete but .env missing - recreate from template
     echo "⚠️  .env Datei fehlt. Erstelle aus Vorlage..."
@@ -83,10 +89,6 @@ elif [ ! -f .env ]; then
         cp setup/.env.template .env
         echo "✅ .env wurde aus Vorlage erstellt."
         echo "Bitte prüfe die Werte in .env bei Bedarf."
-        if declare -F run_cognito_setup >/dev/null; then
-            run_cognito_setup
-            echo ""
-        fi
     else
         echo "❌ setup/.env.template nicht gefunden!"
         exit 1
@@ -123,7 +125,7 @@ echo ""
 
 # Prüfen, ob dies der erste Setup-Lauf ist
 if [ ! -f ".setup-complete" ]; then
-    echo "🎯 First setup detected!"
+    echo "🎯 First-time setup detected!"
     echo ""
     echo "Would you like to run optional diagnostics and dependency checks?"
     echo "  This can take 1-2 minutes but helps validate your configuration."

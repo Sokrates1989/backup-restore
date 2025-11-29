@@ -6,12 +6,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SETUP_DIR="${SCRIPT_DIR}"  # Save original SCRIPT_DIR before sourcing
-if [ -f "${SETUP_DIR}/modules/cognito_setup.sh" ]; then
-    # shellcheck disable=SC1091
-    source "${SETUP_DIR}/modules/cognito_setup.sh"
-fi
-SCRIPT_DIR="${SETUP_DIR}"  # Restore SCRIPT_DIR after sourcing
+SETUP_DIR="${SCRIPT_DIR}"
 
 echo "🚀 Python API Template - Initial Setup"
 echo "======================================"
@@ -223,16 +218,6 @@ sed -i "s|^DEBUG=.*|DEBUG=$DEBUG|" .env
 
 echo "✅ API will run on port $PORT"
 echo ""
-
-# =============================================================================
-# OPTIONAL: AWS COGNITO CONFIGURATION
-# =============================================================================
-if declare -F run_cognito_setup >/dev/null; then
-    if ! run_cognito_setup; then
-        echo "⚠️  AWS Cognito configuration skipped or failed. You can configure it later via quick-start scripts."
-        echo ""
-    fi
-fi
 
 # =============================================================================
 # SUMMARY

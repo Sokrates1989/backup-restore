@@ -108,13 +108,42 @@ handle_dependency_and_backend() {
 }
 
 handle_environment_diagnostics() {
-    echo "🔍 Starte Systemdiagnose für Docker-Setup..."
+    echo "🔍 Running Docker/build diagnostics..."
     local diagnostics_script="python-dependency-management/scripts/run-docker-build-diagnostics.sh"
     if [ -f "$diagnostics_script" ]; then
-        ./"$diagnostics_script"
+        ./$diagnostics_script
     else
         echo "❌ $diagnostics_script not found"
     fi
+}
+
+handle_rerun_setup_wizard() {
+    echo "🔁 Re-running the interactive setup wizard"
+    echo ""
+    echo "To launch the wizard again, delete the .setup-complete file and restart quick-start."
+    echo "The wizard automatically backs up your current .env before writing a new one."
+    echo ""
+
+    if [ ! -f .setup-complete ]; then
+        echo ".setup-complete is already missing. The next quick-start run will start the wizard automatically."
+    fi
+
+    read -p "Delete .setup-complete and restart ./quick-start.sh now? (y/N): " rerun_choice
+    if [[ ! "$rerun_choice" =~ ^[Yy]$ ]]; then
+        echo "No changes were made. Remove .setup-complete manually and run ./quick-start.sh when you're ready."
+        return 1
+    fi
+
+    if [ -f .setup-complete ]; then
+        rm -f .setup-complete
+        echo ".setup-complete removed."
+    else
+        echo ".setup-complete was not found, continuing."
+    fi
+
+    echo "Restarting ./quick-start.sh so you can walk through the wizard again..."
+    ./quick-start.sh
+    exit $?
 }
 
 handle_docker_compose_down() {
@@ -177,11 +206,6 @@ show_main_menu() {
     local port="$1"
     local compose_file="$2"
 
-    local has_cognito=0
-    if declare -F run_cognito_setup >/dev/null; then
-        has_cognito=1
-    fi
-
     local summary_msg=""
     local exit_code=0
     local choice
@@ -194,11 +218,11 @@ show_main_menu() {
         echo "4) Nur Dependency Management öffnen"
         echo "5) Beides - Dependency Management und dann Backend starten"
         echo "6) Docker/Build Diagnose ausführen"
-        echo "7) AWS Cognito konfigurieren"
-        echo "8) Production Docker Image bauen"
-        echo "9) CI/CD Pipeline einrichten"
-        echo "10) Bump release version for docker image"
-        echo "11) Skript beenden"
+        echo "7) Production Docker Image bauen"
+        echo "8) CI/CD Pipeline einrichten"
+        echo "9) Bump release version for docker image"
+        echo "10) Re-run setup wizard"
+        echo "11) Exit"
         echo ""
 
         read -p "Deine Wahl (1-11): " choice
@@ -236,31 +260,23 @@ show_main_menu() {
             break
             ;;
           7)
-            if [ $has_cognito -eq 1 ]; then
-                run_cognito_setup
-                echo ""
-                summary_msg="AWS Cognito Setup ausgeführt"
-            else
-                echo "⚠️  AWS Cognito Modul wurde nicht geladen."
-                echo "    Bitte stelle sicher, dass setup/modules/cognito_setup.sh eingebunden ist."
-                summary_msg="AWS Cognito Setup konnte nicht ausgeführt werden"
-                exit_code=1
-            fi
-            break
-            ;;
-          8)
             handle_build_production_image
             summary_msg="Production Docker Image Build ausgeführt"
             break
             ;;
-          9)
+          8)
             handle_cicd_setup
             summary_msg="CI/CD Setup ausgeführt"
             break
             ;;
-          10)
+          9)
             update_image_version
             summary_msg="IMAGE_VERSION aktualisiert"
+            break
+            ;;
+          10)
+            handle_rerun_setup_wizard
+            summary_msg="Setup wizard restarted"
             break
             ;;
           11)

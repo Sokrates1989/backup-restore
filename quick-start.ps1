@@ -20,12 +20,6 @@ Import-Module "$setupDir\modules\docker_helpers.ps1" -Force
 Import-Module "$setupDir\modules\version_manager.ps1" -Force
 Import-Module "$setupDir\modules\menu_handlers.ps1" -Force
 
-# Source Cognito setup script if available
-$cognitoScript = Join-Path $setupDir "modules\cognito_setup.ps1"
-if (Test-Path $cognitoScript) {
-    . $cognitoScript
-}
-
 Write-Host "FastAPI Redis API Test - Quick Start" -ForegroundColor Cyan
 Write-Host "======================================" -ForegroundColor Cyan
 Write-Host ""
@@ -38,7 +32,9 @@ Write-Host ""
 
 # Check if initial setup is needed
 if (-not (Test-Path .setup-complete)) {
+    $existingEnvBeforePrompt = Test-Path .env
     Write-Host " First-time setup detected!" -ForegroundColor Cyan
+
     Write-Host ""
     Write-Host "This appears to be your first time running this project." -ForegroundColor Yellow
     Write-Host "Would you like to run the interactive setup wizard?" -ForegroundColor Yellow
@@ -55,6 +51,7 @@ if (-not (Test-Path .setup-complete)) {
     if ($runSetup -match "^[Yy]$") {
         Write-Host ""
         Write-Host "Starting setup wizard..." -ForegroundColor Cyan
+
         docker compose -f setup/docker-compose.setup.yml run --rm setup
         if ($LASTEXITCODE -ne 0) {
             Write-Host "Setup wizard failed inside Docker (exit code: $LASTEXITCODE)." -ForegroundColor Red
@@ -70,35 +67,45 @@ if (-not (Test-Path .setup-complete)) {
                 Copy-Item setup\.env.template .env
                 Write-Host ".env file created from template." -ForegroundColor Green
                 Write-Host "  Please edit .env to configure your environment before continuing." -ForegroundColor Yellow
-                if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
-                    Invoke-CognitoSetup
-                    Write-Host "" -ForegroundColor Gray
-                }
             } else {
                 Write-Host "[ERROR] setup\.env.template not found!" -ForegroundColor Red
                 exit 1
             }
         } else {
             Write-Host ""
-            if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
-                Invoke-CognitoSetup
-                Write-Host "" -ForegroundColor Gray
+            if (Test-Path setup\.env.template) {
+                Copy-Item setup\.env.template .env
+                Write-Host ".env file created from template." -ForegroundColor Green
+                Write-Host "  Please edit .env to configure your environment before continuing." -ForegroundColor Yellow
+            } else {
+                Write-Host "[ERROR] setup\.env.template not found!" -ForegroundColor Red
+                exit 1
             }
         }
     } else {
         Write-Host ""
-        Write-Host "Skipping setup wizard. Creating basic .env from template..." -ForegroundColor Yellow
-        if (Test-Path setup\.env.template) {
-            Copy-Item setup\.env.template .env
-            Write-Host ".env file created from template." -ForegroundColor Green
-            Write-Host "  Please edit .env to configure your environment before continuing." -ForegroundColor Yellow
-            if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
-                Invoke-CognitoSetup
-                Write-Host "" -ForegroundColor Gray
+        if ($existingEnvBeforePrompt) {
+            Write-Host "Skipping setup wizard. Existing .env detected, keeping current values." -ForegroundColor Yellow
+        } else {
+            Write-Host "Skipping setup wizard. Creating basic .env from template..." -ForegroundColor Yellow
+            if (Test-Path setup\.env.template) {
+                Copy-Item setup\.env.template .env -Force
+                Write-Host ".env file created from template." -ForegroundColor Green
+                Write-Host "  Please edit .env to configure your environment before continuing." -ForegroundColor Yellow
+            } else {
+                Write-Host "[ERROR] setup\.env.template not found!" -ForegroundColor Red
+                exit 1
+            }
+        }
+
+        if (Test-Path .env) {
+            $recreateSetupFlag = Read-Host "Detected .env. Re-create .setup-complete now and skip the wizard? (y/N)"
+            if ($recreateSetupFlag -match "^[Yy]$") {
+                New-Item -ItemType File -Path .setup-complete -Force | Out-Null
+                Write-Host ".setup-complete recreated from existing .env." -ForegroundColor Green
             }
         } else {
-            Write-Host "[ERROR] setup\.env.template not found!" -ForegroundColor Red
-            exit 1
+            Write-Host "No .env detected, so .setup-complete cannot be recreated automatically." -ForegroundColor Yellow
         }
     }
     Write-Host ""
@@ -109,10 +116,6 @@ if (-not (Test-Path .setup-complete)) {
         Copy-Item setup\.env.template .env
         Write-Host ".env file created from template." -ForegroundColor Green
         Write-Host "Please check the values in .env if needed." -ForegroundColor Yellow
-        if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
-            Invoke-CognitoSetup
-            Write-Host "" -ForegroundColor Gray
-        }
     } else {
         Write-Host "[ERROR] setup\.env.template not found!" -ForegroundColor Red
         exit 1
