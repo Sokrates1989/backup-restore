@@ -133,10 +133,9 @@ $DB_MODE = Get-EnvVariable -VariableName "DB_MODE" -EnvFile ".env" -DefaultValue
 # Determine Docker Compose file based on DB_TYPE and DB_MODE
 $COMPOSE_FILE = Get-ComposeFile -DbType $DB_TYPE -DbMode $DB_MODE
 
-if ($DB_MODE -eq "external") {
-    Write-Host "Detected external database mode" -ForegroundColor Cyan
+if ($DB_MODE -eq "standalone") {
+    Write-Host "Detected standalone database mode (API-only, no local DB container)" -ForegroundColor Cyan
     Write-Host "   Database Type: $DB_TYPE" -ForegroundColor Gray
-    Write-Host "   Will connect to external database (no local DB container)" -ForegroundColor Gray
 } elseif ($DB_TYPE -eq "neo4j") {
     Write-Host "Detected local Neo4j database" -ForegroundColor Cyan
     Write-Host "   Will start Neo4j container" -ForegroundColor Gray

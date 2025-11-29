@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     
     # Database Type Configuration
     DB_TYPE: Literal["neo4j", "postgresql", "mysql", "sqlite"] = "neo4j"
-    DB_MODE: Literal["local", "external"] = "local"
+    DB_MODE: Literal["local", "standalone"] = "local"
 
     # Neo4j Configuration
     NEO4J_URL: str = ""

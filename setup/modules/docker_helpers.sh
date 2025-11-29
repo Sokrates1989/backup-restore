@@ -48,7 +48,7 @@ determine_compose_file() {
     local db_type="$1"
     local db_mode="$2"
     
-    if [ "$db_mode" = "external" ]; then
+    if [ "$db_mode" = "standalone" ]; then
         echo "local-deployment/docker-compose.yml"
     elif [ "$db_type" = "neo4j" ]; then
         echo "local-deployment/docker-compose.neo4j.yml"

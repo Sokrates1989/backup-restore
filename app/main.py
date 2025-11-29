@@ -62,6 +62,10 @@ app.openapi = custom_openapi
 @app.on_event("startup")
 async def startup_event():
     """Initialize database connection and run migrations on startup."""
+    if settings.DB_MODE == "standalone":
+        print("DB_MODE=standalone - skipping internal database initialization and migrations.")
+        return
+
     try:
         await initialize_database()
         # Run database migrations automatically

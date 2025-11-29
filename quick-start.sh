@@ -106,10 +106,9 @@ DB_MODE=$(read_env_variable "DB_MODE" ".env" "local")
 # Docker Compose Datei basierend auf DB_TYPE und DB_MODE bestimmen
 COMPOSE_FILE=$(determine_compose_file "$DB_TYPE" "$DB_MODE")
 
-if [ "$DB_MODE" = "external" ]; then
-    echo "🔌 Detected external database mode"
+if [ "$DB_MODE" = "standalone" ]; then
+    echo "🔌 Detected standalone database mode (API-only, no local DB container)"
     echo "   Database Type: $DB_TYPE"
-    echo "   Will connect to external database (no local DB container)"
 elif [ "$DB_TYPE" = "neo4j" ]; then
     echo "🗄️  Detected local Neo4j database"
     echo "   Will start Neo4j container"

@@ -58,9 +58,9 @@ DB_TYPE=$(grep "^DB_TYPE=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo
 DB_MODE=$(grep "^DB_MODE=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo "local")
 
 # Determine compose file
-if [ "$DB_MODE" = "external" ]; then
+if [ "$DB_MODE" = "standalone" ]; then
     COMPOSE_FILE="local-deployment/docker-compose.yml"
-    echo "🔌 Using external $DB_TYPE database"
+    echo "🔌 Using standalone $DB_TYPE mode (API-only, no local DB container)"
 elif [ "$DB_TYPE" = "neo4j" ]; then
     COMPOSE_FILE="local-deployment/docker-compose.neo4j.yml"
     echo "🗄️  Using local Neo4j database"

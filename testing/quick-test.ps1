@@ -73,9 +73,9 @@ if (Test-Path .env) {
 }
 
 # Determine compose file
-if ($DB_MODE -eq "external") {
+if ($DB_MODE -eq "standalone") {
     $COMPOSE_FILE = "docker\docker-compose.yml"
-    Write-Host "Using external $DB_TYPE database" -ForegroundColor Cyan
+    Write-Host "Using standalone $DB_TYPE mode (API-only, no local DB container)" -ForegroundColor Cyan
 } elseif ($DB_TYPE -eq "neo4j") {
     $COMPOSE_FILE = "docker\docker-compose.neo4j.yml"
     Write-Host "Using local Neo4j database" -ForegroundColor Cyan

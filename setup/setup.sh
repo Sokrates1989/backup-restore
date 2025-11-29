@@ -107,7 +107,7 @@ echo ""
 # Database mode
 echo "Choose database mode:"
 echo "1) Local (Docker container - recommended for development)"
-echo "2) External (existing database server)"
+echo "2) Standalone (existing database server, API-only - no local DB container)"
 echo ""
 
 read -p "Your choice (1-2) [1]: " DB_MODE_CHOICE
@@ -119,8 +119,8 @@ case $DB_MODE_CHOICE in
         echo "✅ Selected: Local Docker database"
         ;;
     2)
-        DB_MODE="external"
-        echo "✅ Selected: External database"
+        DB_MODE="standalone"
+        echo "✅ Selected: Standalone (API-only, connects to existing database)"
         ;;
     *)
         DB_MODE="local"
@@ -194,10 +194,10 @@ if [ "$DB_MODE" = "local" ]; then
     fi
 fi
 
-# External database configuration
-if [ "$DB_MODE" = "external" ]; then
-    echo "⚠️  External database mode selected."
-    echo "Please manually configure the database connection in .env"
+# Standalone database configuration reminder
+if [ "$DB_MODE" = "standalone" ]; then
+    echo "ℹ️  Standalone mode selected (API-only, no local DB container)."
+    echo "Please configure the database connection in .env (e.g. DATABASE_URL or Neo4j settings)."
     echo ""
 fi
 
