@@ -4,6 +4,18 @@
 
 $ErrorActionPreference = "Stop"
 
+# Ensure UTF-8 encoding so emoji/icons render correctly
+try {
+    if ([Console]::OutputEncoding.WebName -ne "utf-8") {
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    }
+    if ([Console]::InputEncoding.WebName -ne "utf-8") {
+        [Console]::InputEncoding = [System.Text.Encoding]::UTF8
+    }
+} catch {
+    Write-Verbose "UTF-8 encoding enforcement skipped: $_"
+}
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $setupDir = Join-Path $scriptDir "setup"
 

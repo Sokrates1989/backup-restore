@@ -6,8 +6,8 @@
 #
 # - Checks Docker installation and availability
 # - Builds the dev Docker image (if needed)
-# - Runs the setup script to generate poetry.lock and pdm.lock
-# - Drops the user into an interactive shell with Poetry and PDM ready to use (default)
+# - Runs the setup script to generate pdm.lock
+# - Drops the user into an interactive shell with PDM ready to use (default)
 # - OR runs initial setup non-interactively with pdm install (initial-run parameter)
 # - All changes persist in your project directory
 
@@ -16,6 +16,18 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# Ensure UTF-8 encoding for emoji-friendly output/input
+try {
+    if ([Console]::OutputEncoding.WebName -ne "utf-8") {
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    }
+    if ([Console]::InputEncoding.WebName -ne "utf-8") {
+        [Console]::InputEncoding = [System.Text.Encoding]::UTF8
+    }
+} catch {
+    Write-Verbose "UTF-8 encoding enforcement skipped: $_"
+}
 
 function Fix-ShellScripts {
     param(
@@ -207,7 +219,7 @@ if ($InitialRun) {
     Write-ColorOutput "  pdm update               # Update all dependencies" "Yellow"
     Write-Host ""
 } else {
-    Write-ColorOutput "Dropping you into an interactive shell with Poetry and PDM ready to use..." "Cyan"
+    Write-ColorOutput "Dropping you into an interactive shell with PDM ready to use..." "Cyan"
     Write-Host ""
     Write-ColorOutput "Common PDM Commands and Use Cases:" "Cyan"
     Write-Host ""

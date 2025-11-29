@@ -1,11 +1,11 @@
 # 🐳 Docker-based Python Dependency Management for Teams
 
-A modern, Docker-based system for Python dependency management that eliminates the need for local installations of Python, pip, PDM, and Poetry.
+A modern, Docker-based system for Python dependency management that eliminates the need for local installations of Python, pip, and PDM.
 
 ## 🎯 Main Benefits
 
 **No local installation required anymore:**
-- ✅ No Python, pip, PDM, Poetry, or pipx needed on local development machines
+- ✅ No Python, pip, PDM, or pipx needed on local development machines
 - ✅ Only Docker required - unified development environment for all team members
 - ✅ Consistent Python 3.13 environment regardless of operating system
 - ✅ Seamless transition: Package Management → Backend start with `docker-compose up`
@@ -21,8 +21,8 @@ A modern, Docker-based system for Python dependency management that eliminates t
 The script automatically performs the following steps:
 - Creates `config.env` from `config.env.example` (if not present)
 - Shows current configuration
-- Builds Docker image with Python 3.13 + PDM + Poetry + uv
-- Generates/updates `pdm.lock` and `poetry.lock`
+- Builds Docker image with Python 3.13 + PDM + uv
+- Generates/updates `pdm.lock`
 - Starts interactive shell with all tools
 
 ### 2. Manage Dependencies
@@ -48,7 +48,6 @@ docker-compose up --build
 
 ### **Modern Tools Integrated:**
 - **PDM** with **uv backend** for lightning-fast dependency resolution
-- **Poetry** available as alternative
 - **uv** for ultra-fast package installation
 - All tools installed isolated via **pipx**
 
@@ -62,7 +61,7 @@ docker-compose up --build
 
 ```
 python-dependency-management/
-├── Dockerfile              # Python 3.13 + PDM + Poetry + uv
+├── Dockerfile              # Python 3.13 + PDM + uv
 ├── docker-compose.yml      # Service definition
 ├── dev-setup.sh           # Initialization + configuration
 ├── config.env.example     # Configuration template
@@ -156,7 +155,7 @@ rm pdm.lock && pdm lock && pdm install
 ### **Consistency:**
 - Identical Python environment for all developers
 - No "works on my machine" problems
-- Unified tool versions (PDM, Poetry, uv)
+- Unified tool versions (PDM and uv)
 
 ### **Onboarding:**
 - New team members only need Docker
@@ -180,7 +179,6 @@ rm pdm.lock && pdm lock && pdm install
 ### **Files are automatically updated:**
 - `pyproject.toml` - Dependency definitions
 - `pdm.lock` - Exact versions for reproducibility
-- `poetry.lock` - If Poetry is used in parallel
 
 ## 🚨 Troubleshooting
 

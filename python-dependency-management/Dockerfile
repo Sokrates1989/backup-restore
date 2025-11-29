@@ -1,8 +1,8 @@
 # Dockerfile for Python Dependency Management Environment
 #
 # This image provides an isolated environment for managing Python project dependencies
-# using Poetry, PDM, uv, and pipx, without requiring any tools to be installed on the host.
-# - Installs Python, pipx, Poetry, PDM, and uv
+# using PDM, uv, and pipx, without requiring any tools to be installed on the host.
+# - Installs Python, pipx, PDM, and uv
 # - Creates a non-root user to match host UID/GID for correct file permissions
 # - Designed to be used with docker-compose and a /workspace volume mount
 # - Intended for interactive use and automation
@@ -39,8 +39,8 @@ ENV PATH=/home/devuser/.local/bin:$PATH
 # Install pipx as the devuser
 RUN pip install --user pipx && pipx ensurepath
 
-# Install Poetry, PDM, and uv globally using pipx
-RUN pipx install poetry && pipx install pdm && pipx install uv
+# Install PDM and uv globally using pipx
+RUN pipx install pdm && pipx install uv
 
 # Configure PDM to use uv as backend by default (can be overridden by config)
 RUN pdm config use_uv true
