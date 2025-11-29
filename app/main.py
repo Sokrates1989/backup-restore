@@ -155,9 +155,16 @@ if settings.DEBUG:
         headers = request.headers
         print(f"🔹 Request headers: {headers}")
 
-        # Read and log the request body
+        # Read and log the request body (handle non-text/binary bodies safely)
         body = await request.body()
-        print(f"🔹 Request body: {body.decode('utf-8') if body else 'No Body'}")
+        if body:
+            try:
+                body_text = body.decode("utf-8")
+            except UnicodeDecodeError:
+                body_text = f"<non-text body: {len(body)} bytes>"
+        else:
+            body_text = "No Body"
+        print(f"🔹 Request body: {body_text}")
 
         response = await call_next(request)
 
