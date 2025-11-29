@@ -33,6 +33,21 @@ def _cleanup_temp_file(path: Path) -> None:
         print(f"Warning: Failed to delete temp file {path}: {e}")
 
 
+def _map_neo4j_exception_to_http(detail_prefix: str, error: Exception) -> HTTPException:
+    """Return HTTP 401 for known Neo4j auth failures, else fall back to 500."""
+    message = str(error)
+    lowered = message.lower()
+    if "neo.clienterror.security.unauthorized" in lowered or "authentication failure" in lowered:
+        return HTTPException(
+            status_code=401,
+            detail=f"{detail_prefix}: {message}",
+        )
+    return HTTPException(
+        status_code=500,
+        detail=f"{detail_prefix}: {message}",
+    )
+
+
 # Pydantic models
 class RestoreResponse(BaseModel):
     """Response model for restore operation."""
@@ -177,7 +192,7 @@ async def download_neo4j_backup(
     except Exception as e:
         if temp_filepath and temp_filepath.exists():
             temp_filepath.unlink()
-        raise HTTPException(status_code=500, detail=f"Backup download failed: {str(e)}")
+        raise _map_neo4j_exception_to_http("Backup download failed", e)
     finally:
         # Always attempt to unlock target API if we previously locked it
         if locked_api and getattr(db_config, "target_api_url", None) and getattr(db_config, "target_api_key", None):
@@ -301,7 +316,7 @@ async def restore_neo4j_from_uploaded_backup(
                     "\u26a0\ufe0f  Warning: restore failed and target API could not be unlocked. "
                     "Please check /database/lock-status on the target service."
                 )
-        raise HTTPException(status_code=500, detail=f"Failed to start restore: {str(e)}")
+        raise _map_neo4j_exception_to_http("Failed to start restore", e)
 
 
 @router.get("/restore-status", response_model=RestoreStatusResponse)
@@ -361,4 +376,4 @@ async def get_neo4j_database_stats(
         return DatabaseStats(**stats)
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get database stats: {str(e)}")
+        raise _map_neo4j_exception_to_http("Failed to get database stats", e)
