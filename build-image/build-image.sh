@@ -156,10 +156,14 @@ fi
 # Get Python version from .env (default to 3.13)
 PYTHON_VERSION="${PYTHON_VERSION:-3.13}"
 
+# Determine target platform for buildx (default to linux/amd64 for Swarm nodes)
+TARGET_PLATFORM="${TARGET_PLATFORM:-linux/amd64}"
+
 echo "📋 Build Configuration:"
 echo "   Image Name:     $IMAGE_NAME"
 echo "   Image Version:  $IMAGE_VERSION"
 echo "   Python Version: $PYTHON_VERSION"
+echo "   Target platform: $TARGET_PLATFORM"
 echo ""
 
 # Ask if user wants to push to registry (only in interactive mode)
@@ -176,6 +180,7 @@ echo "   Tag: $IMAGE_NAME:$IMAGE_VERSION"
 echo ""
 
 docker buildx build \
+    --platform "$TARGET_PLATFORM" \
     --build-arg PYTHON_VERSION="${PYTHON_VERSION}" \
     --build-arg IMAGE_TAG="$IMAGE_VERSION" \
     -t "$IMAGE_NAME:$IMAGE_VERSION" \

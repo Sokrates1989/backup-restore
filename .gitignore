@@ -41,3 +41,6 @@ build/
 # Dependency Management
 python-dependency-management/config.env
 "pyproject 2.toml"
+
+# .DS_Store files of macOS.
+.DS_Store
