@@ -211,75 +211,102 @@ show_main_menu() {
     local choice
 
     while true; do
-        echo "Wähle eine Option:"
-        echo "1) Backend direkt starten (docker compose up)"
-        echo "2) Backend starten mit --no-cache (behebt Caching-Probleme)"
-        echo "3) Docker Compose Down (Container stoppen und entfernen)"
-        echo "4) Nur Dependency Management öffnen"
-        echo "5) Beides - Dependency Management und dann Backend starten"
-        echo "6) Docker/Build Diagnose ausführen"
-        echo "7) Production Docker Image bauen"
-        echo "8) CI/CD Pipeline einrichten"
-        echo "9) Bump release version for docker image"
-        echo "10) Re-run setup wizard"
-        echo "11) Exit"
+        local MENU_NEXT=1
+        local MENU_START=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_START_NO_CACHE=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_START_BOTH=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+
+        local MENU_DOWN=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_DEP_MGMT=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_DIAGNOSTICS=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+
+        local MENU_BUILD=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_CICD=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_BUMP_VERSION=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+
+        local MENU_SETUP=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+
+        local MENU_EXIT=$MENU_NEXT
+
+        echo ""
+        echo "================ Main Menu ================"
+        echo ""
+        echo "Start:"
+        echo "  ${MENU_START}) Backend direkt starten (docker compose up)"
+        echo "  ${MENU_START_NO_CACHE}) Backend starten mit --no-cache (behebt Caching-Probleme)"
+        echo "  ${MENU_START_BOTH}) Beides - Dependency Management und dann Backend starten"
+        echo ""
+        echo "Maintenance:"
+        echo "  ${MENU_DOWN}) Docker Compose Down (Container stoppen und entfernen)"
+        echo "  ${MENU_DEP_MGMT}) Nur Dependency Management öffnen"
+        echo "  ${MENU_DIAGNOSTICS}) Docker/Build Diagnose ausführen"
+        echo ""
+        echo "Build / CI/CD:"
+        echo "  ${MENU_BUILD}) Production Docker Image bauen"
+        echo "  ${MENU_CICD}) CI/CD Pipeline einrichten"
+        echo "  ${MENU_BUMP_VERSION}) Bump release version for docker image"
+        echo ""
+        echo "Setup:"
+        echo "  ${MENU_SETUP}) Re-run setup wizard"
+        echo ""
+        echo "  ${MENU_EXIT}) Exit"
         echo ""
 
-        read -p "Deine Wahl (1-11): " choice
+        read -p "Deine Wahl (1-${MENU_EXIT}): " choice
 
         case $choice in
-          1)
+          ${MENU_START})
             handle_backend_start "$port" "$compose_file"
             summary_msg="Backend start ausgelöst (docker compose up)"
             break
             ;;
-          2)
+          ${MENU_START_NO_CACHE})
             handle_backend_start_no_cache "$port" "$compose_file"
             summary_msg="Backend start mit --no-cache ausgelöst"
             break
             ;;
-          3)
+          ${MENU_START_BOTH})
+            handle_dependency_and_backend "$port" "$compose_file"
+            summary_msg="Dependency Management und Backendstart ausgeführt"
+            break
+            ;;
+          ${MENU_DOWN})
             handle_docker_compose_down "$compose_file"
             summary_msg="Docker Compose Down ausgeführt"
             break
             ;;
-          4)
+          ${MENU_DEP_MGMT})
             handle_dependency_management
             echo "💡 Um das Backend zu starten, führe aus: docker compose -f $compose_file up --build"
             summary_msg="Dependency Management ausgeführt"
             break
             ;;
-          5)
-            handle_dependency_and_backend "$port" "$compose_file"
-            summary_msg="Dependency Management und Backendstart ausgeführt"
-            break
-            ;;
-          6)
+          ${MENU_DIAGNOSTICS})
             handle_environment_diagnostics
             summary_msg="Docker/Build Diagnose gestartet"
             break
             ;;
-          7)
+          ${MENU_BUILD})
             handle_build_production_image
             summary_msg="Production Docker Image Build ausgeführt"
             break
             ;;
-          8)
+          ${MENU_CICD})
             handle_cicd_setup
             summary_msg="CI/CD Setup ausgeführt"
             break
             ;;
-          9)
+          ${MENU_BUMP_VERSION})
             update_image_version
             summary_msg="IMAGE_VERSION aktualisiert"
             break
             ;;
-          10)
+          ${MENU_SETUP})
             handle_rerun_setup_wizard
             summary_msg="Setup wizard restarted"
             break
             ;;
-          11)
+          ${MENU_EXIT})
             echo "👋 Skript wird beendet."
             exit 0
             ;;

@@ -18,6 +18,9 @@ backups/*.db.gz
 backups/*.backup
 backups/*.cypher.gz
 
+# Auto-generated MariaDB-compatible SQL files (created by setup wizard when restoring MySQL 8 backups).
+*__mariadb.sql
+
 # IDE / Editor specific
 .vscode/
 .idea/

@@ -64,24 +64,30 @@ if [ ! -f .setup-complete ]; then
                 cp setup/.env.template .env
                 echo "✅ .env created from template."
                 echo "⚠️  Please edit .env to configure your environment before continuing."
+
+                EDITOR_CMD="${EDITOR:-nano}"
+                if ! command -v "$EDITOR_CMD" >/dev/null 2>&1; then
+                    EDITOR_CMD="vi"
+                fi
+                read -p "Open .env now in $EDITOR_CMD? (Y/n): " open_env
+                if [[ ! "$open_env" =~ ^[Nn]$ ]]; then
+                    "$EDITOR_CMD" .env
+                fi
             else
                 echo "❌ setup/.env.template not found!"
                 exit 1
             fi
         fi
 
-        if [ -f .env ]; then
-            read -p "Detected .env. Re-create .setup-complete now and skip the wizard? (y/N): " recreate_setup
+        if [ "$EXISTING_ENV_BEFORE_PROMPT" = true ]; then
+            read -p "Detected .env existed before prompt. Re-create .setup-complete now and skip the wizard? (y/N): " recreate_setup
             if [[ "$recreate_setup" =~ ^[Yy]$ ]]; then
                 touch .setup-complete
                 echo ".setup-complete recreated from existing .env."
             fi
-        else
-            echo "No .env detected, so .setup-complete cannot be recreated automatically."
         fi
     fi
     echo ""
-fi
 elif [ ! -f .env ]; then
     # Setup complete but .env missing - recreate from template
     echo "⚠️  .env Datei fehlt. Erstelle aus Vorlage..."

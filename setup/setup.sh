@@ -25,7 +25,9 @@ fi
 
 # Backup existing .env if it exists
 if [ -f .env ]; then
-    BACKUP_FILE=".env.backup.$(date +%Y%m%d_%H%M%S)"
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    mkdir -p "backup/env"
+    BACKUP_FILE="backup/env/.env.${TIMESTAMP}"
     cp .env "$BACKUP_FILE"
     echo "📋 Backed up existing .env to $BACKUP_FILE"
     echo ""

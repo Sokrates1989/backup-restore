@@ -1,0 +1,134 @@
+name: 🚀 CI/CD Pipeline (disabled)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  disabled:
+    runs-on: ubuntu-latest
+    steps:
+      - name: CI/CD disabled placeholder
+        run: echo "CI/CD is currently disabled in main.yml. Implement jobs later."
+
+  build-and-push:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+
+    steps:
+      - name: ⬇️ Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🧪 Load CI Environment Variables
+        run: |
+          while IFS='=' read -r key value; do
+            [ -z "$key" ] && continue
+            echo "$key=$value" >> $GITHUB_ENV
+          done < .ci.env
+
+      - name: 🐳 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🔐 Docker Login
+        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+      - name: 🚀 Build & Push Image
+        run: |
+          TAGS="-t $IMAGE_NAME:$IMAGE_VERSION"
+          if [ "$IMAGE_VERSION" != "latest" ]; then
+            TAGS="$TAGS -t $IMAGE_NAME:latest"
+          fi
+
+          BUILD_ARGS=""
+          if [ -f Dockerfile ] && grep -qE '^ARG[[:space:]]+IMAGE_TAG' Dockerfile; then
+            BUILD_ARGS="$BUILD_ARGS --build-arg IMAGE_TAG=$IMAGE_VERSION"
+          fi
+          if [ -n "$PYTHON_VERSION" ] && [ -f Dockerfile ] && grep -qE '^ARG[[:space:]]+PYTHON_VERSION' Dockerfile; then
+            BUILD_ARGS="$BUILD_ARGS --build-arg PYTHON_VERSION=$PYTHON_VERSION"
+          fi
+
+          docker buildx build --platform linux/amd64 --push $BUILD_ARGS $TAGS .
+
+      - name: ✅ Build Summary
+        run: |
+          echo "### 🎉 Docker Image Built Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`$IMAGE_NAME:$IMAGE_VERSION\`" >> $GITHUB_STEP_SUMMARY
+          if [ "$IMAGE_VERSION" != "latest" ]; then
+            echo "**Also pushed:** \`$IMAGE_NAME:latest\`" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  deploy:
+    if: ${{ false }}
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+      STACK_FILE: ${{ vars.STACK_FILE }}
+      STACK_NAME: ${{ vars.STACK_NAME }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+
+    steps:
+      - name: ⬇️ Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🧪 Load CI Environment Variables
+        run: |
+          while IFS='=' read -r key value; do
+            [ -z "$key" ] && continue
+            echo "$key=$value" >> $GITHUB_ENV
+          done < .ci.env
+
+      - name: 🔐 Setup SSH Agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: 🚀 Deploy to Server
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+          IMAGE_VERSION: ${{ env.IMAGE_VERSION }}
+        run: |
+          ssh -o StrictHostKeyChecking=no -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" << EOF
+            set -e
+
+            cd "$DEPLOY_PATH"
+
+            registry=""
+            if echo "$IMAGE_NAME" | grep -q '/'; then
+              first_part="${IMAGE_NAME%%/*}"
+              if echo "$first_part" | grep -qE '\\.|:'; then
+                registry="$first_part"
+              fi
+            fi
+
+            echo "🔐 Logging into container registry..."
+            if [ -n "$registry" ]; then
+              echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin "$registry"
+            else
+              echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+            fi
+
+            echo "📝 Updating .env with image version..."
+            sed -i 's/^IMAGE_VERSION=.*/IMAGE_VERSION='"$IMAGE_VERSION"'/' .env
+
+            echo "🚢 Deploying stack..."
+            docker stack deploy -c <(docker-compose -f "$STACK_FILE" config) "$STACK_NAME"
+
+            echo "⏳ Waiting for stack to stabilize..."
+            sleep 30
+
+            echo "🔍 Service status:"
+            docker stack services "$STACK_NAME"
+          EOF
+
+      - name: ✅ Deployment Summary
+        run: |
+          echo "### 🎉 Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "**Server:** \`${{ secrets.SSH_HOST_DEV }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Stack:** \`$STACK_NAME\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`$IMAGE_NAME:$IMAGE_VERSION\`" >> $GITHUB_STEP_SUMMARY

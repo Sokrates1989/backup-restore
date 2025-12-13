@@ -213,63 +213,90 @@ function Show-MainMenu {
         [string]$ComposeFile
     )
 
-    Write-Host "Choose an option:" -ForegroundColor Yellow
-    Write-Host "1) Start backend directly (docker compose up)" -ForegroundColor Gray
-    Write-Host "2) Start backend with --no-cache (fixes caching issues)" -ForegroundColor Gray
-    Write-Host "3) Docker Compose Down (stop and remove containers)" -ForegroundColor Gray
-    Write-Host "4) Open Dependency Management only" -ForegroundColor Gray
-    Write-Host "5) Both - Dependency Management and then start backend" -ForegroundColor Gray
-    Write-Host "6) Run Docker/Build Diagnostics" -ForegroundColor Gray
-    Write-Host "7) Build Production Docker Image" -ForegroundColor Gray
-    Write-Host "8) Setup CI/CD Pipeline" -ForegroundColor Gray
-    Write-Host "9) Bump release version for docker image" -ForegroundColor Gray
-    Write-Host "10) Re-run setup wizard" -ForegroundColor Gray
-    Write-Host "11) Exit" -ForegroundColor Gray
+    $menuNext = 1
+    $MENU_START = $menuNext; $menuNext++
+    $MENU_START_NO_CACHE = $menuNext; $menuNext++
+    $MENU_START_BOTH = $menuNext; $menuNext++
+
+    $MENU_DOWN = $menuNext; $menuNext++
+    $MENU_DEP_MGMT = $menuNext; $menuNext++
+    $MENU_DIAGNOSTICS = $menuNext; $menuNext++
+
+    $MENU_BUILD = $menuNext; $menuNext++
+    $MENU_CICD = $menuNext; $menuNext++
+    $MENU_BUMP_VERSION = $menuNext; $menuNext++
+
+    $MENU_SETUP = $menuNext; $menuNext++
+
+    $MENU_EXIT = $menuNext
+
+    Write-Host "" 
+    Write-Host "================ Main Menu ================" -ForegroundColor Yellow
+    Write-Host "" 
+    Write-Host "Start:" -ForegroundColor Yellow
+    Write-Host "  $MENU_START) Start backend directly (docker compose up)" -ForegroundColor Gray
+    Write-Host "  $MENU_START_NO_CACHE) Start backend with --no-cache (fixes caching issues)" -ForegroundColor Gray
+    Write-Host "  $MENU_START_BOTH) Both - Dependency Management and then start backend" -ForegroundColor Gray
+    Write-Host "" 
+    Write-Host "Maintenance:" -ForegroundColor Yellow
+    Write-Host "  $MENU_DOWN) Docker Compose Down (stop and remove containers)" -ForegroundColor Gray
+    Write-Host "  $MENU_DEP_MGMT) Open Dependency Management only" -ForegroundColor Gray
+    Write-Host "  $MENU_DIAGNOSTICS) Run Docker/Build Diagnostics" -ForegroundColor Gray
+    Write-Host "" 
+    Write-Host "Build / CI/CD:" -ForegroundColor Yellow
+    Write-Host "  $MENU_BUILD) Build Production Docker Image" -ForegroundColor Gray
+    Write-Host "  $MENU_CICD) Setup CI/CD Pipeline" -ForegroundColor Gray
+    Write-Host "  $MENU_BUMP_VERSION) Bump release version for docker image" -ForegroundColor Gray
+    Write-Host "" 
+    Write-Host "Setup:" -ForegroundColor Yellow
+    Write-Host "  $MENU_SETUP) Re-run setup wizard" -ForegroundColor Gray
+    Write-Host "" 
+    Write-Host "  $MENU_EXIT) Exit" -ForegroundColor Gray
     Write-Host ""
-    $choice = Read-Host "Your choice (1-11)"
+    $choice = Read-Host "Your choice (1-$MENU_EXIT)"
 
     $summary = $null
     $exitCode = 0
 
     switch ($choice) {
-        "1" {
+        "$MENU_START" {
             Start-Backend -Port $Port -ComposeFile $ComposeFile
             $summary = "Backend start triggered (docker compose up)"
         }
-        "2" {
+        "$MENU_START_NO_CACHE" {
             Start-BackendNoCache -Port $Port -ComposeFile $ComposeFile
             $summary = "Backend start with --no-cache triggered"
         }
-        "3" {
+        "$MENU_START_BOTH" {
+            Start-DependencyAndBackend -Port $Port -ComposeFile $ComposeFile
+            $summary = "Dependency Management and backend start executed"
+        }
+        "$MENU_DOWN" {
             Invoke-DockerComposeDown -ComposeFile $ComposeFile
             $summary = "Docker Compose Down executed"
         }
-        "4" {
+        "$MENU_DEP_MGMT" {
             Start-DependencyManagement
             Write-Host "To start the backend, re-run quick-start.ps1 and choose a start option." -ForegroundColor Yellow
             $summary = "Dependency Management executed"
         }
-        "5" {
-            Start-DependencyAndBackend -Port $Port -ComposeFile $ComposeFile
-            $summary = "Dependency Management and backend start executed"
-        }
-        "6" {
+        "$MENU_DIAGNOSTICS" {
             Invoke-EnvironmentDiagnostics
             $summary = "Docker/Build diagnostics launched"
         }
-        "7" {
+        "$MENU_BUILD" {
             Build-ProductionImage
             $summary = "Production Docker image build triggered"
         }
-        "8" {
+        "$MENU_CICD" {
             Start-CICDSetup
             $summary = "CI/CD setup started"
         }
-        "9" {
+        "$MENU_BUMP_VERSION" {
             Update-ImageVersion
             $summary = "IMAGE_VERSION updated"
         }
-        "10" {
+        "$MENU_SETUP" {
             $result = Invoke-SetupWizard
             if ($result -eq 0) {
                 $summary = "Setup wizard re-run completed"
@@ -278,7 +305,7 @@ function Show-MainMenu {
                 $exitCode = 1
             }
         }
-        "11" {
+        "$MENU_EXIT" {
             Write-Host "Exiting script." -ForegroundColor Cyan
             exit 0
         }

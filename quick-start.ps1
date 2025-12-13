@@ -79,16 +79,13 @@ if (-not (Test-Path .setup-complete)) {
                 Copy-Item setup\.env.template .env
                 Write-Host ".env file created from template." -ForegroundColor Green
                 Write-Host "  Please edit .env to configure your environment before continuing." -ForegroundColor Yellow
-            } else {
-                Write-Host "[ERROR] setup\.env.template not found!" -ForegroundColor Red
-                exit 1
-            }
-        } else {
-            Write-Host ""
-            if (Test-Path setup\.env.template) {
-                Copy-Item setup\.env.template .env
-                Write-Host ".env file created from template." -ForegroundColor Green
-                Write-Host "  Please edit .env to configure your environment before continuing." -ForegroundColor Yellow
+
+                $editor = $env:EDITOR
+                if ([string]::IsNullOrWhiteSpace($editor)) { $editor = "notepad" }
+                $openNow = Read-Host "Open .env now in $editor? (Y/n)"
+                if ($openNow -notmatch "^[Nn]$") {
+                    & $editor ".env"
+                }
             } else {
                 Write-Host "[ERROR] setup\.env.template not found!" -ForegroundColor Red
                 exit 1
@@ -104,20 +101,25 @@ if (-not (Test-Path .setup-complete)) {
                 Copy-Item setup\.env.template .env -Force
                 Write-Host ".env file created from template." -ForegroundColor Green
                 Write-Host "  Please edit .env to configure your environment before continuing." -ForegroundColor Yellow
+
+                $editor = $env:EDITOR
+                if ([string]::IsNullOrWhiteSpace($editor)) { $editor = "notepad" }
+                $openNow = Read-Host "Open .env now in $editor? (Y/n)"
+                if ($openNow -notmatch "^[Nn]$") {
+                    & $editor ".env"
+                }
             } else {
                 Write-Host "[ERROR] setup\.env.template not found!" -ForegroundColor Red
                 exit 1
             }
         }
 
-        if (Test-Path .env) {
-            $recreateSetupFlag = Read-Host "Detected .env. Re-create .setup-complete now and skip the wizard? (y/N)"
+        if ($existingEnvBeforePrompt) {
+            $recreateSetupFlag = Read-Host "Detected .env existed before prompt. Re-create .setup-complete now and skip the wizard? (y/N)"
             if ($recreateSetupFlag -match "^[Yy]$") {
                 New-Item -ItemType File -Path .setup-complete -Force | Out-Null
                 Write-Host ".setup-complete recreated from existing .env." -ForegroundColor Green
             }
-        } else {
-            Write-Host "No .env detected, so .setup-complete cannot be recreated automatically." -ForegroundColor Yellow
         }
     }
     Write-Host ""
