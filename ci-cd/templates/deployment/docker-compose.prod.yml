@@ -1,6 +1,11 @@
 # Production Docker Compose Configuration
 # This file is used for deploying to Linux servers or Docker Swarm clusters
 
+# IMPORTANT:
+# Set a unique Compose project name per repo. Otherwise Docker Compose can derive the project name
+# from the folder name, leading to cross-repo collisions (containers/networks/volumes).
+name: backup-restore-private
+
 services:
   api:
     image: ${IMAGE_NAME}:${IMAGE_TAG:-latest}

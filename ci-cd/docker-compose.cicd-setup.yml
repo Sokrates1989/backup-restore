@@ -1,3 +1,9 @@
+# IMPORTANT:
+# Set a unique Compose project name per repo. Otherwise Docker Compose can derive the project name
+# from the folder name (e.g. "local-deployment"), leading to cross-repo collisions (containers,
+# networks, volumes like "<project>-app-1").
+name: backup-restore-private
+
 services:
   cicd-setup:
     build:

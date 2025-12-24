@@ -4,6 +4,17 @@
 #
 # Module for handling menu actions in quick-start script
 
+read_prompt() {
+    local prompt="$1"
+    local var_name="$2"
+
+    if [[ -r /dev/tty ]]; then
+        read -r -p "$prompt" "$var_name" < /dev/tty
+    else
+        read -r -p "$prompt" "$var_name"
+    fi
+}
+
 open_browser_incognito() {
     local port="$1"
     local compose_file="$2"
@@ -128,7 +139,7 @@ handle_rerun_setup_wizard() {
         echo ".setup-complete is already missing. The next quick-start run will start the wizard automatically."
     fi
 
-    read -p "Delete .setup-complete and restart ./quick-start.sh now? (y/N): " rerun_choice
+    read_prompt "Delete .setup-complete and restart ./quick-start.sh now? (y/N): " rerun_choice
     if [[ ! "$rerun_choice" =~ ^[Yy]$ ]]; then
         echo "No changes were made. Remove .setup-complete manually and run ./quick-start.sh when you're ready."
         return 1
@@ -152,7 +163,7 @@ handle_docker_compose_down() {
     echo "🛑 Stoppe und entferne Container..."
     echo "   Using compose file: $compose_file"
     echo ""
-    docker compose --env-file .env -f "$compose_file" down
+    docker compose --env-file .env -f "$compose_file" down --remove-orphans
     echo ""
     echo "✅ Container gestoppt und entfernt"
 }
@@ -252,7 +263,7 @@ show_main_menu() {
         echo "  ${MENU_EXIT}) Exit"
         echo ""
 
-        read -p "Deine Wahl (1-${MENU_EXIT}): " choice
+        read_prompt "Deine Wahl (1-${MENU_EXIT}): " choice
 
         case $choice in
           ${MENU_START})

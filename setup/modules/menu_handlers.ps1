@@ -150,7 +150,7 @@ function Invoke-DockerComposeDown {
     Write-Host "Stopping and removing containers..." -ForegroundColor Yellow
     Write-Host "   Using compose file: $ComposeFile" -ForegroundColor Gray
     Write-Host ""
-    docker compose --env-file .env -f $ComposeFile down
+    docker compose --env-file .env -f $ComposeFile down --remove-orphans
     Write-Host ""
     Write-Host "Containers stopped and removed" -ForegroundColor Green
 }

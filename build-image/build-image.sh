@@ -166,14 +166,6 @@ echo "   Python Version: $PYTHON_VERSION"
 echo "   Target platform: $TARGET_PLATFORM"
 echo ""
 
-# Ask if user wants to push to registry (only in interactive mode)
-if [ "$INTERACTIVE" = true ]; then
-    read -p "Push image to Docker registry after build? (y/N): " PUSH_IMAGE
-else
-    # In non-interactive mode, check for PUSH_IMAGE env var (default to no)
-    PUSH_IMAGE="${PUSH_IMAGE:-n}"
-fi
-
 # Build the image
 echo "🔨 Building Docker image..."
 echo "   Tag: $IMAGE_NAME:$IMAGE_VERSION"
@@ -199,46 +191,132 @@ else
     exit 1
 fi
 
-# Push to registry if requested
-if [[ "$PUSH_IMAGE" =~ ^[Yy]$ ]]; then
+
+# Registry helper functions for push with login retry
+infer_registry() {
+  local image="$1"
+  local first="${image%%/*}"
+  if [[ "$image" == */* && ( "$first" == *.* || "$first" == *:* ) ]]; then
+    printf '%s' "$first"
+    return 0
+  fi
+  return 1
+}
+
+registry_login_flow() {
+  local registry="$1"
+  local target=""
+  if [ -n "$registry" ]; then
+    target=" $registry"
+  fi
+
+  echo "Choose a login method:"
+  echo "1) docker login${target}"
+  echo "2) docker logout${target} && docker login${target} (switch account)"
+  echo "3) Login with username + token (uses --password-stdin)"
+  read -r -p "Your choice (1-3) [1]: " login_method
+  login_method="${login_method:-1}"
+
+  case "$login_method" in
+    1)
+      if [ -n "$registry" ]; then
+        docker login "$registry"
+      else
+        docker login
+      fi
+      ;;
+    2)
+      if [ -n "$registry" ]; then
+        docker logout "$registry" >/dev/null 2>&1 || true
+        docker login "$registry"
+      else
+        docker logout >/dev/null 2>&1 || true
+        docker login
+      fi
+      ;;
+    3)
+      read -r -p "Username: " login_user
+      read -r -s -p "Token (will not echo): " login_token
+      echo ""
+      if [ -n "$registry" ]; then
+        printf '%s' "$login_token" | docker login "$registry" -u "$login_user" --password-stdin
+      else
+        printf '%s' "$login_token" | docker login -u "$login_user" --password-stdin
+      fi
+      ;;
+    *)
+      echo "Invalid choice"
+      return 1
+      ;;
+  esac
+}
+
+push_with_login_retry() {
+  local image_ref="$1"
+  local registry="$2"
+
+  local push_output
+  local push_status
+  set +e
+  push_output="$(docker push "$image_ref" 2>&1)"
+  push_status=$?
+  set -e
+
+  if [ $push_status -eq 0 ]; then
+    echo "$push_output"
+    return 0
+  fi
+
+  echo "$push_output"
+  echo "❌ Failed to push image: $image_ref"
+
+  if echo "$push_output" | grep -qiE "insufficient_scope|unauthorized|authentication required|no basic auth credentials|requested access to the resource is denied"; then
     echo ""
-    echo "🚀 Pushing image to registry..."
-    
-    # Check if logged in to Docker registry
-    if ! docker info | grep -q "Username"; then
-        echo "⚠️  Not logged in to Docker registry"
-        read -p "Docker registry username: " DOCKER_USERNAME
-        read -sp "Docker registry password: " DOCKER_PASSWORD
-        echo ""
-        
-        echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-        
-        if [ $? -ne 0 ]; then
-            echo "❌ Docker login failed!"
-            exit 1
-        fi
-    fi
-    
-    docker push "$IMAGE_NAME:$IMAGE_VERSION"
-    docker push "$IMAGE_NAME:latest"
-    
-    if [ $? -eq 0 ]; then
-        echo ""
-        echo "✅ Image pushed successfully!"
-        echo "   $IMAGE_NAME:$IMAGE_VERSION"
-        echo "   $IMAGE_NAME:latest"
+    if [ -n "$registry" ]; then
+      echo "🔐 Docker registry login required for: $registry"
     else
-        echo ""
-        echo "❌ Image push failed!"
-        exit 1
+      echo "🔐 Docker registry login required"
     fi
-else
     echo ""
-    echo "ℹ️  Image not pushed to registry"
-    echo "   To push later, run:"
-    echo "   docker push $IMAGE_NAME:$IMAGE_VERSION"
-    echo "   docker push $IMAGE_NAME:latest"
-fi
+    registry_login_flow "$registry" || return 1
+
+    echo ""
+    echo "🔁 Retrying push: $image_ref"
+
+    local retry_output
+    local retry_status
+    set +e
+    retry_output="$(docker push "$image_ref" 2>&1)"
+    retry_status=$?
+    set -e
+
+    echo "$retry_output"
+    if [ $retry_status -eq 0 ]; then
+      return 0
+    fi
+
+    if echo "$retry_output" | grep -qiE "insufficient_scope|unauthorized|authentication required|no basic auth credentials|requested access to the resource is denied"; then
+      echo ""
+      echo "⚠ Push still failing after login."
+      echo "   Ensure the token/user has permission to push to this registry."
+    fi
+    return 1
+  fi
+
+  echo "   Please run 'docker login' for your registry and re-run the script."
+  return 1
+}
+
+echo ""
+echo "🚀 Pushing image to registry..."
+registry="$(infer_registry "$IMAGE_NAME" || true)"
+push_with_login_retry "$IMAGE_NAME:$IMAGE_VERSION" "$registry" || exit 1
+push_with_login_retry "$IMAGE_NAME:latest" "$registry" || exit 1
+
+echo ""
+echo "✅ Image pushed successfully!"
+echo "   $IMAGE_NAME:$IMAGE_VERSION"
+echo "   $IMAGE_NAME:latest"
 
 echo ""
 echo "🎉 Build process complete!"
