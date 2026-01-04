@@ -1,9 +1,41 @@
 # menu_handlers.ps1
 # PowerShell module for handling menu actions in quick-start script
 
+function Stop-IncognitoProfileProcesses {
+    <#
+    .SYNOPSIS
+    Stops running Edge/Chrome processes that use a specific user-data-dir.
+
+    .PARAMETER ProfileDir
+    The profile directory passed via --user-data-dir to target for shutdown.
+
+    .PARAMETER ProcessNames
+    Browser process names to search (e.g., msedge.exe, chrome.exe).
+    #>
+    param(
+        [string]$ProfileDir,
+        [string[]]$ProcessNames
+    )
+
+    if (-not $ProfileDir -or -not $ProcessNames) {
+        return
+    }
+
+    try {
+        $procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+            ($ProcessNames -contains $_.Name) -and ($_.CommandLine -like "*--user-data-dir=$ProfileDir*")
+        }
+        foreach ($proc in $procs) {
+            Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+    } catch {
+        Write-Host "[WARN] Failed to stop existing browser processes for profile $ProfileDir" -ForegroundColor Yellow
+    }
+}
+
 function Open-BrowserInIncognito {
     param(
-        [string]$Port,
+        [int]$Port,
         [string]$ComposeFile
     )
 
@@ -13,18 +45,80 @@ function Open-BrowserInIncognito {
 
     Write-Host "Opening browser..." -ForegroundColor Cyan
 
-    $edgeArgs = "--inprivate $apiUrl"
-    $chromeArgs = "--incognito $apiUrl"
+    # Detect Windows: $IsWindows only exists in PS Core 6+; fallback for Windows PowerShell 5.x
+    $isWin = $false
+    if ($null -ne $IsWindows) {
+        $isWin = $IsWindows
+    } elseif ($env:OS -match "Windows") {
+        $isWin = $true
+    }
 
+    Write-Host "[DEBUG] Open-BrowserInIncognito: isWin=$isWin" -ForegroundColor Magenta
+
+    # Build URL list
+    $urls = @($apiUrl)
     if ($includeNeo4j) {
-        $edgeArgs = "$edgeArgs $neo4jUrl"
-        $chromeArgs = "$chromeArgs $neo4jUrl"
+        $urls += $neo4jUrl
         Write-Host "Neo4j Browser will open at $neo4jUrl using the same private window." -ForegroundColor Gray
     }
 
-    Start-Process "msedge" $edgeArgs -ErrorAction SilentlyContinue
-    if ($LASTEXITCODE -ne 0) {
-        Start-Process "chrome" $chromeArgs -ErrorAction SilentlyContinue
+    if ($isWin) {
+        # Try Edge first (preinstalled on Windows). Use repo-specific profile to separate taskbar groups.
+        $edgePaths = @(
+            "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
+            "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
+        )
+        foreach ($edgePath in $edgePaths) {
+            if (Test-Path $edgePath) {
+                Write-Host "[DEBUG] Found Edge at: $edgePath - launching inprivate" -ForegroundColor Magenta
+                $profileDir = Join-Path $env:TEMP "edge_incog_profile_backup_restore"
+                New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+                Stop-IncognitoProfileProcesses -ProfileDir $profileDir -ProcessNames @("msedge.exe")
+                Start-Process -FilePath $edgePath -ArgumentList (@("-inprivate", "--user-data-dir=$profileDir") + $urls)
+                return
+            }
+        }
+
+        # Then Chrome in common locations
+        $chromePaths = @(
+            "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+            "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+            "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+        )
+        foreach ($chromePath in $chromePaths) {
+            if (Test-Path $chromePath) {
+                Write-Host "[DEBUG] Found Chrome at: $chromePath - launching incognito" -ForegroundColor Magenta
+                $profileDir = Join-Path $env:TEMP "chrome_incog_profile_backup_restore"
+                New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+                Stop-IncognitoProfileProcesses -ProfileDir $profileDir -ProcessNames @("chrome.exe")
+                Start-Process -FilePath $chromePath -ArgumentList (@("--incognito", "--user-data-dir=$profileDir") + $urls)
+                return
+            }
+        }
+
+        # Try Firefox in common locations
+        $firefoxPaths = @(
+            "$env:ProgramFiles\Mozilla Firefox\firefox.exe",
+            "${env:ProgramFiles(x86)}\Mozilla Firefox\firefox.exe"
+        )
+        foreach ($firefoxPath in $firefoxPaths) {
+            if (Test-Path $firefoxPath) {
+                Write-Host "[DEBUG] Found Firefox at: $firefoxPath - launching private" -ForegroundColor Magenta
+                Start-Process -FilePath $firefoxPath -ArgumentList (@("-private-window") + $urls)
+                return
+            }
+        }
+
+        Write-Host "[DEBUG] No browser found, using default handler (NOT incognito)" -ForegroundColor Yellow
+        foreach ($url in $urls) {
+            Start-Process $url -ErrorAction SilentlyContinue
+        }
+        return
+    }
+
+    # macOS/Linux fallback
+    foreach ($url in $urls) {
+        Start-Process $url -ErrorAction SilentlyContinue
     }
 }
 

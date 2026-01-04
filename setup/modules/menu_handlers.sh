@@ -30,13 +30,30 @@ open_browser_incognito() {
 
     echo "Opening browser..."
 
+    local profile_base="${TMPDIR:-/tmp}"
+    local edge_profile="${profile_base}/edge_incog_profile_backup_restore"
+    local chrome_profile="${profile_base}/chrome_incog_profile_backup_restore"
+    mkdir -p "$edge_profile" "$chrome_profile"
+
+    # Best-effort: close prior windows using this profile so only fresh tabs remain
+    stop_incognito_profile_procs() {
+        local profile_dir="$1"; shift || true
+        [ -z "$profile_dir" ] && return 0
+        [ $# -eq 0 ] && return 0
+        for pname in "$@"; do
+            pkill -f "$pname.*--user-data-dir=$profile_dir" >/dev/null 2>&1 || true
+        done
+    }
+
     if command -v microsoft-edge &> /dev/null; then
-        microsoft-edge --inprivate "${urls[@]}" >/dev/null 2>&1 &
+        stop_incognito_profile_procs "$edge_profile" "microsoft-edge"
+        microsoft-edge --inprivate --user-data-dir="$edge_profile" "${urls[@]}" >/dev/null 2>&1 &
         return
     fi
 
     if command -v google-chrome &> /dev/null; then
-        google-chrome --incognito "${urls[@]}" >/dev/null 2>&1 &
+        stop_incognito_profile_procs "$chrome_profile" "chrome" "google-chrome"
+        google-chrome --incognito --user-data-dir="$chrome_profile" "${urls[@]}" >/dev/null 2>&1 &
         return
     fi
 
@@ -46,7 +63,7 @@ open_browser_incognito() {
     fi
 
     if command -v open &> /dev/null; then
-        open -na "Google Chrome" --args --incognito "${urls[@]}" 2>/dev/null || \
+        open -na "Google Chrome" --args --incognito --user-data-dir="$chrome_profile" "${urls[@]}" 2>/dev/null || \
         open -na "Safari" --args --private "${urls[@]}" 2>/dev/null || \
         open "${urls[0]}"
         return
