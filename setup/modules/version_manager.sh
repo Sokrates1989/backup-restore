@@ -78,7 +78,7 @@ get_remote_image_state() {
     if [ -z "$image_ref" ]; then
         echo "unknown|"
         return
-    }
+    fi
 
     if ! command -v docker >/dev/null 2>&1; then
         echo "skipped|Docker CLI nicht verfügbar"
