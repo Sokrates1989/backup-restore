@@ -1,7 +1,18 @@
 # Test script for Neo4j ExampleNode CRUD operations
 # This script demonstrates all CRUD operations for the example-nodes endpoints
 
-$API_URL = "http://localhost:8081"
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$envFile = Join-Path $repoRoot ".env"
+
+$port = "8000"
+if (Test-Path $envFile) {
+    $envLines = Get-Content $envFile
+    foreach ($line in $envLines) {
+        if ($line -match '^PORT=(.+)$') { $port = $Matches[1].Trim().Trim('"') }
+    }
+}
+
+$API_URL = "http://localhost:$port"
 $ENDPOINT = "$API_URL/example-nodes"
 
 Write-Host "========================================" -ForegroundColor Cyan

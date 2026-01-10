@@ -1,7 +1,12 @@
 # Entry point for the FastAPI app
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from api.settings import settings
 from api.routes import sql_backup, neo4j_backup
+from api.routes import automation, examples, example_nodes, legacy_backup, test_routes, files
 from api.middleware import setup_middleware
 from api.config import setup_openapi, setup_lifecycle_events
 
@@ -22,6 +27,24 @@ print(f"✅ Registered SQL backup/restore routes (/backup/sql/*)")
 app.include_router(neo4j_backup.router)
 print(f"✅ Registered Neo4j backup/restore routes (/backup/neo4j/*)")
 
+app.include_router(automation.router)
+print("✅ Registered automation routes (/automation/*)")
+
+app.include_router(examples.router)
+print("✅ Registered example CRUD routes (/examples/*)")
+
+app.include_router(example_nodes.router)
+print("✅ Registered Neo4j example node routes (/example-nodes/*)")
+
+app.include_router(legacy_backup.router)
+print("✅ Registered legacy backup routes (/backup/*)")
+
+app.include_router(test_routes.router)
+print("✅ Registered test routes (/test/*)")
+
+app.include_router(files.router)
+print("✅ Registered file routes (/files/*)")
+
 # Setup middleware
 setup_middleware(app)
 
@@ -39,3 +62,24 @@ def get_version():
 # @app.get("/hot-reload-test")
 # def hot_reload_test():
 #     return {"message": "This endpoint was added while the container was running!", "timestamp": "2024-01-01"}
+
+
+# Serve website static files
+WEBSITE_DIR = Path("/app/website")
+if WEBSITE_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(WEBSITE_DIR)), name="static")
+    print("✅ Mounted website static files at /static")
+
+    @app.get("/")
+    async def serve_index():
+        """Serve the main web UI."""
+        return FileResponse(WEBSITE_DIR / "index.html")
+
+    @app.get("/{filename:path}")
+    async def serve_static(filename: str):
+        """Serve static files from the website directory."""
+        file_path = WEBSITE_DIR / filename
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+        # Fall back to index.html for SPA routing
+        return FileResponse(WEBSITE_DIR / "index.html")

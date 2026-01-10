@@ -13,7 +13,8 @@ Use this as a template for your own services.
 from typing import List, Optional, Dict, Any
 from sqlalchemy import select, update, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from models.sql.example import Example, Base
+from models.sql.base import Base
+from models.sql.example import Example
 from backend.database import get_database_handler
 from backend.database.sql_handler import SQLHandler
 
@@ -239,5 +240,5 @@ class ExampleService:
         Returns:
             Dictionary with initialization status
         """
-        from models.example import create_example_table
+        from models.sql.example import create_example_table
         return create_example_table()

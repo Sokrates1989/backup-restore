@@ -4,8 +4,32 @@
 
 set -e
 
-API_URL="http://localhost:8081"
-ADMIN_KEY="change-this-to-a-secure-random-key"  # Default from .env.template
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ENV_FILE="$ROOT_DIR/.env"
+
+PORT="$(grep -E '^PORT=' "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2 | tr -d ' "\r')"
+DB_TYPE="$(grep -E '^DB_TYPE=' "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2 | tr -d ' "\r')"
+DB_MODE="$(grep -E '^DB_MODE=' "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2 | tr -d ' "\r')"
+ADMIN_KEY="$(grep -E '^ADMIN_API_KEY=' "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d ' "\r')"
+RESTORE_KEY="$(grep -E '^BACKUP_RESTORE_API_KEY=' "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d ' "\r')"
+DELETE_KEY="$(grep -E '^BACKUP_DELETE_API_KEY=' "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d ' "\r')"
+
+API_URL="http://localhost:${PORT:-8000}"
+
+ADMIN_KEY="${ADMIN_KEY:-change-this-to-a-secure-random-key}"
+RESTORE_KEY="${RESTORE_KEY:-change-this-restore-key-to-something-secure}"
+DELETE_KEY="${DELETE_KEY:-change-this-delete-key-to-something-secure}"
+
+COMPOSE_FILE="$ROOT_DIR/local-deployment/docker-compose.postgres.yml"
+if [ "$DB_MODE" = "standalone" ]; then
+    COMPOSE_FILE="$ROOT_DIR/local-deployment/docker-compose.yml"
+elif [ "$DB_TYPE" = "neo4j" ]; then
+    COMPOSE_FILE="$ROOT_DIR/local-deployment/docker-compose.neo4j.yml"
+elif [ "$DB_TYPE" = "postgresql" ] || [ "$DB_TYPE" = "mysql" ]; then
+    COMPOSE_FILE="$ROOT_DIR/local-deployment/docker-compose.postgres.yml"
+else
+    COMPOSE_FILE="$ROOT_DIR/local-deployment/docker-compose.yml"
+fi
 
 echo "====================================="
 echo "  Backup & Restore Test"
@@ -26,6 +50,38 @@ api_call() {
     else
         curl -s -X "$method" "$API_URL$endpoint" \
             -H "X-Admin-Key: $ADMIN_KEY"
+    fi
+}
+
+api_call_restore() {
+    local method=$1
+    local endpoint=$2
+    local data=$3
+
+    if [ -n "$data" ]; then
+        curl -s -X "$method" "$API_URL$endpoint" \
+            -H "X-Restore-Key: $RESTORE_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$data"
+    else
+        curl -s -X "$method" "$API_URL$endpoint" \
+            -H "X-Restore-Key: $RESTORE_KEY"
+    fi
+}
+
+api_call_delete() {
+    local method=$1
+    local endpoint=$2
+    local data=$3
+
+    if [ -n "$data" ]; then
+        curl -s -X "$method" "$API_URL$endpoint" \
+            -H "X-Delete-Key: $DELETE_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$data"
+    else
+        curl -s -X "$method" "$API_URL$endpoint" \
+            -H "X-Delete-Key: $DELETE_KEY"
     fi
 }
 
@@ -60,11 +116,11 @@ echo "  📦 Size: $BACKUP_SIZE MB"
 echo ""
 echo "🗑️  Step 4: Wiping database..."
 echo "  ⚠️  Stopping containers..."
-docker compose down
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" down --remove-orphans
 sleep 2
 
 echo "  🗑️  Deleting PostgreSQL data..."
-POSTGRES_DATA_PATH=".docker/postgres-data"
+POSTGRES_DATA_PATH="$ROOT_DIR/.docker/postgres-data"
 if [ -d "$POSTGRES_DATA_PATH" ]; then
     rm -rf "$POSTGRES_DATA_PATH"
     echo "  ✅ Database wiped"
@@ -73,7 +129,7 @@ else
 fi
 
 echo "  🔄 Starting containers..."
-docker compose up -d
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build
 sleep 10  # Wait for services to start
 
 # Step 5: Verify database is empty
@@ -92,7 +148,7 @@ fi
 echo ""
 echo "♻️  Step 6: Restoring from backup..."
 echo "  📂 Restoring: $BACKUP_FILENAME"
-RESTORE_RESPONSE=$(api_call POST "/backup/restore/$BACKUP_FILENAME")
+RESTORE_RESPONSE=$(api_call_restore POST "/backup/restore/$BACKUP_FILENAME")
 echo "  ✅ $(echo "$RESTORE_RESPONSE" | jq -r '.message')"
 
 # Step 7: Verify data is restored
@@ -124,7 +180,7 @@ fi
 # Step 9: Cleanup - delete test backup
 echo ""
 echo "🧹 Step 9: Cleaning up test backup..."
-DELETE_RESPONSE=$(api_call DELETE "/backup/delete/$BACKUP_FILENAME" || echo '{"success":false}')
+DELETE_RESPONSE=$(api_call_delete DELETE "/backup/delete/$BACKUP_FILENAME" || echo '{"success":false}')
 if echo "$DELETE_RESPONSE" | jq -e '.success' > /dev/null; then
     echo "  ✅ Backup deleted"
 else

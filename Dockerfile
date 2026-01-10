@@ -1,5 +1,5 @@
 # Use the official Python base image
-# Build argument for Python version (defaults to 3.13 if not provided)
+# Build argument for Python version (defaults to 3.13-slim if not provided)
 ARG PYTHON_VERSION=3.13-slim
 FROM python:${PYTHON_VERSION}
 

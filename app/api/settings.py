@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     BACKUP_RESTORE_API_KEY_FILE: str = ""  # Path to file containing restore API key
     BACKUP_DELETE_API_KEY: str = ""  # Level 3: Delete operations (destructive)
     BACKUP_DELETE_API_KEY_FILE: str = ""  # Path to file containing delete API key
+
+    CONFIG_ENCRYPTION_KEY: str = ""  # Symmetric key for encrypting stored destination/target secrets
+    CONFIG_ENCRYPTION_KEY_FILE: str = ""  # Path to file containing config encryption key
     
     # Database Type Configuration
     DB_TYPE: Literal["neo4j", "postgresql", "mysql", "sqlite"] = "neo4j"
@@ -54,6 +57,12 @@ class Settings(BaseSettings):
         if self.BACKUP_DELETE_API_KEY_FILE and Path(self.BACKUP_DELETE_API_KEY_FILE).exists():
             return Path(self.BACKUP_DELETE_API_KEY_FILE).read_text().strip()
         return self.BACKUP_DELETE_API_KEY
+
+    def get_config_encryption_key(self) -> str:
+        """Get config encryption key from file or environment variable."""
+        if self.CONFIG_ENCRYPTION_KEY_FILE and Path(self.CONFIG_ENCRYPTION_KEY_FILE).exists():
+            return Path(self.CONFIG_ENCRYPTION_KEY_FILE).read_text().strip()
+        return self.CONFIG_ENCRYPTION_KEY
     
     def get_db_password(self) -> str:
         """Get database password from file or environment variable"""

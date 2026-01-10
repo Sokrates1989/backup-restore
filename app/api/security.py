@@ -8,6 +8,7 @@ from api.settings import settings
 # Define the API key headers
 admin_key_header = APIKeyHeader(name="X-Admin-Key", auto_error=False)
 restore_key_header = APIKeyHeader(name="X-Restore-Key", auto_error=False)
+delete_key_header = APIKeyHeader(name="X-Delete-Key", auto_error=False)
 
 
 async def verify_admin_key(admin_key: str = Security(admin_key_header)) -> str:
@@ -92,3 +93,46 @@ async def verify_restore_key(restore_key: str = Security(restore_key_header)) ->
         )
     
     return restore_key
+
+
+async def verify_delete_key(delete_key: str = Security(delete_key_header)) -> str:
+    """
+    Verify the delete API key provided in the X-Delete-Key header.
+
+    This is used for destructive delete operations.
+
+    Args:
+        delete_key: The delete API key from the request header
+
+    Returns:
+        The validated delete API key
+
+    Raises:
+        HTTPException: If the delete API key is missing or invalid
+    """
+    configured_delete_key = settings.get_delete_api_key()
+
+    if not configured_delete_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Delete API key not configured. Please set BACKUP_DELETE_API_KEY or BACKUP_DELETE_API_KEY_FILE.",
+        )
+
+    if not delete_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=(
+                "Missing API key. This endpoint requires 'X-Delete-Key' header. "
+                "Use the 'Authorize' button in Swagger UI to provide your delete key."
+            ),
+        )
+
+    if delete_key != configured_delete_key:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Invalid delete API key. The provided 'X-Delete-Key' does not match the configured BACKUP_DELETE_API_KEY."
+            ),
+        )
+
+    return delete_key

@@ -1,0 +1,31 @@
+# Docker Compose for the backup runner service
+# This runs alongside the main app to periodically execute due backup schedules
+#
+# Usage:
+#   docker compose --env-file ../.env -f docker-compose.postgres.yml -f docker-compose.runner.yml up
+#
+# IMPORTANT:
+# Set a unique Compose project name per repo.
+name: backup-restore-private
+
+services:
+  runner:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION}-slim
+    command: ["python", "runner.py"]
+    env_file:
+      - ../.env
+    environment:
+      # Runner configuration
+      RUNNER_MODE: api
+      RUNNER_INTERVAL: ${RUNNER_INTERVAL:-60}
+      RUNNER_MAX_SCHEDULES: ${RUNNER_MAX_SCHEDULES:-10}
+      BACKUP_API_URL: http://app:8000
+      ADMIN_API_KEY: ${ADMIN_API_KEY}
+    depends_on:
+      app:
+        condition: service_started
+    restart: unless-stopped

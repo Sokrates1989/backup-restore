@@ -1,0 +1,57 @@
+<!-- Databases Tab -->
+<div id="databases-tab" class="tab-content active">
+    <div class="card">
+        <div class="card-header">
+            <h2>Databases</h2>
+            <button id="add-database-btn" class="btn btn-primary btn-sm">+ Add Database</button>
+        </div>
+        <p class="hint">Databases to back up from / restore to</p>
+        <div id="databases-list" class="items-list">
+            <p class="loading">Loading databases...</p>
+        </div>
+    </div>
+
+    <!-- Add/Edit Database Form -->
+    <div id="database-form" class="card hidden">
+        <h2 id="database-form-title">Add Database</h2>
+        <input type="hidden" id="database-id">
+        <div class="form-group">
+            <label for="database-name">Name</label>
+            <input type="text" id="database-name" placeholder="e.g., Production Database">
+        </div>
+        <div class="form-group">
+            <label for="database-db-type">Database Type</label>
+            <select id="database-db-type">
+                <option value="postgresql">PostgreSQL</option>
+                <option value="mysql">MySQL</option>
+                <option value="neo4j">Neo4j</option>
+                <option value="sqlite">SQLite</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="database-host">Host</label>
+            <input type="text" id="database-host" placeholder="e.g., localhost or db-service">
+        </div>
+        <div class="form-group">
+            <label for="database-port">Port</label>
+            <input type="number" id="database-port" placeholder="e.g., 5432">
+        </div>
+        <div class="form-group">
+            <label for="database-database">Database Name</label>
+            <input type="text" id="database-database" placeholder="e.g., myapp">
+        </div>
+        <div class="form-group">
+            <label for="database-user">Username</label>
+            <input type="text" id="database-user" placeholder="Database username">
+        </div>
+        <div class="form-group">
+            <label for="database-password">Password</label>
+            <input type="password" id="database-password" placeholder="Database password (encrypted at rest)">
+        </div>
+        <div class="form-actions">
+            <button id="save-database-btn" class="btn btn-primary">Save Database</button>
+            <button id="test-database-connection-btn" class="btn btn-secondary">Test Connection</button>
+            <button id="cancel-database-btn" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+</div>

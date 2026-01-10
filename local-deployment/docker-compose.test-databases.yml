@@ -1,0 +1,139 @@
+# Test Databases for Backup/Restore Testing
+# 
+# This file contains test instances of all supported database types with their admin UIs.
+# Use with: docker compose -f docker-compose.postgres.yml -f docker-compose.test-databases.yml up
+#
+# Admin UIs:
+# - pgAdmin (for test PostgreSQL): http://localhost:5050
+# - phpMyAdmin (for test MySQL): http://localhost:8080
+# - Neo4j Browser (for test Neo4j): http://localhost:7475
+# - Adminer (universal - works with all DBs): http://localhost:8081
+#
+# Test Database Ports:
+# - PostgreSQL: 5434
+# - MySQL: 3306
+# - Neo4j Bolt: 7688, HTTP: 7475
+# - SQLite: file-based (no port)
+
+services:
+  # =============================================================================
+  # TEST POSTGRESQL DATABASE
+  # =============================================================================
+  test-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${TEST_POSTGRES_DB:-testdb}
+      POSTGRES_USER: ${TEST_POSTGRES_USER:-testuser}
+      POSTGRES_PASSWORD: ${TEST_POSTGRES_PASSWORD:-testpass}
+    ports:
+      - "5434:5432"
+    volumes:
+      - ../.docker/test-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEST_POSTGRES_USER:-testuser}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # =============================================================================
+  # TEST MYSQL DATABASE
+  # =============================================================================
+  test-mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${TEST_MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_DATABASE: ${TEST_MYSQL_DB:-testdb}
+      MYSQL_USER: ${TEST_MYSQL_USER:-testuser}
+      MYSQL_PASSWORD: ${TEST_MYSQL_PASSWORD:-testpass}
+    ports:
+      - "3306:3306"
+    volumes:
+      - ../.docker/test-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${TEST_MYSQL_ROOT_PASSWORD:-rootpass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =============================================================================
+  # TEST NEO4J DATABASE
+  # =============================================================================
+  test-neo4j:
+    image: neo4j:5-community
+    environment:
+      NEO4J_AUTH: ${TEST_NEO4J_USER:-neo4j}/${TEST_NEO4J_PASSWORD:-testpass}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+    ports:
+      - "7475:7474"  # HTTP Browser UI
+      - "7688:7687"  # Bolt protocol
+    volumes:
+      - ../.docker/test-neo4j-data:/data
+      - ../.docker/test-neo4j-logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u ${TEST_NEO4J_USER:-neo4j} -p ${TEST_NEO4J_PASSWORD:-testpass} 'RETURN 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =============================================================================
+  # ADMIN UIs
+  # =============================================================================
+  
+  # pgAdmin for PostgreSQL (connects to both app's postgres and test-postgres)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@local.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports:
+      - "5050:80"
+    volumes:
+      - ../.docker/pgadmin-data:/var/lib/pgadmin
+      - ./scripts/pgadmin-setup.sh:/pgadmin4/setup.sh:ro
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c", "chmod +x /pgadmin4/setup.sh && /pgadmin4/setup.sh && /entrypoint.sh"]
+
+  # phpMyAdmin for MySQL
+  phpmyadmin:
+    image: phpmyadmin:latest
+    environment:
+      PMA_HOST: test-mysql
+      PMA_PORT: 3306
+      PMA_USER: root
+      PMA_PASSWORD: ${TEST_MYSQL_ROOT_PASSWORD:-rootpass}
+      UPLOAD_LIMIT: 300M
+    ports:
+      - "8080:80"
+    depends_on:
+      test-mysql:
+        condition: service_healthy
+
+  # Adminer - Universal database admin (supports PostgreSQL, MySQL, SQLite, and more)
+  adminer:
+    image: adminer:latest
+    environment:
+      ADMINER_DEFAULT_SERVER: test-postgres
+      ADMINER_DESIGN: dracula
+    ports:
+      - "8082:8080"
+    depends_on:
+      - test-postgres
+      - test-mysql
+
+  # =============================================================================
+  # SQLITE TEST ENVIRONMENT
+  # =============================================================================
+  # SQLite is file-based, so we create a simple container with sqlite3 CLI
+  # and a web UI (sqlite-web) for managing SQLite databases
+  sqlite-web:
+    image: coleifer/sqlite-web:latest
+    ports:
+      - "8083:8080"
+    volumes:
+      - ../.docker/test-sqlite-data:/data
+    command: sqlite_web -H 0.0.0.0 /data/test.db

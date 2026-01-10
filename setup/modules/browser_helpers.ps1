@@ -2,12 +2,15 @@
 browser_helpers.ps1
 
 Purpose:
-- Helper utilities for backup-restore quick-start script.
+- Helper utilities for backup-restore quick-start scripts.
 - Opens URLs in incognito/private browser mode with auto-close on restart.
 
 Notes:
 - Best-effort only: should not break quick-start execution.
 #>
+
+# Global flag to track if browser has been cleaned for this session
+$script:BrowserCleaned = $false
 
 function Wait-ForUrl {
     <#
@@ -59,24 +62,21 @@ function Stop-IncognitoProfileProcesses {
     <#
     .SYNOPSIS
     Stops running Edge/Chrome processes that use a specific user-data-dir.
-
-    .PARAMETER ProfileDir
-    The profile directory passed via --user-data-dir to target for shutdown.
-
-    .PARAMETER ProcessNames
-    Browser process names to search (e.g., msedge.exe, chrome.exe).
     #>
     param(
+        [Parameter(Mandatory=$true)]
         [string]$ProfileDir,
+        [Parameter(Mandatory=$true)]
         [string[]]$ProcessNames
     )
-
+    
     if (-not $ProfileDir -or -not $ProcessNames) {
         return
     }
 
     try {
-        $procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        foreach ($procName in $ProcessNames) {
+            Get-Process | Where-Object { $_.ProcessName -eq $procName -and $_.CommandLine -like "*--user-data-dir=$ProfileDir*" } | Stop-Process -Force -ErrorAction SilentlyContinue
             ($ProcessNames -contains $_.Name) -and ($_.CommandLine -like "*--user-data-dir=$ProfileDir*")
         }
         foreach ($proc in $procs) {
@@ -97,75 +97,22 @@ function Open-Url {
     .PARAMETER Url
     URL to open.
     #>
-    param([string]$Url)
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Url
+    )
 
-    try {
-        $isWin = $false
-        if ($null -ne $IsWindows) {
-            $isWin = $IsWindows
-        } elseif ($env:OS -match "Windows") {
-            $isWin = $true
-        }
-
-        if ($isWin) {
-            # Try Edge first
-            $edgePaths = @(
-                "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
-                "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
-            )
-            foreach ($edgePath in $edgePaths) {
-                if (Test-Path $edgePath) {
-                    $profileDir = Join-Path $env:TEMP "edge_incog_profile_backup-restore"
-                    New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
-                    if (-not $script:IncognitoProfileCleaned) {
-                        Stop-IncognitoProfileProcesses -ProfileDir $profileDir -ProcessNames @("msedge.exe")
-                        $script:IncognitoProfileCleaned = $true
-                    }
-                    Start-Process -FilePath $edgePath -ArgumentList "-inprivate", "--user-data-dir=$profileDir", $Url
-                    return
-                }
-            }
-
-            # Then Chrome
-            $chromePaths = @(
-                "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
-                "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
-                "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
-            )
-            foreach ($chromePath in $chromePaths) {
-                if (Test-Path $chromePath) {
-                    $profileDir = Join-Path $env:TEMP "chrome_incog_profile_backup-restore"
-                    New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
-                    if (-not $script:IncognitoProfileCleaned) {
-                        Stop-IncognitoProfileProcesses -ProfileDir $profileDir -ProcessNames @("chrome.exe")
-                        $script:IncognitoProfileCleaned = $true
-                    }
-                    Start-Process -FilePath $chromePath -ArgumentList "--incognito", "--user-data-dir=$profileDir", $Url
-                    return
-                }
-            }
-
-            # Firefox (no custom profile needed)
-            $firefoxPaths = @(
-                "$env:ProgramFiles\Mozilla Firefox\firefox.exe",
-                "${env:ProgramFiles(x86)}\Mozilla Firefox\firefox.exe"
-            )
-            foreach ($firefoxPath in $firefoxPaths) {
-                if (Test-Path $firefoxPath) {
-                    Start-Process -FilePath $firefoxPath -ArgumentList "-private-window", $Url
-                    return
-                }
-            }
-
-            # Fallback: default browser
-            Start-Process $Url | Out-Null
-            return
-        }
-
-        # macOS
-        if ($IsMacOS) {
-            if (Test-Path "/Applications/Google Chrome.app") {
-                & open -na "Google Chrome" --args --incognito $Url 2>$null
+    # Only clean browser processes once per session
+    if (-not $script:BrowserCleaned) {
+        $edgeProfile = Join-Path $env:TEMP "edge_incog_profile_backup-restore"
+        $chromeProfile = Join-Path $env:TEMP "chrome_incog_profile_backup-restore"
+        New-Item -ItemType Directory -Path $edgeProfile -Force | Out-Null
+        New-Item -ItemType Directory -Path $chromeProfile -Force | Out-Null
+        
+        Stop-IncognitoProfileProcesses -ProfileDir $edgeProfile -ProcessNames @("msedge.exe")
+        Stop-IncognitoProfileProcesses -ProfileDir $chromeProfile -ProcessNames @("chrome.exe")
+        
+        $script:BrowserCleaned = $true
                 return
             }
             if (Test-Path "/Applications/Microsoft Edge.app") {
@@ -217,11 +164,13 @@ function Show-ApiDocsDelayed {
 
     $apiUrl = "http://localhost:$Port/docs"
     $apiHealthUrl = "http://localhost:$Port/health"
+    $webUrl = "http://localhost:$Port/"
 
     Write-Host "" 
     Write-Host "========================================" -ForegroundColor Yellow
     Write-Host "  API will be accessible at:" -ForegroundColor Yellow
     Write-Host "  - API Docs: $apiUrl" -ForegroundColor Gray
+    Write-Host "  - Web GUI: $webUrl" -ForegroundColor Gray
     Write-Host "========================================" -ForegroundColor Yellow
     Write-Host "" 
     Write-Host "Browser will open automatically when API is ready..." -ForegroundColor Yellow
@@ -251,7 +200,10 @@ if (`$apiReady) {
 
 Write-Host 'Opening browser...' -ForegroundColor Green
 Start-Sleep -Seconds 1
+# Open both API docs and web GUI in same browser window
 Open-Url '$apiUrl'
+Start-Sleep -Seconds 2
+Open-Url '$webUrl'
 
 # Clean up this temp script
 Remove-Item -Path '$tempScript' -Force -ErrorAction SilentlyContinue

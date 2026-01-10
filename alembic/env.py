@@ -8,8 +8,26 @@ import os
 # Add the app directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'app'))
 
-# Import your models' Base (from SQL models directory)
-from models.sql.example import Base
+from models.sql.base import Base
+from models.sql.example import Example
+from models.sql.user import User
+from models.sql.backup_automation import (
+    BackupDestination,
+    BackupRun,
+    BackupSchedule,
+    BackupTarget,
+    backup_schedule_destinations,
+)
+
+_models = (
+    Example,
+    User,
+    BackupTarget,
+    BackupDestination,
+    BackupSchedule,
+    BackupRun,
+    backup_schedule_destinations,
+)
 
 # this is the Alembic Config object
 config = context.config

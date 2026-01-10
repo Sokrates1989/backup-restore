@@ -1,0 +1,35 @@
+<!-- Backup Files Tab -->
+<div id="backup-files-tab" class="tab-content hidden">
+    <div class="card">
+        <div class="card-header">
+            <h2>Backup Files</h2>
+            <button id="refresh-backup-files-btn" class="btn btn-secondary btn-sm">🔄 Refresh</button>
+            <button id="run-backup-btn" class="btn btn-primary btn-sm">▶️ Run Backup Now</button>
+        </div>
+        <p class="hint">Available backup files (both local and from remote storage locations)</p>
+        <div id="backup-files-list" class="items-list">
+            <p class="loading">Loading backup files...</p>
+        </div>
+    </div>
+
+    <!-- Backup Details Modal -->
+    <div id="backup-details-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Backup Details</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="backup-details-content">
+                    <!-- Backup details will be loaded here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="restore-backup-btn" class="btn btn-primary">Restore Backup</button>
+                <button id="download-backup-btn" class="btn btn-secondary">Download</button>
+                <button id="delete-backup-btn" class="btn btn-danger">Delete Backup</button>
+                <button class="modal-close btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+</div>

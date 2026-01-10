@@ -10,7 +10,7 @@ services:
       context: ..
       dockerfile: Dockerfile
       args:
-        PYTHON_VERSION: ${PYTHON_VERSION}
+        PYTHON_VERSION: ${PYTHON_VERSION}-slim
     ports:
       - "${PORT}:8000"
     env_file:
@@ -30,6 +30,8 @@ services:
       - ../app/mounted_data:/mnt/data
       # Mount backups directory to host for persistence and easy access
       - ../backups:/app/backups
+      # Mount website for live-reloading of UI
+      - ../website:/app/website
       # Note: .venv is built into the image, not mounted as a volume
       # This ensures dependencies always match pdm.lock from the build
     depends_on:

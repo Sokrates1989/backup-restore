@@ -1,0 +1,81 @@
+<!-- Remote Storage Locations Tab -->
+<div id="remote-storage-locations-tab" class="tab-content hidden">
+    <div class="card">
+        <div class="card-header">
+            <h2>Remote Storage Locations</h2>
+            <button id="add-remote-storage-location-btn" class="btn btn-primary btn-sm">+ Add Remote Storage Location</button>
+        </div>
+        <p class="hint">Remote locations where to store backups to / restore from</p>
+        <div id="remote-storage-locations-list" class="items-list">
+            <p class="loading">Loading remote storage locations...</p>
+        </div>
+    </div>
+
+    <!-- Add/Edit Remote Storage Location Form -->
+    <div id="remote-storage-location-form" class="card hidden">
+        <h2 id="remote-storage-location-form-title">Add Remote Storage Location</h2>
+        <input type="hidden" id="remote-storage-location-id">
+        <div class="form-group">
+            <label for="remote-storage-location-name">Name</label>
+            <input type="text" id="remote-storage-location-name" placeholder="e.g., Cloud Storage">
+        </div>
+        <div class="form-group">
+            <label for="remote-storage-location-type">Type</label>
+            <select id="remote-storage-location-type">
+                <option value="local">Local Directory</option>
+                <option value="sftp">SFTP Server</option>
+                <option value="google_drive">Google Drive</option>
+            </select>
+        </div>
+        
+        <!-- Local Config -->
+        <div id="remote-storage-local-config" class="remote-storage-config">
+            <div class="form-group">
+                <label for="remote-storage-local-path">Directory Path</label>
+                <input type="text" id="remote-storage-local-path" placeholder="/backups">
+            </div>
+        </div>
+
+        <!-- SFTP Config -->
+        <div id="remote-storage-sftp-config" class="remote-storage-config hidden">
+            <div class="form-group">
+                <label for="remote-storage-sftp-host">SFTP Host</label>
+                <input type="text" id="remote-storage-sftp-host" placeholder="backup.example.com">
+            </div>
+            <div class="form-group">
+                <label for="remote-storage-sftp-port">Port</label>
+                <input type="number" id="remote-storage-sftp-port" value="22">
+            </div>
+            <div class="form-group">
+                <label for="remote-storage-sftp-user">Username</label>
+                <input type="text" id="remote-storage-sftp-user" placeholder="backup-user">
+            </div>
+            <div class="form-group">
+                <label for="remote-storage-sftp-password">Password</label>
+                <input type="password" id="remote-storage-sftp-password" placeholder="SFTP password">
+            </div>
+            <div class="form-group">
+                <label for="remote-storage-sftp-path">Remote Path</label>
+                <input type="text" id="remote-storage-sftp-path" placeholder="/backups">
+            </div>
+        </div>
+
+        <!-- Google Drive Config -->
+        <div id="remote-storage-gdrive-config" class="remote-storage-config hidden">
+            <div class="form-group">
+                <label for="remote-storage-gdrive-folder">Folder ID</label>
+                <input type="text" id="remote-storage-gdrive-folder" placeholder="Google Drive folder ID">
+            </div>
+            <div class="form-group">
+                <label for="remote-storage-gdrive-credentials">Service Account JSON</label>
+                <textarea id="remote-storage-gdrive-credentials" rows="4" placeholder='{"type": "service_account", ...}'></textarea>
+            </div>
+        </div>
+
+        <div class="form-actions">
+            <button id="test-remote-storage-location-connection-btn" class="btn btn-secondary">Test Connection</button>
+            <button id="save-remote-storage-location-btn" class="btn btn-primary">Save Remote Storage Location</button>
+            <button id="cancel-remote-storage-location-btn" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+</div>

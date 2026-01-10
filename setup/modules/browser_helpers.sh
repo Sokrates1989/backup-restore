@@ -3,12 +3,15 @@
 # browser_helpers.sh
 #
 # Purpose:
-# - Helper utilities for backup-restore quick-start script.
+# - Helper utilities for backup-restore quick-start scripts.
 # - Opens URLs in incognito/private browser mode with auto-close on restart.
 #
 # Notes:
 # - Best-effort only: should not break quick-start flow.
 #
+
+# Global flag to track if browser has been cleaned for this session
+BROWSER_CLEANED=false
 
 wait_for_url() {
     local url="$1"
@@ -53,10 +56,36 @@ open_url() {
     local chrome_profile="${profile_base}/chrome_incog_profile_backup-restore"
     mkdir -p "$edge_profile" "$chrome_profile"
 
+    # Only clean browser processes once per session
+    if [ "$BROWSER_CLEANED" = false ]; then
+        # macOS
+        if command -v open >/dev/null 2>&1; then
+            if [ -d "/Applications/Google Chrome.app" ]; then
+                stop_incognito_profile_procs "$chrome_profile" "Google Chrome"
+            fi
+            if [ -d "/Applications/Microsoft Edge.app" ]; then
+                stop_incognito_profile_procs "$edge_profile" "Microsoft Edge"
+            fi
+        fi
+        
+        # Linux
+        if command -v google-chrome >/dev/null 2>&1; then
+            stop_incognito_profile_procs "$chrome_profile" "chrome" "google-chrome"
+        fi
+        if command -v chromium >/dev/null 2>&1; then
+            stop_incognito_profile_procs "$chrome_profile" "chromium"
+        fi
+        if command -v chromium-browser >/dev/null 2>&1; then
+            stop_incognito_profile_procs "$chrome_profile" "chromium-browser"
+        fi
+        
+        BROWSER_CLEANED=true
+    fi
+
     # macOS
     if command -v open >/dev/null 2>&1; then
         if [ -d "/Applications/Google Chrome.app" ]; then
-            stop_incognito_profile_procs "$chrome_profile" "Google Chrome"
+            # Don't kill processes here - they're already cleaned once per session
             open -na "Google Chrome" --args --incognito --user-data-dir="$chrome_profile" "$url" >/dev/null 2>&1 || true
             return 0
         fi
@@ -67,7 +96,7 @@ open_url() {
         fi
 
         if [ -d "/Applications/Microsoft Edge.app" ]; then
-            stop_incognito_profile_procs "$edge_profile" "Microsoft Edge"
+            # Don't kill processes here - they're already cleaned once per session
             open -na "Microsoft Edge" --args -inprivate --user-data-dir="$edge_profile" "$url" >/dev/null 2>&1 || true
             return 0
         fi
@@ -83,22 +112,18 @@ open_url() {
 
     # Linux
     if command -v google-chrome >/dev/null 2>&1; then
-        stop_incognito_profile_procs "$chrome_profile" "chrome" "google-chrome"
         google-chrome --incognito --user-data-dir="$chrome_profile" "$url" >/dev/null 2>&1 &
         return 0
     fi
     if command -v chromium >/dev/null 2>&1; then
-        stop_incognito_profile_procs "$chrome_profile" "chromium"
         chromium --incognito --user-data-dir="$chrome_profile" "$url" >/dev/null 2>&1 &
         return 0
     fi
     if command -v chromium-browser >/dev/null 2>&1; then
-        stop_incognito_profile_procs "$chrome_profile" "chromium-browser"
         chromium-browser --incognito --user-data-dir="$chrome_profile" "$url" >/dev/null 2>&1 &
         return 0
     fi
     if command -v microsoft-edge >/dev/null 2>&1; then
-        stop_incognito_profile_procs "$edge_profile" "microsoft-edge"
         microsoft-edge -inprivate --user-data-dir="$edge_profile" "$url" >/dev/null 2>&1 &
         return 0
     fi
@@ -121,11 +146,13 @@ show_api_docs_delayed() {
 
     local api_url="http://localhost:${port}/docs"
     local api_health_url="http://localhost:${port}/health"
+    local web_url="http://localhost:${port}/"
 
     echo ""
     echo "========================================"
-    echo "  API will be accessible at:"
+    echo "  Services will be accessible at:"
     echo "  - API Docs: $api_url"
+    echo "  - Web GUI: $web_url"
     echo "========================================"
     echo ""
     echo "🌐 Browser will open automatically when API is ready..."
@@ -139,6 +166,9 @@ show_api_docs_delayed() {
         fi
         
         sleep 1
+        # Open both API docs and web GUI in same browser window
         open_url "$api_url"
+        sleep 2
+        open_url "$web_url"
     ) &
 }

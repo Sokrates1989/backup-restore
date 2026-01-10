@@ -4,10 +4,11 @@ Supports PostgreSQL, MySQL, SQLite, and other SQL databases.
 """
 from typing import Any, Dict, List, Optional
 from sqlalchemy import create_engine, text, MetaData
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from .base import BaseDatabaseHandler
+
+from models.sql.base import Base
 
 
 class SQLHandler(BaseDatabaseHandler):
@@ -49,7 +50,7 @@ class SQLHandler(BaseDatabaseHandler):
         )
         
         # Base class for models
-        self.Base = declarative_base()
+        self.Base = Base
         self.metadata = MetaData()
     
     def _get_async_url(self, url: str) -> str:

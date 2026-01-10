@@ -1,0 +1,56 @@
+<!-- Backup Schedules Tab -->
+<div id="backup-schedules-tab" class="tab-content hidden">
+    <div class="card">
+        <div class="card-header">
+            <h2>Backup Schedules</h2>
+            <button id="add-backup-schedule-btn" class="btn btn-primary btn-sm">+ Add Backup Schedule</button>
+        </div>
+        <p class="hint">When and how often to run backups from databases to remote storage locations</p>
+        <div id="backup-schedules-list" class="items-list">
+            <p class="loading">Loading backup schedules...</p>
+        </div>
+    </div>
+
+    <!-- Add/Edit Backup Schedule Form -->
+    <div id="backup-schedule-form" class="card hidden">
+        <h2 id="backup-schedule-form-title">Add Backup Schedule</h2>
+        <input type="hidden" id="backup-schedule-id">
+        <div class="form-group">
+            <label for="backup-schedule-name">Name</label>
+            <input type="text" id="backup-schedule-name" placeholder="e.g., Daily Production Backup">
+        </div>
+        <div class="form-group">
+            <label for="backup-schedule-database">Database</label>
+            <select id="backup-schedule-database">
+                <option value="">Select a database...</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="backup-schedule-remote-storage-location">Remote Storage Location</label>
+            <select id="backup-schedule-remote-storage-location">
+                <option value="">Select a remote storage location...</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="backup-schedule-interval">Backup Interval</label>
+            <select id="backup-schedule-interval">
+                <option value="hourly">Hourly</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="backup-schedule-retention">Retention Policy</label>
+            <input type="number" id="backup-schedule-retention" placeholder="Number of backups to keep" min="1">
+        </div>
+        <div class="form-group">
+            <label for="backup-schedule-enabled">Enabled</label>
+            <input type="checkbox" id="backup-schedule-enabled" checked>
+        </div>
+        <div class="form-actions">
+            <button id="save-backup-schedule-btn" class="btn btn-primary">Save Backup Schedule</button>
+            <button id="cancel-backup-schedule-btn" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+</div>

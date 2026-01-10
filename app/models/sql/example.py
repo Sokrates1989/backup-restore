@@ -14,13 +14,10 @@ To create your own models:
 """
 from sqlalchemy import Column, String, Text, DateTime
 from sqlalchemy.sql import func
-from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 import uuid
 
-
-# Create Base - will be properly initialized when database handler is ready
-Base = declarative_base()
+from models.sql.base import Base
 
 
 class Example(Base):

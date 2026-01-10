@@ -36,14 +36,65 @@ function Stop-IncognitoProfileProcesses {
 function Open-BrowserInIncognito {
     param(
         [int]$Port,
-        [string]$ComposeFile
+        [string]$ComposeFile,
+        [string]$Mode = ""  # "test" or "admin" for special UI modes
     )
 
     $apiUrl = "http://localhost:$Port/docs"
+    $guiUrl = "http://localhost:$Port/"
     $neo4jUrl = "http://localhost:7474"
     $includeNeo4j = $ComposeFile -like "*neo4j*"
 
     Write-Host "Opening browser..." -ForegroundColor Cyan
+
+    # Build URL list
+    $urls = @($guiUrl, $apiUrl)
+    if ($includeNeo4j) {
+        $urls += $neo4jUrl
+        Write-Host "Neo4j Browser will open at $neo4jUrl using the same private window." -ForegroundColor Gray
+    }
+
+    # Add test database admin UIs if in test mode
+    if ($Mode -eq "test") {
+        $urls += @(
+            "http://localhost:5050"  # pgAdmin
+            "http://localhost:8080"  # phpMyAdmin
+            "http://localhost:7475"  # Neo4j Browser (test)
+            "http://localhost:8082"  # Adminer
+            "http://localhost:8083"  # SQLite Web
+        )
+        
+        Write-Host ""
+        Write-Host "🌐 Opening browser with all admin UIs:" -ForegroundColor Cyan
+        Write-Host "  - Backup Manager: $guiUrl" -ForegroundColor Gray
+        Write-Host "  - API Docs: $apiUrl" -ForegroundColor Gray
+        Write-Host "  - pgAdmin: http://localhost:5050" -ForegroundColor Gray
+        Write-Host "  - phpMyAdmin: http://localhost:8080" -ForegroundColor Gray
+        Write-Host "  - Neo4j Browser: http://localhost:7475" -ForegroundColor Gray
+        Write-Host "  - Adminer: http://localhost:8082" -ForegroundColor Gray
+        Write-Host "  - SQLite Web: http://localhost:8083" -ForegroundColor Gray
+    }
+
+    # Add admin UIs if in admin mode
+    if ($Mode -eq "admin") {
+        if ($ComposeFile -like "*postgres*") {
+            $urls += "http://localhost:5051"  # pgAdmin for app's postgres
+        }
+        if ($includeNeo4j) {
+            $urls += $neo4jUrl  # Neo4j Browser (app's)
+        }
+        
+        Write-Host ""
+        Write-Host "🌐 Opening browser with admin UIs:" -ForegroundColor Cyan
+        Write-Host "  - Backup Manager: $guiUrl" -ForegroundColor Gray
+        Write-Host "  - API Docs: $apiUrl" -ForegroundColor Gray
+        if ($ComposeFile -like "*postgres*") {
+            Write-Host "  - pgAdmin (app DB): http://localhost:5051" -ForegroundColor Gray
+        }
+        if ($includeNeo4j) {
+            Write-Host "  - Neo4j Browser: http://localhost:7474" -ForegroundColor Gray
+        }
+    }
 
     # Detect Windows: $IsWindows only exists in PS Core 6+; fallback for Windows PowerShell 5.x
     $isWin = $false
@@ -55,11 +106,21 @@ function Open-BrowserInIncognito {
 
     Write-Host "[DEBUG] Open-BrowserInIncognito: isWin=$isWin" -ForegroundColor Magenta
 
-    # Build URL list
-    $urls = @($apiUrl)
-    if ($includeNeo4j) {
-        $urls += $neo4jUrl
-        Write-Host "Neo4j Browser will open at $neo4jUrl using the same private window." -ForegroundColor Gray
+    # Always restart browser processes for clean state
+    if ($isWin) {
+        $profileDir = Join-Path $env:TEMP "edge_incog_profile_backup_restore"
+        Stop-IncognitoProfileProcesses -ProfileDir $profileDir -ProcessNames @("msedge.exe")
+        
+        $profileDir = Join-Path $env:TEMP "chrome_incog_profile_backup_restore"
+        Stop-IncognitoProfileProcesses -ProfileDir $profileDir -ProcessNames @("chrome.exe", "msedge.exe")
+        
+        # Additional cleanup for any processes with backup_restore
+        Get-Process | Where-Object { $_.ProcessName -like "*chrome*" -and $_.CommandLine -like "*backup_restore*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+        Get-Process | Where-Object { $_.ProcessName -like "*edge*" -and $_.CommandLine -like "*backup_restore*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+        
+        # Remove profile directories to ensure clean start
+        Remove-Item -Path (Join-Path $env:TEMP "edge_incog_profile_backup_restore") -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path (Join-Path $env:TEMP "chrome_incog_profile_backup_restore") -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     if ($isWin) {
@@ -73,7 +134,6 @@ function Open-BrowserInIncognito {
                 Write-Host "[DEBUG] Found Edge at: $edgePath - launching inprivate" -ForegroundColor Magenta
                 $profileDir = Join-Path $env:TEMP "edge_incog_profile_backup_restore"
                 New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
-                Stop-IncognitoProfileProcesses -ProfileDir $profileDir -ProcessNames @("msedge.exe")
                 Start-Process -FilePath $edgePath -ArgumentList (@("-inprivate", "--user-data-dir=$profileDir") + $urls)
                 return
             }
@@ -90,8 +150,7 @@ function Open-BrowserInIncognito {
                 Write-Host "[DEBUG] Found Chrome at: $chromePath - launching incognito" -ForegroundColor Magenta
                 $profileDir = Join-Path $env:TEMP "chrome_incog_profile_backup_restore"
                 New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
-                Stop-IncognitoProfileProcesses -ProfileDir $profileDir -ProcessNames @("chrome.exe")
-                Start-Process -FilePath $chromePath -ArgumentList (@("--incognito", "--user-data-dir=$profileDir") + $urls)
+                Start-Process -FilePath $chromePath -ArgumentList (@("-incognito", "--user-data-dir=$profileDir") + $urls)
                 return
             }
         }
@@ -128,26 +187,23 @@ function Start-Backend {
         [string]$ComposeFile
     )
     
-    Write-Host "Starting backend directly..." -ForegroundColor Cyan
+    Write-Host "🚀 Starting Backend with Database..." -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "========================================" -ForegroundColor Green
-    Write-Host "  API will be accessible at:" -ForegroundColor Cyan
-    Write-Host "  http://localhost:$Port/docs" -ForegroundColor Yellow
-    Write-Host "========================================" -ForegroundColor Green
-    if ($ComposeFile -like "*neo4j*") {
-        Write-Host "  Neo4j Browser will be accessible at:" -ForegroundColor Cyan
-        Write-Host "  http://localhost:7474" -ForegroundColor Yellow
-        Write-Host "========================================" -ForegroundColor Green
-    }
+    Write-Host "========================================" -ForegroundColor Yellow
+    Write-Host "  Services starting:" -ForegroundColor Yellow
+    Write-Host "  - Backend API (port $Port)" -ForegroundColor Gray
+    Write-Host "  - PostgreSQL database" -ForegroundColor Gray
+    Write-Host "  - Web GUI at http://localhost:$Port/" -ForegroundColor Gray
+    Write-Host "========================================" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "🌐 Browser will open automatically when API is ready..." -ForegroundColor Yellow
+    Write-Host "Browser will open automatically when API is ready..." -ForegroundColor Yellow
     Write-Host ""
     
     # Start browser opening in background
     Show-ApiDocsDelayed -Port $Port -TimeoutSeconds 120
     
     Write-Host ""
-    docker compose --env-file .env -f $ComposeFile up --build
+    docker compose --env-file .env -f $ComposeFile up --build --no-cache
 }
 
 function Start-DependencyManagement {
@@ -298,6 +354,443 @@ function Start-CICDSetup {
     }
 }
 
+function Deploy-AllServices {
+    <#
+    .SYNOPSIS
+    Deploys all services (Backend + Runner + GUI) for backup automation.
+    #>
+    param(
+        [int]$Port,
+        [string]$ComposeFile
+    )
+
+    Write-Host "🚀 Deploying all services (Backend + Runner)..." -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "   Services:" -ForegroundColor Gray
+    Write-Host "   - Backend API (port $Port)" -ForegroundColor Gray
+    Write-Host "   - PostgreSQL database" -ForegroundColor Gray
+    Write-Host "   - Backup runner (periodic execution)" -ForegroundColor Gray
+    Write-Host "   - Web GUI at http://localhost:$Port/" -ForegroundColor Gray
+    Write-Host ""
+
+    # Check if runner compose file exists
+    $runnerFile = "local-deployment/docker-compose.runner.yml"
+    if (-not (Test-Path $runnerFile)) {
+        Write-Host "❌ Runner compose file not found: $runnerFile" -ForegroundColor Red
+        return
+    }
+
+    Write-Host "🐳 Starting services..." -ForegroundColor Cyan
+    docker compose --env-file .env -f $ComposeFile -f $runnerFile up -d --build
+
+    Write-Host ""
+    Write-Host "⏳ Waiting for services to be ready..." -ForegroundColor Cyan
+
+    # Wait for backend health
+    $maxWait = 30
+    $waitCount = 0
+    do {
+        try {
+            $response = Invoke-WebRequest -Uri "http://localhost:$Port/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+            if ($response.StatusCode -eq 200) {
+                Write-Host "✅ Backend is ready!" -ForegroundColor Green
+                break
+            }
+        } catch {
+            # Continue waiting
+        }
+        Write-Host "." -NoNewline -ForegroundColor Gray
+        Start-Sleep -Seconds 2
+        $waitCount++
+    } while ($waitCount -lt $maxWait)
+
+    if ($waitCount -eq $maxWait) {
+        Write-Host ""
+        Write-Host "❌ Backend failed to start within ${maxWait}s" -ForegroundColor Red
+        Write-Host "   Check logs: docker compose logs" -ForegroundColor Yellow
+        return
+    }
+
+    Write-Host ""
+    Write-Host "🌐 Opening Backup Manager GUI..." -ForegroundColor Cyan
+    Open-BackupGUI -Port $Port
+
+    Write-Host ""
+    Write-Host "✅ All services deployed and running!" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "   Services status:" -ForegroundColor Gray
+    docker compose --env-file .env -f $ComposeFile -f $runnerFile ps
+    Write-Host ""
+    Write-Host "   To stop all services:" -ForegroundColor Gray
+    Write-Host "     docker compose --env-file .env -f $ComposeFile -f $runnerFile down" -ForegroundColor Gray
+}
+
+function Open-BackupGUI {
+    <#
+    .SYNOPSIS
+    Opens the Backup Manager GUI in the default browser.
+    #>
+    param(
+        [int]$Port
+    )
+
+    Write-Host "🌐 Opening Backup Manager GUI..." -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "   URL: http://localhost:$Port/" -ForegroundColor Gray
+    Write-Host ""
+
+    $url = "http://localhost:$Port/"
+    Start-Process $url
+}
+
+function Invoke-BackupNow {
+    <#
+    .SYNOPSIS
+    Interactively runs a backup schedule via CLI.
+    #>
+    param(
+        [int]$Port
+    )
+
+    Write-Host "⚡ Run Backup Now" -ForegroundColor Cyan
+    Write-Host ""
+
+    # Check if API is running
+    try {
+        $response = Invoke-WebRequest -Uri "http://localhost:$Port/health" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+        if ($response.StatusCode -ne 200) {
+            throw "API not ready"
+        }
+    } catch {
+        Write-Host "❌ API is not running. Please start the backend first." -ForegroundColor Red
+        return
+    }
+
+    # Get admin key from .env
+    $adminKey = ""
+    if (Test-Path ".env") {
+        $adminKey = (Select-String -Path ".env" -Pattern "^ADMIN_API_KEY=" -SimpleMatch).Line -replace "^ADMIN_API_KEY=", "" -replace '"', ''
+    }
+
+    if (-not $adminKey) {
+        $adminKey = Read-Host "Enter Admin API Key"
+    }
+
+    # List schedules
+    Write-Host "📋 Fetching schedules..." -ForegroundColor Cyan
+    try {
+        $schedulesResponse = Invoke-RestMethod -Uri "http://localhost:$Port/automation/schedules" -Headers @{ "X-Admin-Key" = $adminKey } -ErrorAction Stop
+    } catch {
+        Write-Host "❌ Failed to fetch schedules. Check your API key." -ForegroundColor Red
+        return
+    }
+
+    Write-Host ""
+    Write-Host "Available schedules:" -ForegroundColor Gray
+    if ($schedulesResponse.Count -eq 0) {
+        Write-Host "  No schedules configured. Use the web GUI to create one." -ForegroundColor Yellow
+        return
+    }
+
+    for ($i = 0; $i -lt $schedulesResponse.Count; $i++) {
+        $schedule = $schedulesResponse[$i]
+        $shortId = $schedule.id.Substring(0, [Math]::Min(8, $schedule.id.Length))
+        Write-Host "  $($i + 1)) $($schedule.name) (ID: $shortId...)" -ForegroundColor Gray
+    }
+
+    Write-Host ""
+    $scheduleChoice = Read-Host "Enter schedule number to run (or 'q' to cancel)"
+
+    if ($scheduleChoice -eq 'q') {
+        Write-Host "Cancelled." -ForegroundColor Yellow
+        return
+    }
+
+    # Validate choice
+    $scheduleIndex = [int]$scheduleChoice - 1
+    if ($scheduleIndex -lt 0 -or $scheduleIndex -ge $schedulesResponse.Count) {
+        Write-Host "❌ Invalid selection." -ForegroundColor Red
+        return
+    }
+
+    $scheduleId = $schedulesResponse[$scheduleIndex].id
+
+    Write-Host ""
+    Write-Host "🚀 Running backup..." -ForegroundColor Cyan
+    try {
+        $result = Invoke-RestMethod -Uri "http://localhost:$Port/automation/schedules/$scheduleId/run-now" -Method POST -Headers @{ "X-Admin-Key" = $adminKey } -ErrorAction Stop
+        
+        if ($result.backup_filename) {
+            Write-Host "✅ Backup completed successfully!" -ForegroundColor Green
+            Write-Host "   Filename: $($result.backup_filename)" -ForegroundColor Gray
+        } else {
+            Write-Host "❌ Backup failed:" -ForegroundColor Red
+            Write-Host ($result | ConvertTo-Json -Depth 10) -ForegroundColor Red
+        }
+    } catch {
+        Write-Host "❌ Backup failed: $($_.Exception.Message)" -ForegroundColor Red
+    }
+}
+
+function Show-BackupList {
+    <#
+    .SYNOPSIS
+    Lists available backup files.
+    #>
+    param(
+        [int]$Port
+    )
+
+    Write-Host "📁 List Backup Files" -ForegroundColor Cyan
+    Write-Host ""
+
+    # Check if API is running
+    try {
+        $response = Invoke-WebRequest -Uri "http://localhost:$Port/health" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+        if ($response.StatusCode -ne 200) {
+            throw "API not ready"
+        }
+    } catch {
+        Write-Host "❌ API is not running. Please start the backend first." -ForegroundColor Red
+        return
+    }
+
+    # Get admin key from .env
+    $adminKey = ""
+    if (Test-Path ".env") {
+        $adminKey = (Select-String -Path ".env" -Pattern "^ADMIN_API_KEY=" -SimpleMatch).Line -replace "^ADMIN_API_KEY=", "" -replace '"', ''
+    }
+
+    if (-not $adminKey) {
+        $adminKey = Read-Host "Enter Admin API Key"
+    }
+
+    Write-Host "📋 Fetching backup files..." -ForegroundColor Cyan
+    try {
+        $response = Invoke-RestMethod -Uri "http://localhost:$Port/backup/list" -Headers @{ "X-Admin-Key" = $adminKey } -ErrorAction Stop
+    } catch {
+        Write-Host "❌ Failed to fetch backup files. Check your API key." -ForegroundColor Red
+        return
+    }
+
+    Write-Host ""
+    if ($response.files.Count -eq 0) {
+        Write-Host "  No backup files found." -ForegroundColor Yellow
+    } else {
+        Write-Host "  Found $($response.count) backup(s):" -ForegroundColor Gray
+        Write-Host ""
+        foreach ($file in $response.files) {
+            Write-Host "  - $($file.filename)" -ForegroundColor Gray
+            Write-Host "    Size: $($file.size_mb) MB | Created: $($file.created_at)" -ForegroundColor Gray
+        }
+    }
+}
+
+function Start-WithTestDatabases {
+    <#
+    .SYNOPSIS
+    Starts all services with test databases for all supported DB types.
+    #>
+    param(
+        [int]$Port,
+        [string]$ComposeFile
+    )
+
+    Write-Host "🧪 Starting with Test Databases..." -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Yellow
+    Write-Host "  Services starting:" -ForegroundColor Yellow
+    Write-Host "  - Backend API (port $Port)" -ForegroundColor Gray
+    Write-Host "  - App's database (PostgreSQL or Neo4j)" -ForegroundColor Gray
+    Write-Host "  - Backup runner" -ForegroundColor Gray
+    Write-Host "" -ForegroundColor Yellow
+    Write-Host "  Test Databases:" -ForegroundColor Yellow
+    Write-Host "  - PostgreSQL (port 5434)" -ForegroundColor Gray
+    Write-Host "  - MySQL (port 3306)" -ForegroundColor Gray
+    Write-Host "  - Neo4j (bolt: 7688, http: 7475)" -ForegroundColor Gray
+    Write-Host "" -ForegroundColor Yellow
+    Write-Host "  Admin UIs:" -ForegroundColor Yellow
+    Write-Host "  - pgAdmin: http://localhost:5050" -ForegroundColor Gray
+    Write-Host "  - phpMyAdmin: http://localhost:8080" -ForegroundColor Gray
+    Write-Host "  - Neo4j Browser: http://localhost:7475" -ForegroundColor Gray
+    Write-Host "  - Adminer: http://localhost:8082" -ForegroundColor Gray
+    Write-Host "  - SQLite Web: http://localhost:8083" -ForegroundColor Gray
+    Write-Host "========================================" -ForegroundColor Yellow
+    Write-Host ""
+
+    $testDbFile = "local-deployment/docker-compose.test-databases.yml"
+    $runnerFile = "local-deployment/docker-compose.runner.yml"
+
+    if (-not (Test-Path $testDbFile)) {
+        Write-Host "❌ Test databases compose file not found: $testDbFile" -ForegroundColor Red
+        return
+    }
+
+    if (-not (Test-Path $runnerFile)) {
+        Write-Host "❌ Runner compose file not found: $runnerFile" -ForegroundColor Red
+        return
+    }
+
+    Write-Host ""
+    Write-Host "🧹 Cleaning up old test database data..." -ForegroundColor Cyan
+    
+    # Remove test database data to ensure fresh setup
+    Remove-Item -Path ".docker/test-*" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path ".docker/pgadmin-data" -Recurse -Force -ErrorAction SilentlyContinue
+    
+    Write-Host "✅ Old test data removed" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "🐳 Starting all services with test databases..." -ForegroundColor Cyan
+    $composeJob = Start-Job -ScriptBlock {
+        param($envFile, $composeFile, $runnerFile, $testDbFile)
+        docker compose --env-file $envFile -f $composeFile -f $runnerFile -f $testDbFile up --build
+    } -ArgumentList ".env", $ComposeFile, $runnerFile, $testDbFile
+
+    Write-Host ""
+    Write-Host "⏳ Waiting for services to be ready..." -ForegroundColor Cyan
+    
+    # Wait for API to be ready
+    $maxWait = 120
+    $waitTime = 0
+    $apiReady = $false
+    
+    while ($waitTime -lt $maxWait) {
+        try {
+            $response = Invoke-WebRequest -Uri "http://localhost:$Port/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+            if ($response.StatusCode -eq 200) {
+                Write-Host "`n✅ API is ready!" -ForegroundColor Green
+                $apiReady = $true
+                break
+            }
+        } catch {
+            # API not ready yet
+        }
+        
+        Write-Host -NoNewline "."
+        Start-Sleep -Seconds 2
+        $waitTime += 2
+    }
+    
+    if (-not $apiReady) {
+        Write-Host "`n⚠️  API not ready after $maxWait seconds, opening browser anyway..." -ForegroundColor Yellow
+    }
+    
+    Write-Host ""
+    Write-Host "🌐 Opening browser with all admin UIs..." -ForegroundColor Cyan
+    
+    # Open browser now that services are ready
+    Open-BrowserInIncognito -Port $Port -ComposeFile $ComposeFile -Mode "test"
+
+    Write-Host ""
+    Write-Host "✅ All services with test databases started!" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "📋 Service status:" -ForegroundColor Gray
+    docker compose --env-file .env -f $ComposeFile -f $runnerFile -f $testDbFile ps
+    
+    Write-Host ""
+    Write-Host "Press Ctrl+C to stop all services..." -ForegroundColor Yellow
+    
+    # Wait for the compose job to finish (when user presses Ctrl+C)
+    try {
+        Wait-Job -Job $composeJob | Out-Null
+    } finally {
+        Remove-Job -Job $composeJob -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Start-WithAdminUIs {
+    <#
+    .SYNOPSIS
+    Starts services with admin UIs for the app's own database.
+    #>
+    param(
+        [int]$Port,
+        [string]$ComposeFile
+    )
+
+    Write-Host "🖥️  Starting Admin UIs..." -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Yellow
+    Write-Host "  Services starting:" -ForegroundColor Yellow
+    Write-Host "  - Backend API (port $Port)" -ForegroundColor Gray
+    Write-Host "  - App's database" -ForegroundColor Gray
+    Write-Host "" -ForegroundColor Yellow
+    Write-Host "  Admin UIs:" -ForegroundColor Yellow
+    if ($ComposeFile -like "*postgres*") {
+        Write-Host "  - pgAdmin (app DB): http://localhost:5051" -ForegroundColor Gray
+    }
+    if ($ComposeFile -like "*neo4j*") {
+        Write-Host "  - Neo4j Browser: http://localhost:7474" -ForegroundColor Gray
+    }
+    Write-Host "========================================" -ForegroundColor Yellow
+    Write-Host ""
+
+    $runnerFile = "local-deployment/docker-compose.runner.yml"
+
+    if (-not (Test-Path $runnerFile)) {
+        Write-Host "❌ Runner compose file not found: $runnerFile" -ForegroundColor Red
+        return
+    }
+
+    Write-Host ""
+    Write-Host "🐳 Starting services with admin profile..." -ForegroundColor Cyan
+    $composeJob = Start-Job -ScriptBlock {
+        param($envFile, $composeFile, $runnerFile)
+        docker compose --env-file $envFile -f $composeFile -f $runnerFile --profile admin up --build
+    } -ArgumentList ".env", $ComposeFile, $runnerFile
+
+    Write-Host ""
+    Write-Host "⏳ Waiting for services to be ready..." -ForegroundColor Cyan
+    
+    # Wait for API to be ready
+    $maxWait = 120
+    $waitTime = 0
+    $apiReady = $false
+    
+    while ($waitTime -lt $maxWait) {
+        try {
+            $response = Invoke-WebRequest -Uri "http://localhost:$Port/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+            if ($response.StatusCode -eq 200) {
+                Write-Host "`n✅ API is ready!" -ForegroundColor Green
+                $apiReady = $true
+                break
+            }
+        } catch {
+            # API not ready yet
+        }
+        
+        Write-Host -NoNewline "."
+        Start-Sleep -Seconds 2
+        $waitTime += 2
+    }
+    
+    if (-not $apiReady) {
+        Write-Host "`n⚠️  API not ready after $maxWait seconds, opening browser anyway..." -ForegroundColor Yellow
+    }
+    
+    Write-Host ""
+    Write-Host "🌐 Opening browser with admin UIs..." -ForegroundColor Cyan
+    
+    # Open browser now that services are ready
+    Open-BrowserInIncognito -Port $Port -ComposeFile $ComposeFile -Mode "admin"
+
+    Write-Host ""
+    Write-Host "✅ Services with admin UIs started!" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "📋 Service status:" -ForegroundColor Gray
+    docker compose --env-file .env -f $ComposeFile -f $runnerFile --profile admin ps
+    
+    Write-Host ""
+    Write-Host "Press Ctrl+C to stop all services..." -ForegroundColor Yellow
+    
+    # Wait for the compose job to finish (when user presses Ctrl+C)
+    try {
+        Wait-Job -Job $composeJob | Out-Null
+    } finally {
+        Remove-Job -Job $composeJob -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Show-MainMenu {
     param(
         [string]$Port,
@@ -305,9 +798,7 @@ function Show-MainMenu {
     )
 
     $menuNext = 1
-    $MENU_START = $menuNext; $menuNext++
-    $MENU_START_NO_CACHE = $menuNext; $menuNext++
-    $MENU_START_BOTH = $menuNext; $menuNext++
+    $MENU_START_ALL = $menuNext; $menuNext++
 
     $MENU_DOWN = $menuNext; $menuNext++
     $MENU_DEP_MGMT = $menuNext; $menuNext++
@@ -317,6 +808,12 @@ function Show-MainMenu {
     $MENU_CICD = $menuNext; $menuNext++
     $MENU_BUMP_VERSION = $menuNext; $menuNext++
 
+    $MENU_RUN_BACKUP = $menuNext; $menuNext++
+    $MENU_LIST_BACKUPS = $menuNext; $menuNext++
+
+    $MENU_TEST_DBS = $menuNext; $menuNext++
+    $MENU_TEST_DBS_ADMIN = $menuNext; $menuNext++
+
     $MENU_SETUP = $menuNext; $menuNext++
 
     $MENU_EXIT = $menuNext
@@ -325,9 +822,7 @@ function Show-MainMenu {
     Write-Host "================ Main Menu ================" -ForegroundColor Yellow
     Write-Host "" 
     Write-Host "Start:" -ForegroundColor Yellow
-    Write-Host "  $MENU_START) Start backend directly (docker compose up)" -ForegroundColor Gray
-    Write-Host "  $MENU_START_NO_CACHE) Start backend with --no-cache (fixes caching issues)" -ForegroundColor Gray
-    Write-Host "  $MENU_START_BOTH) Both - Dependency Management and then start backend" -ForegroundColor Gray
+    Write-Host "  $MENU_START_ALL) Start all services (Backend + Database + Runner + GUI)" -ForegroundColor Gray
     Write-Host "" 
     Write-Host "Maintenance:" -ForegroundColor Yellow
     Write-Host "  $MENU_DOWN) Docker Compose Down (stop and remove containers)" -ForegroundColor Gray
@@ -338,6 +833,14 @@ function Show-MainMenu {
     Write-Host "  $MENU_BUILD) Build Production Docker Image" -ForegroundColor Gray
     Write-Host "  $MENU_CICD) Setup CI/CD Pipeline" -ForegroundColor Gray
     Write-Host "  $MENU_BUMP_VERSION) Bump release version for docker image" -ForegroundColor Gray
+    Write-Host "" 
+    Write-Host "Backup Automation:" -ForegroundColor Yellow
+    Write-Host "  $MENU_RUN_BACKUP) Run backup now (CLI)" -ForegroundColor Gray
+    Write-Host "  $MENU_LIST_BACKUPS) List backup files" -ForegroundColor Gray
+    Write-Host "" 
+    Write-Host "Testing (all DB types + admin UIs):" -ForegroundColor Yellow
+    Write-Host "  $MENU_TEST_DBS) Start with test databases" -ForegroundColor Gray
+    Write-Host "  $MENU_TEST_DBS_ADMIN) Start with admin UIs only" -ForegroundColor Gray
     Write-Host "" 
     Write-Host "Setup:" -ForegroundColor Yellow
     Write-Host "  $MENU_SETUP) Re-run setup wizard" -ForegroundColor Gray
@@ -350,17 +853,9 @@ function Show-MainMenu {
     $exitCode = 0
 
     switch ($choice) {
-        "$MENU_START" {
-            Start-Backend -Port $Port -ComposeFile $ComposeFile
-            $summary = "Backend start triggered (docker compose up)"
-        }
-        "$MENU_START_NO_CACHE" {
-            Start-BackendNoCache -Port $Port -ComposeFile $ComposeFile
-            $summary = "Backend start with --no-cache triggered"
-        }
-        "$MENU_START_BOTH" {
-            Start-DependencyAndBackend -Port $Port -ComposeFile $ComposeFile
-            $summary = "Dependency Management and backend start executed"
+        "$MENU_START_ALL" {
+            Deploy-AllServices -Port $Port -ComposeFile $ComposeFile
+            $summary = "All services started"
         }
         "$MENU_DOWN" {
             Invoke-DockerComposeDown -ComposeFile $ComposeFile
@@ -386,6 +881,22 @@ function Show-MainMenu {
         "$MENU_BUMP_VERSION" {
             Update-ImageVersion
             $summary = "IMAGE_VERSION updated"
+        }
+        "$MENU_RUN_BACKUP" {
+            Invoke-BackupNow -Port $Port
+            $summary = "Backup operation completed"
+        }
+        "$MENU_LIST_BACKUPS" {
+            Show-BackupList -Port $Port
+            $summary = "Backup list displayed"
+        }
+        "$MENU_TEST_DBS" {
+            Start-WithTestDatabases -Port $Port -ComposeFile $ComposeFile
+            $summary = "Test databases started"
+        }
+        "$MENU_TEST_DBS_ADMIN" {
+            Start-WithAdminUIs -Port $Port -ComposeFile $ComposeFile
+            $summary = "Admin UIs started"
         }
         "$MENU_SETUP" {
             $result = Invoke-SetupWizard

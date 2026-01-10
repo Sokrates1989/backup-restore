@@ -34,16 +34,23 @@ def setup_openapi(app: FastAPI) -> None:
                 "in": "header",
                 "name": "X-Restore-Key",
                 "description": "Restore API Key for restore operations (overwrites database)"
+            },
+            "X-Delete-Key": {
+                "type": "apiKey",
+                "in": "header",
+                "name": "X-Delete-Key",
+                "description": "Delete API Key for destructive delete operations"
             }
         }
         
-        # Add security requirements to backup endpoints
+        # Add security requirements to backup and automation endpoints
         for path, path_item in openapi_schema.get("paths", {}).items():
-            if path.startswith("/backup/"):
+            if path.startswith("/backup/") or path.startswith("/automation/"):
                 for method, operation in path_item.items():
                     if method in ["get", "post", "delete", "put", "patch"]:
-                        # Determine which security scheme based on endpoint
-                        if "restore" in path:
+                        if method == "delete":
+                            operation["security"] = [{"X-Delete-Key": []}]
+                        elif "restore" in path:
                             operation["security"] = [{"X-Restore-Key": []}]
                         else:
                             operation["security"] = [{"X-Admin-Key": []}]

@@ -31,6 +31,8 @@ services:
       - ../alembic.ini:/app/alembic.ini
       # Mount backups directory to host for persistence and easy access
       - ../backups:/app/backups
+      # Mount website for live-reloading of UI
+      - ../website:/app/website
       # Note: .venv is built into the image, not mounted as a volume
       # This ensures dependencies always match pdm.lock from the build
     depends_on:
@@ -53,3 +55,21 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  # pgAdmin for managing the app's PostgreSQL database
+  pgadmin-app:
+    image: dpage/pgadmin4:latest
+    profiles:
+      - admin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@local.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports:
+      - "5051:80"
+    volumes:
+      - ../.docker/pgadmin-app-data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy

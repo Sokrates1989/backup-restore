@@ -2,8 +2,26 @@
 # This script tests the complete backup/restore workflow
 
 $ErrorActionPreference = "Stop"
-$API_URL = "http://localhost:8081"
-$ADMIN_KEY = "change-this-to-a-secure-random-key"  # Default from .env.template
+
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$envFile = Join-Path $repoRoot ".env"
+
+$port = "8000"
+$ADMIN_KEY = "change-this-to-a-secure-random-key"
+$RESTORE_KEY = "change-this-restore-key-to-something-secure"
+$DELETE_KEY = "change-this-delete-key-to-something-secure"
+
+if (Test-Path $envFile) {
+    $envLines = Get-Content $envFile
+    foreach ($line in $envLines) {
+        if ($line -match '^PORT=(.+)$') { $port = $Matches[1].Trim().Trim('"') }
+        if ($line -match '^ADMIN_API_KEY=(.+)$') { $ADMIN_KEY = $Matches[1].Trim().Trim('"') }
+        if ($line -match '^BACKUP_RESTORE_API_KEY=(.+)$') { $RESTORE_KEY = $Matches[1].Trim().Trim('"') }
+        if ($line -match '^BACKUP_DELETE_API_KEY=(.+)$') { $DELETE_KEY = $Matches[1].Trim().Trim('"') }
+    }
+}
+
+$API_URL = "http://localhost:$port"
 
 Write-Host "=====================================" -ForegroundColor Cyan
 Write-Host "  Backup & Restore Test" -ForegroundColor Cyan
@@ -17,23 +35,57 @@ function Invoke-ApiCall {
         [string]$Endpoint,
         [object]$Body = $null
     )
-    
+
     $headers = @{
         "X-Admin-Key" = $ADMIN_KEY
         "Content-Type" = "application/json"
     }
-    
+
     try {
         if ($Body) {
-            $response = Invoke-RestMethod -Uri "$API_URL$Endpoint" -Method $Method -Headers $headers -Body ($Body | ConvertTo-Json) -ErrorAction Stop
-        } else {
-            $response = Invoke-RestMethod -Uri "$API_URL$Endpoint" -Method $Method -Headers $headers -ErrorAction Stop
+            return Invoke-RestMethod -Uri "$API_URL$Endpoint" -Method $Method -Headers $headers -Body ($Body | ConvertTo-Json) -ErrorAction Stop
         }
-        return $response
+        return Invoke-RestMethod -Uri "$API_URL$Endpoint" -Method $Method -Headers $headers -ErrorAction Stop
     } catch {
         Write-Host "❌ API call failed: $_" -ForegroundColor Red
         throw
     }
+}
+
+function Invoke-RestoreCall {
+    param(
+        [string]$Method,
+        [string]$Endpoint,
+        [object]$Body = $null
+    )
+
+    $headers = @{
+        "X-Restore-Key" = $RESTORE_KEY
+        "Content-Type" = "application/json"
+    }
+
+    if ($Body) {
+        return Invoke-RestMethod -Uri "$API_URL$Endpoint" -Method $Method -Headers $headers -Body ($Body | ConvertTo-Json) -ErrorAction Stop
+    }
+    return Invoke-RestMethod -Uri "$API_URL$Endpoint" -Method $Method -Headers $headers -ErrorAction Stop
+}
+
+function Invoke-DeleteCall {
+    param(
+        [string]$Method,
+        [string]$Endpoint,
+        [object]$Body = $null
+    )
+
+    $headers = @{
+        "X-Delete-Key" = $DELETE_KEY
+        "Content-Type" = "application/json"
+    }
+
+    if ($Body) {
+        return Invoke-RestMethod -Uri "$API_URL$Endpoint" -Method $Method -Headers $headers -Body ($Body | ConvertTo-Json) -ErrorAction Stop
+    }
+    return Invoke-RestMethod -Uri "$API_URL$Endpoint" -Method $Method -Headers $headers -ErrorAction Stop
 }
 
 # Step 1: Create test data
@@ -47,7 +99,7 @@ $testData = @(
 
 foreach ($item in $testData) {
     $result = Invoke-ApiCall -Method POST -Endpoint "/examples/" -Body $item
-    Write-Host "  ✅ Created: $($result.name)" -ForegroundColor Green
+    Write-Host "  ✅ Created: $($result.data.name)" -ForegroundColor Green
 }
 
 # Step 2: Verify data exists
@@ -68,11 +120,31 @@ $backupFilename = $backup.filename
 Write-Host ""
 Write-Host "🗑️  Step 4: Wiping database..." -ForegroundColor Yellow
 Write-Host "  ⚠️  Stopping containers..." -ForegroundColor Yellow
-docker compose down
+$dbType = "postgresql"
+$dbMode = "local"
+if (Test-Path $envFile) {
+    foreach ($line in $envLines) {
+        if ($line -match '^DB_TYPE=(.+)$') { $dbType = $Matches[1].Trim().Trim('"') }
+        if ($line -match '^DB_MODE=(.+)$') { $dbMode = $Matches[1].Trim().Trim('"') }
+    }
+}
+
+$composeFile = Join-Path $repoRoot "local-deployment\docker-compose.postgres.yml"
+if ($dbMode -eq "standalone") {
+    $composeFile = Join-Path $repoRoot "local-deployment\docker-compose.yml"
+} elseif ($dbType -eq "neo4j") {
+    $composeFile = Join-Path $repoRoot "local-deployment\docker-compose.neo4j.yml"
+} elseif ($dbType -eq "postgresql" -or $dbType -eq "mysql") {
+    $composeFile = Join-Path $repoRoot "local-deployment\docker-compose.postgres.yml"
+} else {
+    $composeFile = Join-Path $repoRoot "local-deployment\docker-compose.yml"
+}
+
+docker compose --env-file $envFile -f $composeFile down --remove-orphans
 Start-Sleep -Seconds 2
 
 Write-Host "  🗑️  Deleting PostgreSQL data..." -ForegroundColor Yellow
-$postgresDataPath = "d:\Development\Code\python\backup-restore\.docker\postgres-data"
+$postgresDataPath = Join-Path $repoRoot ".docker\postgres-data"
 if (Test-Path $postgresDataPath) {
     Remove-Item -Path $postgresDataPath -Recurse -Force
     Write-Host "  ✅ Database wiped" -ForegroundColor Green
@@ -81,7 +153,7 @@ if (Test-Path $postgresDataPath) {
 }
 
 Write-Host "  🔄 Starting containers..." -ForegroundColor Yellow
-docker compose up -d
+docker compose --env-file $envFile -f $composeFile up -d --build
 Start-Sleep -Seconds 10  # Wait for services to start
 
 # Step 5: Verify database is empty
@@ -104,7 +176,7 @@ try {
 Write-Host ""
 Write-Host "♻️  Step 6: Restoring from backup..." -ForegroundColor Yellow
 Write-Host "  📂 Restoring: $backupFilename" -ForegroundColor Cyan
-$restore = Invoke-ApiCall -Method POST -Endpoint "/backup/restore/$backupFilename"
+$restore = Invoke-RestoreCall -Method POST -Endpoint "/backup/restore/$backupFilename"
 Write-Host "  ✅ $($restore.message)" -ForegroundColor Green
 
 # Step 7: Verify data is restored
@@ -137,7 +209,7 @@ if ($beforeBackup.total -eq $afterRestore.total) {
 Write-Host ""
 Write-Host "🧹 Step 9: Cleaning up test backup..." -ForegroundColor Yellow
 try {
-    $delete = Invoke-ApiCall -Method DELETE -Endpoint "/backup/delete/$backupFilename"
+    $delete = Invoke-DeleteCall -Method DELETE -Endpoint "/backup/delete/$backupFilename"
     Write-Host "  ✅ $($delete.message)" -ForegroundColor Green
 } catch {
     Write-Host "  ⚠️  Could not delete backup: $_" -ForegroundColor Yellow

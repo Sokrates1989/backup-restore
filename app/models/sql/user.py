@@ -5,12 +5,9 @@ This model represents users in the application with authentication support.
 """
 from sqlalchemy import Column, String, Boolean, DateTime
 from sqlalchemy.sql import func
-from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 
-# Create Base - will be properly initialized when database handler is ready
-Base = declarative_base()
-
+from models.sql.base import Base
 
 class User(Base):
     """

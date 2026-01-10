@@ -19,6 +19,10 @@ async def block_writes_during_restore(request: Request, call_next):
     # Allow all backup endpoints to proceed (they manage the restore operation)
     if request.url.path.startswith("/backup/"):
         return await call_next(request)
+
+    # Allow automation endpoints to proceed (they manage schedules and runs)
+    if request.url.path.startswith("/automation/"):
+        return await call_next(request)
     
     # Allow health and version endpoints
     if request.url.path in ["/health", "/version"]:

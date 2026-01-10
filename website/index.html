@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backup Manager - Admin</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Backup Manager</h1>
+            <p class="subtitle">Automated Backup Configuration</p>
+        </header>
+        
+        <!-- Global Status Messages -->
+        <div id="status-message" class="status hidden"></div>
+
+        <!-- Login Section -->
+        <section id="login-section" class="card">
+            <h2>Authentication</h2>
+            <div class="form-group">
+                <label for="admin-token">Admin API Key</label>
+                <input type="password" id="admin-token" placeholder="Enter your admin API key">
+            </div>
+            <button id="login-btn" class="btn btn-primary">Login</button>
+            <p id="login-error" class="error hidden"></p>
+        </section>
+
+        <!-- Main Content (hidden until authenticated) -->
+        <section id="main-section" class="hidden">
+            <!-- Navigation Tabs -->
+            <div class="tabs">
+                <button class="tab active" data-tab="databases">Databases</button>
+                <button class="tab" data-tab="remote-storage-locations">Remote Storage Locations</button>
+                <button class="tab" data-tab="backup-schedules">Backup Schedules</button>
+                <button class="tab" data-tab="backup-files">Backup Files</button>
+            </div>
+
+            <!-- Tab Contents (loaded dynamically) -->
+            <div id="tab-content-container">
+                <!-- Content will be loaded from individual tab files -->
+            </div>
+
+            <!-- Actions -->
+            <div class="card actions">
+                <button id="logout-btn" class="btn btn-danger">Logout</button>
+            </div>
+        </section>
+
+        <footer>
+            <p>Backup Manager | Version: <span id="app-version">1.0.0</span></p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
