@@ -35,7 +35,7 @@ docker compose -f build-image/docker-compose.build.yml run --rm build-image
 Edit your `.env` file and set:
 
 ```env
-# Docker image name (e.g., sokrates1989/python-api-template or ghcr.io/sokrates1989/python-api-template)
+# Docker image name (e.g., sokrates1989/backup-restore or ghcr.io/sokrates1989/backup-restore)
 IMAGE_NAME=your-username/your-api-name
 
 # Docker image version (will be prompted during build if you want to update)
@@ -87,7 +87,7 @@ docker compose -f build-image/docker-compose.build.yml run --rm build-image
    ```bash
    echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
    ```
-3. Set `IMAGE_NAME=ghcr.io/sokrates1989/python-api-template` in `.env`
+3. Set `IMAGE_NAME=ghcr.io/sokrates1989/backup-restore` in `.env`
 4. Build and push
 
 ### GitLab Container Registry
@@ -111,7 +111,7 @@ docker run -p 8000:8000 --env-file .env your-username/your-api-name:0.0.1
 docker compose -f docker/docker-compose.yml up
 ```
 
-For production-like testing with Docker Swarm, see the [swarm-python-api-template](https://github.com/Sokrates1989/swarm-python-api-template) repository.
+For production-like testing with Docker Swarm, see the [swarm-backup-restore](https://github.com/Sokrates1989/swarm-backup-restore) repository.
 
 ## 🚢 Deploying to Production
 

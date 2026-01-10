@@ -72,7 +72,7 @@ docker compose down
 Start-Sleep -Seconds 2
 
 Write-Host "  🗑️  Deleting PostgreSQL data..." -ForegroundColor Yellow
-$postgresDataPath = "d:\Development\Code\python\python-api-template\.docker\postgres-data"
+$postgresDataPath = "d:\Development\Code\python\backup-restore\.docker\postgres-data"
 if (Test-Path $postgresDataPath) {
     Remove-Item -Path $postgresDataPath -Recurse -Force
     Write-Host "  ✅ Database wiped" -ForegroundColor Green

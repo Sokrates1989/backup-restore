@@ -16,7 +16,7 @@ The production image build system allows you to create optimized Docker images f
 ### Directory Structure
 
 ```
-python-api-template/
+backup-restore/
 ├── Dockerfile                            # Main Dockerfile (dev + production)
 ├── build-image/                          # Production build directory
 │   ├── Dockerfile                        # Alpine + Docker CLI for build script
@@ -32,7 +32,7 @@ python-api-template/
 ### Related Repository
 
 For production deployment with Docker Swarm, see:
-- [swarm-python-api-template](https://github.com/Sokrates1989/swarm-python-api-template)
+- [swarm-backup-restore](https://github.com/Sokrates1989/swarm-backup-restore)
 
 ### Key Components
 
@@ -116,7 +116,7 @@ docker compose -f local-deployment/docker-compose.yml up
 
 ### Testing with Docker Swarm
 
-For production-like testing with Docker Swarm, use the [swarm-python-api-template](https://github.com/Sokrates1989/swarm-python-api-template) repository.
+For production-like testing with Docker Swarm, use the [swarm-backup-restore](https://github.com/Sokrates1989/swarm-backup-restore) repository.
 
 ## 🔄 CI/CD Integration
 
@@ -198,7 +198,7 @@ docker compose -f build-image/docker-compose.build.yml up
 echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
 
 # Update .env
-IMAGE_NAME=ghcr.io/sokrates1989/python-api-template
+IMAGE_NAME=ghcr.io/sokrates1989/backup-restore
 ```
 
 ### GitLab Container Registry
@@ -374,5 +374,5 @@ docker pull your-username/your-api-name:0.0.1
 docker run -p 8000:8000 --env-file .env your-username/your-api-name:0.0.1
 
 # Deploy with Docker Swarm
-# See: https://github.com/Sokrates1989/swarm-python-api-template
+# See: https://github.com/Sokrates1989/swarm-backup-restore
 ```

@@ -232,7 +232,7 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ### "Cannot find path" error
 ```powershell
 # Ensure you're in the project root directory:
-cd d:\Development\Code\python\python-api-template
+cd d:\Development\Code\python\backup-restore
 .\quick-start.ps1
 ```
 

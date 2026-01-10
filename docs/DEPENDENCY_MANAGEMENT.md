@@ -222,7 +222,7 @@ If you were using the old volume-based approach:
 docker compose down -v
 
 # 2. Remove old volume manually (if it persists)
-docker volume rm python-api-template_pdm-venv
+docker volume rm backup-restore_pdm-venv
 
 # 3. Rebuild with new approach
 docker compose up --build

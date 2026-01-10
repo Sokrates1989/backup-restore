@@ -1,6 +1,6 @@
 # Testing Directory
 
-Organized testing scripts and documentation for the python-api-template project.
+Organized testing scripts and documentation for the backup-restore project.
 
 ## 📁 Directory Structure
 

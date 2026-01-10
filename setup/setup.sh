@@ -47,10 +47,10 @@ echo "------------------------------"
 echo "This is used for building production Docker images."
 echo ""
 
-read -p "Enter Docker image name (e.g., sokrates1989/python-api-template): " IMAGE_NAME
+read -p "Enter Docker image name (e.g., sokrates1989/backup-restore): " IMAGE_NAME
 while [ -z "$IMAGE_NAME" ]; do
     echo "❌ Image name cannot be empty"
-    read -p "Enter Docker image name (e.g., sokrates1989/python-api-template): " IMAGE_NAME
+    read -p "Enter Docker image name (e.g., sokrates1989/backup-restore): " IMAGE_NAME
 done
 
 read -p "Enter initial image version [0.0.1]: " IMAGE_VERSION

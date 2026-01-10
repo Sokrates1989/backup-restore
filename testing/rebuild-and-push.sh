@@ -13,7 +13,7 @@ echo "📦 Current version: $VERSION"
 echo ""
 
 # Ask for confirmation
-read -p "Build and push sokrates1989/python-api-template:$VERSION? (y/n) " -n 1 -r
+read -p "Build and push sokrates1989/backup-restore:$VERSION? (y/n) " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     echo "❌ Cancelled"
@@ -22,7 +22,7 @@ fi
 
 # Build the image
 echo "🔨 Building Docker image..."
-docker build -t sokrates1989/python-api-template:$VERSION .
+docker build -t sokrates1989/backup-restore:$VERSION .
 
 if [ $? -ne 0 ]; then
     echo "❌ Build failed"
@@ -34,12 +34,12 @@ echo ""
 
 # Tag as latest
 echo "🏷️  Tagging as latest..."
-docker tag sokrates1989/python-api-template:$VERSION sokrates1989/python-api-template:latest
+docker tag sokrates1989/backup-restore:$VERSION sokrates1989/backup-restore:latest
 
 # Push to Docker Hub
 echo "📤 Pushing to Docker Hub..."
-docker push sokrates1989/python-api-template:$VERSION
-docker push sokrates1989/python-api-template:latest
+docker push sokrates1989/backup-restore:$VERSION
+docker push sokrates1989/backup-restore:latest
 
 if [ $? -ne 0 ]; then
     echo "❌ Push failed"
@@ -48,12 +48,12 @@ fi
 
 echo ""
 echo "✅ Successfully built and pushed:"
-echo "   - sokrates1989/python-api-template:$VERSION"
-echo "   - sokrates1989/python-api-template:latest"
+echo "   - sokrates1989/backup-restore:$VERSION"
+echo "   - sokrates1989/backup-restore:latest"
 echo ""
 echo "📝 Next Steps:"
 echo "   1. Update your swarm deployment:"
-echo "      docker service update --image sokrates1989/python-api-template:$VERSION python-api-template_api"
+echo "      docker service update --image sokrates1989/backup-restore:$VERSION python-api-template_api"
 echo ""
 echo "   2. Or use the quick-start script:"
 echo "      ./quick-start.sh"

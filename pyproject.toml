@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "fastapi-python-api-template"
+name = "backup-restore"
 version = "0.3.0"
-description = "A reusable FastAPI template with Docker and Poetry support"
+description = "FastAPI backup and restore service for SQL and Neo4j databases"
 authors = ["Your Name <you@example.com>"]
 readme = "README.md"
 packages = [{ include = "api" }, { include = "backend" }]
@@ -32,9 +32,9 @@ httpx = "^0.27.0"
 distribution = false
 
 [project]
-name = "fastapi-redis-api-test"
+name = "backup-restore"
 version = "0.3.0"
-description = "Default template for PDM package"
+description = "FastAPI backup and restore service for SQL and Neo4j databases"
 authors = [
     {name = "pmichiels", email = "pmichiels@engaige.tech"},
 ]

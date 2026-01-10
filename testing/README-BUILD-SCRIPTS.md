@@ -49,7 +49,7 @@ After building and pushing a new image:
 
 1. **Update your Docker Swarm deployment:**
    ```bash
-   docker service update --image sokrates1989/python-api-template:VERSION your-stack_api
+   docker service update --image sokrates1989/backup-restore:VERSION your-stack_api
    ```
 
 2. **Verify migrations ran successfully:**

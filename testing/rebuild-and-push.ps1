@@ -13,7 +13,7 @@ Write-Host "📦 Current version: $VERSION" -ForegroundColor Yellow
 Write-Host ""
 
 # Ask for confirmation
-$response = Read-Host "Build and push sokrates1989/python-api-template:$VERSION? (y/n)"
+$response = Read-Host "Build and push sokrates1989/backup-restore:$VERSION? (y/n)"
 if ($response -ne 'y' -and $response -ne 'Y') {
     Write-Host "❌ Cancelled" -ForegroundColor Red
     exit 1
@@ -21,7 +21,7 @@ if ($response -ne 'y' -and $response -ne 'Y') {
 
 # Build the image
 Write-Host "🔨 Building Docker image..." -ForegroundColor Yellow
-docker build -t sokrates1989/python-api-template:$VERSION .
+docker build -t sokrates1989/backup-restore:$VERSION .
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "❌ Build failed" -ForegroundColor Red
@@ -33,12 +33,12 @@ Write-Host ""
 
 # Tag as latest
 Write-Host "🏷️  Tagging as latest..." -ForegroundColor Yellow
-docker tag sokrates1989/python-api-template:$VERSION sokrates1989/python-api-template:latest
+docker tag sokrates1989/backup-restore:$VERSION sokrates1989/backup-restore:latest
 
 # Push to Docker Hub
 Write-Host "📤 Pushing to Docker Hub..." -ForegroundColor Yellow
-docker push sokrates1989/python-api-template:$VERSION
-docker push sokrates1989/python-api-template:latest
+docker push sokrates1989/backup-restore:$VERSION
+docker push sokrates1989/backup-restore:latest
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "❌ Push failed" -ForegroundColor Red
@@ -47,12 +47,12 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "✅ Successfully built and pushed:" -ForegroundColor Green
-Write-Host "   - sokrates1989/python-api-template:$VERSION" -ForegroundColor Green
-Write-Host "   - sokrates1989/python-api-template:latest" -ForegroundColor Green
+Write-Host "   - sokrates1989/backup-restore:$VERSION" -ForegroundColor Green
+Write-Host "   - sokrates1989/backup-restore:latest" -ForegroundColor Green
 Write-Host ""
 Write-Host "📝 Next Steps:" -ForegroundColor Cyan
 Write-Host "   1. Update your swarm deployment:" -ForegroundColor White
-Write-Host "      docker service update --image sokrates1989/python-api-template:$VERSION python-api-template_api" -ForegroundColor Gray
+Write-Host "      docker service update --image sokrates1989/backup-restore:$VERSION python-api-template_api" -ForegroundColor Gray
 Write-Host ""
 Write-Host "   2. Or use the quick-start script:" -ForegroundColor White
 Write-Host "      .\quick-start.ps1" -ForegroundColor Gray
