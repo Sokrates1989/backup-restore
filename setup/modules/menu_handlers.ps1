@@ -140,12 +140,11 @@ function Start-Backend {
         Write-Host "========================================" -ForegroundColor Green
     }
     Write-Host ""
-    Write-Host "Press ENTER to open the API documentation in your browser..." -ForegroundColor Yellow
-    Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
-    $null = Read-Host
+    Write-Host "🌐 Browser will open automatically when API is ready..." -ForegroundColor Yellow
+    Write-Host ""
     
-    # Open browser in incognito/private mode, reusing the same window for Neo4j if needed
-    Open-BrowserInIncognito -Port $Port -ComposeFile $ComposeFile
+    # Start browser opening in background
+    Show-ApiDocsDelayed -Port $Port -TimeoutSeconds 120
     
     Write-Host ""
     docker compose --env-file .env -f $ComposeFile up --build
@@ -179,12 +178,11 @@ function Start-DependencyAndBackend {
         Write-Host "========================================" -ForegroundColor Green
     }
     Write-Host ""
-    Write-Host "Press ENTER to open the API documentation in your browser..." -ForegroundColor Yellow
-    Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
-    $null = Read-Host
+    Write-Host "🌐 Browser will open automatically when API is ready..." -ForegroundColor Yellow
+    Write-Host ""
     
-    # Open browser in incognito/private mode, reusing the same window for Neo4j if needed
-    Open-BrowserInIncognito -Port $Port -ComposeFile $ComposeFile
+    # Start browser opening in background
+    Show-ApiDocsDelayed -Port $Port -TimeoutSeconds 120
     
     Write-Host ""
     docker compose --env-file .env -f $ComposeFile up --build
@@ -267,12 +265,11 @@ function Start-BackendNoCache {
         Write-Host "========================================" -ForegroundColor Green
     }
     Write-Host ""
-    Write-Host "Press ENTER to open the API documentation in your browser..." -ForegroundColor Yellow
-    Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
-    $null = Read-Host
+    Write-Host "🌐 Browser will open automatically when API is ready..." -ForegroundColor Yellow
+    Write-Host ""
     
-    # Open browser in incognito/private mode, reusing the same window for Neo4j if needed
-    Open-BrowserInIncognito -Port $Port -ComposeFile $ComposeFile
+    # Start browser opening in background
+    Show-ApiDocsDelayed -Port $Port -TimeoutSeconds 120
     
     Write-Host ""
     docker compose --env-file .env -f $ComposeFile build --no-cache

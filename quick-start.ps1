@@ -31,6 +31,7 @@ Write-Host "Using Docker Compose project: $composeProjectName" -ForegroundColor 
 Import-Module "$setupDir\modules\docker_helpers.ps1" -Force
 Import-Module "$setupDir\modules\version_manager.ps1" -Force
 Import-Module "$setupDir\modules\menu_handlers.ps1" -Force
+Import-Module "$setupDir\modules\browser_helpers.ps1" -Force
 
 Write-Host "FastAPI Redis API Test - Quick Start" -ForegroundColor Cyan
 Write-Host "======================================" -ForegroundColor Cyan
@@ -245,21 +246,11 @@ if (-not (Test-Path .setup-complete)) {
     Write-Host "  http://localhost:$PORT/docs" -ForegroundColor Yellow
     Write-Host "========================================" -ForegroundColor Green
     Write-Host ""
-    Write-Host "Press ENTER to open the API documentation in your browser..." -ForegroundColor Yellow
-    Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
-    $null = Read-Host
+    Write-Host "🌐 Browser will open automatically when API is ready..." -ForegroundColor Yellow
+    Write-Host ""
     
-    # Open browser in incognito/private mode
-    Write-Host "Opening browser..." -ForegroundColor Cyan
-    Start-Process "msedge" "--inprivate http://localhost:$PORT/docs" -ErrorAction SilentlyContinue
-    if ($LASTEXITCODE -ne 0) {
-        # Fallback to Chrome if Edge not available
-        Start-Process "chrome" "--incognito http://localhost:$PORT/docs" -ErrorAction SilentlyContinue
-        if ($LASTEXITCODE -ne 0) {
-            # Fallback to default browser
-            Start-Process "http://localhost:$PORT/docs"
-        }
-    }
+    # Start browser opening in background
+    Show-ApiDocsDelayed -Port $PORT -TimeoutSeconds 120
     
     Write-Host ""
     docker compose --env-file .env -f $COMPOSE_FILE up --build

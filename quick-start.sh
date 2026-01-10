@@ -17,6 +17,7 @@ SETUP_DIR="${SCRIPT_DIR}/setup"
 source "${SETUP_DIR}/modules/docker_helpers.sh"
 source "${SETUP_DIR}/modules/version_manager.sh"
 source "${SETUP_DIR}/modules/menu_handlers.sh"
+source "${SETUP_DIR}/modules/browser_helpers.sh"
 
 echo "🚀 FastAPI Redis API Test - Quick Start"
 echo "======================================"
@@ -196,23 +197,11 @@ if [ ! -f ".setup-complete" ]; then
     echo "  http://localhost:$PORT/docs"
     echo "========================================"
     echo ""
-    echo "Press ENTER to open the API documentation in your browser..."
-    echo "(The API may take a few seconds to start. Please refresh the page if needed.)"
-    read -r
+    echo "🌐 Browser will open automatically when API is ready..."
+    echo ""
     
-    # Open browser in incognito/private mode
-    echo "Opening browser..."
-    if command -v xdg-open &> /dev/null; then
-        # Linux
-        xdg-open "http://localhost:$PORT/docs" &
-    elif command -v open &> /dev/null; then
-        # macOS - try to open in incognito mode
-        open -na "Google Chrome" --args --incognito "http://localhost:$PORT/docs" 2>/dev/null || \
-        open -na "Safari" --args --private "http://localhost:$PORT/docs" 2>/dev/null || \
-        open "http://localhost:$PORT/docs"
-    else
-        echo "Could not detect browser command. Please open manually: http://localhost:$PORT/docs"
-    fi
+    # Start browser opening in background
+    show_api_docs_delayed "$PORT" "120"
     
     echo ""
     docker compose --env-file .env -f "$COMPOSE_FILE" up --build

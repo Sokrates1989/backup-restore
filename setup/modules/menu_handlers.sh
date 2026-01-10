@@ -92,12 +92,11 @@ handle_backend_start() {
     echo "  http://localhost:$port/docs"
     echo "========================================"
     echo ""
-    echo "Press ENTER to open the API documentation in your browser..."
-    echo "(The API may take a few seconds to start. Please refresh the page if needed.)"
-    read -r
+    echo "🌐 Browser will open automatically when API is ready..."
+    echo ""
     
-    # Open browser in incognito/private mode using shared window
-    open_browser_incognito "$port" "$compose_file"
+    # Start browser opening in background
+    show_api_docs_delayed "$port" "120"
     
     echo ""
     docker compose --env-file .env -f "$compose_file" up --build
@@ -124,12 +123,11 @@ handle_dependency_and_backend() {
     echo "  http://localhost:$port/docs"
     echo "========================================"
     echo ""
-    echo "Press ENTER to open the API documentation in your browser..."
-    echo "(The API may take a few seconds to start. Please refresh the page if needed.)"
-    read -r
+    echo "🌐 Browser will open automatically when API is ready..."
+    echo ""
     
-    # Open browser in incognito/private mode using shared window
-    open_browser_incognito "$port" "$compose_file"
+    # Start browser opening in background
+    show_api_docs_delayed "$port" "120"
     
     echo ""
     docker compose --env-file .env -f "$compose_file" up --build
@@ -196,12 +194,11 @@ handle_backend_start_no_cache() {
     echo "  http://localhost:$port/docs"
     echo "========================================"
     echo ""
-    echo "Press ENTER to open the API documentation in your browser..."
-    echo "(The API may take a few seconds to start. Please refresh the page if needed.)"
-    read -r
+    echo "🌐 Browser will open automatically when API is ready..."
+    echo ""
     
-    # Open browser in incognito/private mode using shared window
-    open_browser_incognito "$port" "$compose_file"
+    # Start browser opening in background
+    show_api_docs_delayed "$port" "120"
     
     echo ""
     docker compose --env-file .env -f "$compose_file" build --no-cache
