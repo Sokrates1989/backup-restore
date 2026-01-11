@@ -11,9 +11,9 @@ Write-Host ""
 function Print-Result {
     param($success, $message)
     if ($success) {
-        Write-Host "✓ $message" -ForegroundColor Green
+        Write-Host "[OK] $message" -ForegroundColor Green
     } else {
-        Write-Host "✗ $message" -ForegroundColor Red
+        Write-Host "[FAIL] $message" -ForegroundColor Red
     }
 }
 

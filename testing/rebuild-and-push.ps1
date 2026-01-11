@@ -3,7 +3,7 @@
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "🔨 Rebuilding Docker Image with Migration Fix" -ForegroundColor Cyan
+Write-Host "[BUILD] Rebuilding Docker Image with Migration Fix" -ForegroundColor Cyan
 Write-Host "==============================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -20,7 +20,7 @@ if ($response -ne 'y' -and $response -ne 'Y') {
 }
 
 # Build the image
-Write-Host "🔨 Building Docker image..." -ForegroundColor Yellow
+Write-Host "[BUILD] Building Docker image..." -ForegroundColor Yellow
 docker build -t sokrates1989/backup-restore:$VERSION .
 
 if ($LASTEXITCODE -ne 0) {
@@ -28,15 +28,15 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-Write-Host "✅ Build successful" -ForegroundColor Green
+Write-Host "[OK] Build successful" -ForegroundColor Green
 Write-Host ""
 
 # Tag as latest
-Write-Host "🏷️  Tagging as latest..." -ForegroundColor Yellow
+Write-Host "[TAG]  Tagging as latest..." -ForegroundColor Yellow
 docker tag sokrates1989/backup-restore:$VERSION sokrates1989/backup-restore:latest
 
 # Push to Docker Hub
-Write-Host "📤 Pushing to Docker Hub..." -ForegroundColor Yellow
+Write-Host "[PUSH] Pushing to Docker Hub..." -ForegroundColor Yellow
 docker push sokrates1989/backup-restore:$VERSION
 docker push sokrates1989/backup-restore:latest
 
@@ -46,11 +46,11 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
-Write-Host "✅ Successfully built and pushed:" -ForegroundColor Green
+Write-Host "[OK] Successfully built and pushed:" -ForegroundColor Green
 Write-Host "   - sokrates1989/backup-restore:$VERSION" -ForegroundColor Green
 Write-Host "   - sokrates1989/backup-restore:latest" -ForegroundColor Green
 Write-Host ""
-Write-Host "📝 Next Steps:" -ForegroundColor Cyan
+Write-Host "[NOTE] Next Steps:" -ForegroundColor Cyan
 Write-Host "   1. Update your swarm deployment:" -ForegroundColor White
 Write-Host "      docker service update --image sokrates1989/backup-restore:$VERSION python-api-template_api" -ForegroundColor Gray
 Write-Host ""

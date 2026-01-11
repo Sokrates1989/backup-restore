@@ -1,5 +1,12 @@
-# menu_handlers.ps1
+﻿# menu_handlers.ps1
 # PowerShell module for handling menu actions in quick-start script
+
+# Source browser_helpers
+$scriptPath = $PSScriptRoot
+$browserHelpersPath = Join-Path $scriptPath "browser_helpers.ps1"
+if (Test-Path $browserHelpersPath) {
+    . $browserHelpersPath
+}
 
 function Stop-IncognitoProfileProcesses {
     <#
@@ -65,7 +72,7 @@ function Open-BrowserInIncognito {
         )
         
         Write-Host ""
-        Write-Host "🌐 Opening browser with all admin UIs:" -ForegroundColor Cyan
+        Write-Host "[WEB] Opening browser with all admin UIs:" -ForegroundColor Cyan
         Write-Host "  - Backup Manager: $guiUrl" -ForegroundColor Gray
         Write-Host "  - API Docs: $apiUrl" -ForegroundColor Gray
         Write-Host "  - pgAdmin: http://localhost:5050" -ForegroundColor Gray
@@ -85,7 +92,7 @@ function Open-BrowserInIncognito {
         }
         
         Write-Host ""
-        Write-Host "🌐 Opening browser with admin UIs:" -ForegroundColor Cyan
+        Write-Host "[WEB] Opening browser with admin UIs:" -ForegroundColor Cyan
         Write-Host "  - Backup Manager: $guiUrl" -ForegroundColor Gray
         Write-Host "  - API Docs: $apiUrl" -ForegroundColor Gray
         if ($ComposeFile -like "*postgres*") {
@@ -187,7 +194,7 @@ function Start-Backend {
         [string]$ComposeFile
     )
     
-    Write-Host "🚀 Starting Backend with Database..." -ForegroundColor Cyan
+    Write-Host "[INFO] Starting Backend with Database..." -ForegroundColor Cyan
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Yellow
     Write-Host "  Services starting:" -ForegroundColor Yellow
@@ -200,7 +207,7 @@ function Start-Backend {
     Write-Host ""
     
     # Start browser opening in background
-    Show-ApiDocsDelayed -Port $Port -TimeoutSeconds 120
+    Show-RelevantPagesDelayed -ComposeFile $ComposeFile -TimeoutSeconds 120
     
     Write-Host ""
     docker compose --env-file .env -f $ComposeFile up --build --no-cache
@@ -234,11 +241,11 @@ function Start-DependencyAndBackend {
         Write-Host "========================================" -ForegroundColor Green
     }
     Write-Host ""
-    Write-Host "🌐 Browser will open automatically when API is ready..." -ForegroundColor Yellow
+    Write-Host "[WEB] Browser will open automatically when API is ready..." -ForegroundColor Yellow
     Write-Host ""
     
     # Start browser opening in background
-    Show-ApiDocsDelayed -Port $Port -TimeoutSeconds 120
+    Show-RelevantPagesDelayed -ComposeFile $ComposeFile -TimeoutSeconds 120
     
     Write-Host ""
     docker compose --env-file .env -f $ComposeFile up --build
@@ -321,11 +328,11 @@ function Start-BackendNoCache {
         Write-Host "========================================" -ForegroundColor Green
     }
     Write-Host ""
-    Write-Host "🌐 Browser will open automatically when API is ready..." -ForegroundColor Yellow
+    Write-Host "[WEB] Browser will open automatically when API is ready..." -ForegroundColor Yellow
     Write-Host ""
     
     # Start browser opening in background
-    Show-ApiDocsDelayed -Port $Port -TimeoutSeconds 120
+    Show-RelevantPagesDelayed -ComposeFile $ComposeFile -TimeoutSeconds 120
     
     Write-Host ""
     docker compose --env-file .env -f $ComposeFile build --no-cache
@@ -361,10 +368,11 @@ function Deploy-AllServices {
     #>
     param(
         [int]$Port,
-        [string]$ComposeFile
+        [string]$ComposeFile,
+        [bool]$Detached = $true
     )
 
-    Write-Host "🚀 Deploying all services (Backend + Runner)..." -ForegroundColor Cyan
+    Write-Host "[INFO] Deploying all services (Backend + Runner)..." -ForegroundColor Cyan
     Write-Host ""
     Write-Host "   Services:" -ForegroundColor Gray
     Write-Host "   - Backend API (port $Port)" -ForegroundColor Gray
@@ -376,15 +384,29 @@ function Deploy-AllServices {
     # Check if runner compose file exists
     $runnerFile = "local-deployment/docker-compose.runner.yml"
     if (-not (Test-Path $runnerFile)) {
-        Write-Host "❌ Runner compose file not found: $runnerFile" -ForegroundColor Red
+        Write-Host "[ERROR] Runner compose file not found: $runnerFile" -ForegroundColor Red
         return
     }
 
-    Write-Host "🐳 Starting services..." -ForegroundColor Cyan
-    docker compose --env-file .env -f $ComposeFile -f $runnerFile up -d --build
+    $detachMode = if ($Detached) { "detached" } else { "undetached" }
+
+    # IMPORTANT: Start the browser opener BEFORE docker compose.
+    # In undetached mode, docker compose blocks the script, so starting it after would never run.
+    if (Get-Command Show-RelevantPagesDelayed -ErrorAction SilentlyContinue) {
+        Show-RelevantPagesDelayed -ComposeFile $ComposeFile -TimeoutSeconds 120
+    }
+
+    Write-Host "[DOCKER] Starting services ($detachMode)..." -ForegroundColor Cyan
+
+    if ($Detached) {
+        docker compose --env-file .env -f $ComposeFile -f $runnerFile up -d --build
+    } else {
+        docker compose --env-file .env -f $ComposeFile -f $runnerFile up --build
+        return
+    }
 
     Write-Host ""
-    Write-Host "⏳ Waiting for services to be ready..." -ForegroundColor Cyan
+    Write-Host "[WAIT] Waiting for services to be ready..." -ForegroundColor Cyan
 
     # Wait for backend health
     $maxWait = 30
@@ -393,7 +415,7 @@ function Deploy-AllServices {
         try {
             $response = Invoke-WebRequest -Uri "http://localhost:$Port/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
             if ($response.StatusCode -eq 200) {
-                Write-Host "✅ Backend is ready!" -ForegroundColor Green
+                Write-Host "[OK] Backend is ready!" -ForegroundColor Green
                 break
             }
         } catch {
@@ -406,17 +428,13 @@ function Deploy-AllServices {
 
     if ($waitCount -eq $maxWait) {
         Write-Host ""
-        Write-Host "❌ Backend failed to start within ${maxWait}s" -ForegroundColor Red
+        Write-Host "[ERROR] Backend failed to start within ${maxWait}s" -ForegroundColor Red
         Write-Host "   Check logs: docker compose logs" -ForegroundColor Yellow
         return
     }
 
     Write-Host ""
-    Write-Host "🌐 Opening Backup Manager GUI..." -ForegroundColor Cyan
-    Open-BackupGUI -Port $Port
-
-    Write-Host ""
-    Write-Host "✅ All services deployed and running!" -ForegroundColor Green
+    Write-Host "[OK] All services deployed and running!" -ForegroundColor Green
     Write-Host ""
     Write-Host "   Services status:" -ForegroundColor Gray
     docker compose --env-file .env -f $ComposeFile -f $runnerFile ps
@@ -434,7 +452,7 @@ function Open-BackupGUI {
         [int]$Port
     )
 
-    Write-Host "🌐 Opening Backup Manager GUI..." -ForegroundColor Cyan
+    Write-Host "[WEB] Opening Backup Manager GUI..." -ForegroundColor Cyan
     Write-Host ""
     Write-Host "   URL: http://localhost:$Port/" -ForegroundColor Gray
     Write-Host ""
@@ -452,7 +470,7 @@ function Invoke-BackupNow {
         [int]$Port
     )
 
-    Write-Host "⚡ Run Backup Now" -ForegroundColor Cyan
+    Write-Host "[RUN] Run Backup Now" -ForegroundColor Cyan
     Write-Host ""
 
     # Check if API is running
@@ -462,7 +480,7 @@ function Invoke-BackupNow {
             throw "API not ready"
         }
     } catch {
-        Write-Host "❌ API is not running. Please start the backend first." -ForegroundColor Red
+        Write-Host "[ERROR] API is not running. Please start the backend first." -ForegroundColor Red
         return
     }
 
@@ -477,11 +495,11 @@ function Invoke-BackupNow {
     }
 
     # List schedules
-    Write-Host "📋 Fetching schedules..." -ForegroundColor Cyan
+    Write-Host "[LIST] Fetching schedules..." -ForegroundColor Cyan
     try {
         $schedulesResponse = Invoke-RestMethod -Uri "http://localhost:$Port/automation/schedules" -Headers @{ "X-Admin-Key" = $adminKey } -ErrorAction Stop
     } catch {
-        Write-Host "❌ Failed to fetch schedules. Check your API key." -ForegroundColor Red
+        Write-Host "[ERROR] Failed to fetch schedules. Check your API key." -ForegroundColor Red
         return
     }
 
@@ -509,26 +527,26 @@ function Invoke-BackupNow {
     # Validate choice
     $scheduleIndex = [int]$scheduleChoice - 1
     if ($scheduleIndex -lt 0 -or $scheduleIndex -ge $schedulesResponse.Count) {
-        Write-Host "❌ Invalid selection." -ForegroundColor Red
+        Write-Host "[ERROR] Invalid selection." -ForegroundColor Red
         return
     }
 
     $scheduleId = $schedulesResponse[$scheduleIndex].id
 
     Write-Host ""
-    Write-Host "🚀 Running backup..." -ForegroundColor Cyan
+    Write-Host "[INFO] Running backup..." -ForegroundColor Cyan
     try {
         $result = Invoke-RestMethod -Uri "http://localhost:$Port/automation/schedules/$scheduleId/run-now" -Method POST -Headers @{ "X-Admin-Key" = $adminKey } -ErrorAction Stop
         
         if ($result.backup_filename) {
-            Write-Host "✅ Backup completed successfully!" -ForegroundColor Green
+            Write-Host "[OK] Backup completed successfully!" -ForegroundColor Green
             Write-Host "   Filename: $($result.backup_filename)" -ForegroundColor Gray
         } else {
-            Write-Host "❌ Backup failed:" -ForegroundColor Red
+            Write-Host "[ERROR] Backup failed:" -ForegroundColor Red
             Write-Host ($result | ConvertTo-Json -Depth 10) -ForegroundColor Red
         }
     } catch {
-        Write-Host "❌ Backup failed: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "[ERROR] Backup failed: $($_.Exception.Message)" -ForegroundColor Red
     }
 }
 
@@ -541,7 +559,7 @@ function Show-BackupList {
         [int]$Port
     )
 
-    Write-Host "📁 List Backup Files" -ForegroundColor Cyan
+    Write-Host "[FILES] List Backup Files" -ForegroundColor Cyan
     Write-Host ""
 
     # Check if API is running
@@ -551,7 +569,7 @@ function Show-BackupList {
             throw "API not ready"
         }
     } catch {
-        Write-Host "❌ API is not running. Please start the backend first." -ForegroundColor Red
+        Write-Host "[ERROR] API is not running. Please start the backend first." -ForegroundColor Red
         return
     }
 
@@ -565,11 +583,11 @@ function Show-BackupList {
         $adminKey = Read-Host "Enter Admin API Key"
     }
 
-    Write-Host "📋 Fetching backup files..." -ForegroundColor Cyan
+    Write-Host "[LIST] Fetching backup files..." -ForegroundColor Cyan
     try {
         $response = Invoke-RestMethod -Uri "http://localhost:$Port/backup/list" -Headers @{ "X-Admin-Key" = $adminKey } -ErrorAction Stop
     } catch {
-        Write-Host "❌ Failed to fetch backup files. Check your API key." -ForegroundColor Red
+        Write-Host "[ERROR] Failed to fetch backup files. Check your API key." -ForegroundColor Red
         return
     }
 
@@ -596,7 +614,7 @@ function Start-WithTestDatabases {
         [string]$ComposeFile
     )
 
-    Write-Host "🧪 Starting with Test Databases..." -ForegroundColor Cyan
+    Write-Host "[TEST] Starting with Test Databases..." -ForegroundColor Cyan
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Yellow
     Write-Host "  Services starting:" -ForegroundColor Yellow
@@ -622,32 +640,32 @@ function Start-WithTestDatabases {
     $runnerFile = "local-deployment/docker-compose.runner.yml"
 
     if (-not (Test-Path $testDbFile)) {
-        Write-Host "❌ Test databases compose file not found: $testDbFile" -ForegroundColor Red
+        Write-Host "[ERROR] Test databases compose file not found: $testDbFile" -ForegroundColor Red
         return
     }
 
     if (-not (Test-Path $runnerFile)) {
-        Write-Host "❌ Runner compose file not found: $runnerFile" -ForegroundColor Red
+        Write-Host "[ERROR] Runner compose file not found: $runnerFile" -ForegroundColor Red
         return
     }
 
     Write-Host ""
-    Write-Host "🧹 Cleaning up old test database data..." -ForegroundColor Cyan
+    Write-Host "[CLEAN] Cleaning up old test database data..." -ForegroundColor Cyan
     
     # Remove test database data to ensure fresh setup
     Remove-Item -Path ".docker/test-*" -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -Path ".docker/pgadmin-data" -Recurse -Force -ErrorAction SilentlyContinue
     
-    Write-Host "✅ Old test data removed" -ForegroundColor Green
+    Write-Host "[OK] Old test data removed" -ForegroundColor Green
     Write-Host ""
-    Write-Host "🐳 Starting all services with test databases..." -ForegroundColor Cyan
+    Write-Host "[DOCKER] Starting all services with test databases..." -ForegroundColor Cyan
     $composeJob = Start-Job -ScriptBlock {
         param($envFile, $composeFile, $runnerFile, $testDbFile)
         docker compose --env-file $envFile -f $composeFile -f $runnerFile -f $testDbFile up --build
     } -ArgumentList ".env", $ComposeFile, $runnerFile, $testDbFile
 
     Write-Host ""
-    Write-Host "⏳ Waiting for services to be ready..." -ForegroundColor Cyan
+    Write-Host "[WAIT] Waiting for services to be ready..." -ForegroundColor Cyan
     
     # Wait for API to be ready
     $maxWait = 120
@@ -658,7 +676,7 @@ function Start-WithTestDatabases {
         try {
             $response = Invoke-WebRequest -Uri "http://localhost:$Port/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
             if ($response.StatusCode -eq 200) {
-                Write-Host "`n✅ API is ready!" -ForegroundColor Green
+                Write-Host "`n[OK] API is ready!" -ForegroundColor Green
                 $apiReady = $true
                 break
             }
@@ -672,19 +690,19 @@ function Start-WithTestDatabases {
     }
     
     if (-not $apiReady) {
-        Write-Host "`n⚠️  API not ready after $maxWait seconds, opening browser anyway..." -ForegroundColor Yellow
+        Write-Host "`n[WARNING]  API not ready after $maxWait seconds, opening browser anyway..." -ForegroundColor Yellow
     }
     
     Write-Host ""
-    Write-Host "🌐 Opening browser with all admin UIs..." -ForegroundColor Cyan
+    Write-Host "[WEB] Opening browser with all admin UIs..." -ForegroundColor Cyan
     
     # Open browser now that services are ready
     Open-BrowserInIncognito -Port $Port -ComposeFile $ComposeFile -Mode "test"
 
     Write-Host ""
-    Write-Host "✅ All services with test databases started!" -ForegroundColor Green
+    Write-Host "[OK] All services with test databases started!" -ForegroundColor Green
     Write-Host ""
-    Write-Host "📋 Service status:" -ForegroundColor Gray
+    Write-Host "[LIST] Service status:" -ForegroundColor Gray
     docker compose --env-file .env -f $ComposeFile -f $runnerFile -f $testDbFile ps
     
     Write-Host ""
@@ -708,7 +726,7 @@ function Start-WithAdminUIs {
         [string]$ComposeFile
     )
 
-    Write-Host "🖥️  Starting Admin UIs..." -ForegroundColor Cyan
+    Write-Host "[ADMIN]  Starting Admin UIs..." -ForegroundColor Cyan
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Yellow
     Write-Host "  Services starting:" -ForegroundColor Yellow
@@ -728,19 +746,19 @@ function Start-WithAdminUIs {
     $runnerFile = "local-deployment/docker-compose.runner.yml"
 
     if (-not (Test-Path $runnerFile)) {
-        Write-Host "❌ Runner compose file not found: $runnerFile" -ForegroundColor Red
+        Write-Host "[ERROR] Runner compose file not found: $runnerFile" -ForegroundColor Red
         return
     }
 
     Write-Host ""
-    Write-Host "🐳 Starting services with admin profile..." -ForegroundColor Cyan
+    Write-Host "[DOCKER] Starting services with admin profile..." -ForegroundColor Cyan
     $composeJob = Start-Job -ScriptBlock {
         param($envFile, $composeFile, $runnerFile)
         docker compose --env-file $envFile -f $composeFile -f $runnerFile --profile admin up --build
     } -ArgumentList ".env", $ComposeFile, $runnerFile
 
     Write-Host ""
-    Write-Host "⏳ Waiting for services to be ready..." -ForegroundColor Cyan
+    Write-Host "[WAIT] Waiting for services to be ready..." -ForegroundColor Cyan
     
     # Wait for API to be ready
     $maxWait = 120
@@ -751,7 +769,7 @@ function Start-WithAdminUIs {
         try {
             $response = Invoke-WebRequest -Uri "http://localhost:$Port/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
             if ($response.StatusCode -eq 200) {
-                Write-Host "`n✅ API is ready!" -ForegroundColor Green
+                Write-Host "`n[OK] API is ready!" -ForegroundColor Green
                 $apiReady = $true
                 break
             }
@@ -765,19 +783,19 @@ function Start-WithAdminUIs {
     }
     
     if (-not $apiReady) {
-        Write-Host "`n⚠️  API not ready after $maxWait seconds, opening browser anyway..." -ForegroundColor Yellow
+        Write-Host "`n[WARNING]  API not ready after $maxWait seconds, opening browser anyway..." -ForegroundColor Yellow
     }
     
     Write-Host ""
-    Write-Host "🌐 Opening browser with admin UIs..." -ForegroundColor Cyan
+    Write-Host "[WEB] Opening browser with admin UIs..." -ForegroundColor Cyan
     
     # Open browser now that services are ready
     Open-BrowserInIncognito -Port $Port -ComposeFile $ComposeFile -Mode "admin"
 
     Write-Host ""
-    Write-Host "✅ Services with admin UIs started!" -ForegroundColor Green
+    Write-Host "[OK] Services with admin UIs started!" -ForegroundColor Green
     Write-Host ""
-    Write-Host "📋 Service status:" -ForegroundColor Gray
+    Write-Host "[LIST] Service status:" -ForegroundColor Gray
     docker compose --env-file .env -f $ComposeFile -f $runnerFile --profile admin ps
     
     Write-Host ""
@@ -798,6 +816,7 @@ function Show-MainMenu {
     )
 
     $menuNext = 1
+    $MENU_START_ALL_UNDETACHED = $menuNext; $menuNext++
     $MENU_START_ALL = $menuNext; $menuNext++
 
     $MENU_DOWN = $menuNext; $menuNext++
@@ -822,7 +841,8 @@ function Show-MainMenu {
     Write-Host "================ Main Menu ================" -ForegroundColor Yellow
     Write-Host "" 
     Write-Host "Start:" -ForegroundColor Yellow
-    Write-Host "  $MENU_START_ALL) Start all services (Backend + Database + Runner + GUI)" -ForegroundColor Gray
+    Write-Host "  $MENU_START_ALL_UNDETACHED) Start all services (undetached - logs shown)" -ForegroundColor Gray
+    Write-Host "  $MENU_START_ALL) Start all services (detached - background)" -ForegroundColor Gray
     Write-Host "" 
     Write-Host "Maintenance:" -ForegroundColor Yellow
     Write-Host "  $MENU_DOWN) Docker Compose Down (stop and remove containers)" -ForegroundColor Gray
@@ -853,9 +873,13 @@ function Show-MainMenu {
     $exitCode = 0
 
     switch ($choice) {
+        "$MENU_START_ALL_UNDETACHED" {
+            Deploy-AllServices -Port $Port -ComposeFile $ComposeFile -Detached $false
+            $summary = "All services started (undetached)"
+        }
         "$MENU_START_ALL" {
-            Deploy-AllServices -Port $Port -ComposeFile $ComposeFile
-            $summary = "All services started"
+            Deploy-AllServices -Port $Port -ComposeFile $ComposeFile -Detached $true
+            $summary = "All services started (detached)"
         }
         "$MENU_DOWN" {
             Invoke-DockerComposeDown -ComposeFile $ComposeFile
