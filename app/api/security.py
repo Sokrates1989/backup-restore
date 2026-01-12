@@ -101,6 +101,9 @@ async def verify_delete_key(delete_key: str = Security(delete_key_header)) -> st
 
     This is used for destructive delete operations.
 
+    In DEBUG mode, when BACKUP_DELETE_API_KEY is not configured, this falls back
+    to using the configured admin key as delete key.
+
     Args:
         delete_key: The delete API key from the request header
 
@@ -112,10 +115,16 @@ async def verify_delete_key(delete_key: str = Security(delete_key_header)) -> st
     """
     configured_delete_key = settings.get_delete_api_key()
 
+    if not configured_delete_key and settings.DEBUG:
+        configured_delete_key = settings.get_admin_api_key()
+
     if not configured_delete_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Delete API key not configured. Please set BACKUP_DELETE_API_KEY or BACKUP_DELETE_API_KEY_FILE.",
+            detail=(
+                "Delete API key not configured. Please set BACKUP_DELETE_API_KEY or BACKUP_DELETE_API_KEY_FILE. "
+                "(Tip: in DEBUG mode you can also set ADMIN_API_KEY and use it as X-Delete-Key.)"
+            ),
         )
 
     if not delete_key:

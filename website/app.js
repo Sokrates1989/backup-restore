@@ -12,6 +12,8 @@ let remoteStorageLocations = [];
 let backupSchedules = [];
 let backupFiles = [];
 
+const EPHEMERAL_KEY_TTL_MS = 15 * 60 * 1000;
+
 // DOM Elements
 const loginSection = document.getElementById('login-section');
 const mainSection = document.getElementById('main-section');
@@ -23,14 +25,107 @@ const statusMessage = document.getElementById('status-message');
 const statusMessageBottom = document.getElementById('status-message-bottom');
 const tabContentContainer = document.getElementById('tab-content-container');
 
+/**
+ * Trim a value to remove whitespace.
+ *
+ * @param {any} value
+ * @returns {string}
+ */
 function trimValue(value) {
     if (value === null || value === undefined) return '';
     return String(value).trim();
 }
 
-function clearStatusMessages() {
-    if (statusMessage) statusMessage.classList.add('hidden');
-    if (statusMessageBottom) statusMessageBottom.classList.add('hidden');
+/**
+ * Read a JSON value from sessionStorage.
+ *
+ * @param {string} key
+ * @returns {any|null}
+ */
+function _getEphemeralCache(key) {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    try {
+        return JSON.parse(raw);
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Store a JSON value in sessionStorage.
+ *
+ * @param {string} key
+ * @param {any} value
+ */
+function _setEphemeralCache(key, value) {
+    sessionStorage.setItem(key, JSON.stringify(value));
+}
+
+/**
+ * Get a cached secret if it exists and is not expired.
+ *
+ * @param {string} keyName
+ * @returns {string}
+ */
+function getEphemeralSecret(keyName) {
+    const entry = _getEphemeralCache(keyName);
+    if (!entry) return '';
+    const expiresAt = Number(entry.expiresAt || 0);
+    if (!expiresAt || Date.now() > expiresAt) {
+        sessionStorage.removeItem(keyName);
+        return '';
+    }
+    return trimValue(entry.value);
+}
+
+/**
+ * Cache a secret in sessionStorage for a limited time.
+ *
+ * @param {string} keyName
+ * @param {string} value
+ * @param {number} ttlMs
+ */
+function setEphemeralSecret(keyName, value, ttlMs = EPHEMERAL_KEY_TTL_MS) {
+    const v = trimValue(value);
+    if (!v) {
+        sessionStorage.removeItem(keyName);
+        return;
+    }
+    _setEphemeralCache(keyName, { value: v, expiresAt: Date.now() + ttlMs });
+}
+
+/**
+ * Prompt the user for the delete key once and cache it for 15 minutes.
+ *
+ * @returns {Promise<string>}
+ */
+async function getDeleteKey() {
+    const cached = getEphemeralSecret('backup_delete_key');
+    if (cached) return cached;
+
+    const entered = trimValue(prompt('Enter Delete API Key (X-Delete-Key). It will be cached for 15 minutes:') || '');
+    if (!entered) return '';
+    setEphemeralSecret('backup_delete_key', entered);
+    return entered;
+}
+
+window.getDeleteKey = getDeleteKey;
+
+/**
+ * Hide global status messages.
+ *
+ * @param {boolean} force When true, also hides error/warning banners.
+ */
+function clearStatusMessages(force = false) {
+    const shouldPreserve = (el) => {
+        if (!el) return false;
+        if (force) return false;
+        return el.classList.contains('error') || el.classList.contains('warning');
+    };
+
+    if (statusMessage && !shouldPreserve(statusMessage)) statusMessage.classList.add('hidden');
+    if (statusMessageBottom && !shouldPreserve(statusMessageBottom)) statusMessageBottom.classList.add('hidden');
 }
 
 window.clearStatusMessages = clearStatusMessages;
@@ -95,16 +190,48 @@ async function apiCall(endpoint, method = 'GET', body = null) {
     const response = await fetch(endpoint, options);
     
     if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
+        const data = await response.json().catch(() => ({}));
+        const detail = data.detail || '';
+
+        const looksLikeDeleteKeyError =
+            typeof detail === 'string' &&
+            (detail.toLowerCase().includes('x-delete-key') || detail.toLowerCase().includes('delete api key'));
+
+        if ((response.status === 401 || response.status === 403) && !looksLikeDeleteKeyError) {
             handleLogout(!suppressLogoutStatus, 'error', 'Session expired or invalid token');
             throw new Error('Session expired or invalid token');
         }
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.detail || `HTTP ${response.status}`);
+
+        throw new Error(detail || `HTTP ${response.status}`);
     }
 
     return await response.json();
 }
+
+async function apiDeleteCall(endpoint) {
+    const deleteKey = await getDeleteKey();
+    if (!deleteKey) {
+        throw new Error('Delete API key required');
+    }
+
+    const response = await fetch(endpoint, {
+        method: 'DELETE',
+        headers: {
+            'X-Admin-Key': adminToken,
+            'X-Delete-Key': deleteKey,
+            'Content-Type': 'application/json'
+        }
+    });
+
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || `HTTP ${response.status}`);
+    }
+
+    return await response.json().catch(() => ({}));
+}
+
+window.apiDeleteCall = apiDeleteCall;
 
 // UI Functions
 function setStatusMessage(el, message, type, persist) {
@@ -122,7 +249,7 @@ function setStatusMessage(el, message, type, persist) {
 
     if (closeEl) {
         closeEl.onclick = () => {
-            clearStatusMessages();
+            clearStatusMessages(true);
         };
     }
 
@@ -134,7 +261,7 @@ function setStatusMessage(el, message, type, persist) {
 }
 
 function showStatus(message, type = 'success', persist = null) {
-    const shouldPersist = type === 'error' || type === 'warning';
+    const shouldPersist = persist === null ? (type === 'error' || type === 'warning') : Boolean(persist);
     setStatusMessage(statusMessage, message, type, shouldPersist);
     setStatusMessage(statusMessageBottom, message, type, shouldPersist);
 }
@@ -155,19 +282,40 @@ function showMain() {
     logoutBtn.style.display = 'block';
 }
 
+// Track loaded scripts to avoid duplicate loading
+const loadedScripts = new Set();
+
 // Tab Navigation and Loading
 async function loadTabContent(tabName) {
     try {
         const response = await fetch(`./${tabName}/${tabName}.html`);
         const html = await response.text();
         tabContentContainer.innerHTML = html;
+
+        const tabRoot = tabContentContainer.querySelector('.tab-content');
+        if (tabRoot) {
+            tabRoot.classList.add('active');
+            tabRoot.classList.remove('hidden');
+        }
+        
+        // Check if script already loaded
+        if (loadedScripts.has(tabName)) {
+            // Script already loaded, just initialize
+            initializeTab(tabName);
+            return;
+        }
         
         // Load and initialize tab-specific JavaScript
         const script = document.createElement('script');
         script.src = `./${tabName}/${tabName}.js`;
         script.onload = () => {
+            loadedScripts.add(tabName);
             // Initialize the tab after script loads
             initializeTab(tabName);
+        };
+        script.onerror = () => {
+            console.error(`Failed to load script for tab ${tabName}`);
+            tabContentContainer.innerHTML += `<div class="status error">Error loading ${tabName} functionality.</div>`;
         };
         document.head.appendChild(script);
         
@@ -202,16 +350,36 @@ async function loadTabData(tabName) {
     try {
         switch (tabName) {
             case 'databases':
-                await loadDatabases();
+                await loadDatabasesData();
+                if (typeof renderDatabases === 'function') {
+                    renderDatabases();
+                }
                 break;
             case 'remote-storage-locations':
-                await loadRemoteStorageLocations();
+                await loadRemoteStorageLocationsData();
+                if (typeof renderRemoteStorageLocations === 'function') {
+                    renderRemoteStorageLocations();
+                }
                 break;
             case 'backup-schedules':
-                await loadBackupSchedules();
+                await Promise.all([
+                    loadDatabasesData(),
+                    loadRemoteStorageLocationsData(),
+                ]);
+                await loadBackupSchedulesData();
+                if (typeof renderBackupSchedules === 'function') {
+                    renderBackupSchedules();
+                }
                 break;
             case 'backup-files':
-                await loadBackupFiles();
+                await loadRemoteStorageLocationsData();
+                if (typeof updateBackupFilesStorageSelector === 'function') {
+                    updateBackupFilesStorageSelector();
+                }
+                await loadBackupFilesData();
+                if (typeof renderBackupFiles === 'function') {
+                    renderBackupFiles();
+                }
                 break;
         }
     } catch (error) {
@@ -266,34 +434,70 @@ function handleLogout(showStatusMessage = true, statusType = 'success', statusTe
     }
 }
 
-// Global data loading functions (used by tab scripts)
-async function loadDatabases() {
+// Global data loading functions (used only by app.js)
+async function loadDatabasesData() {
     databases = await apiCall('/automation/targets');
 }
 
-async function loadRemoteStorageLocations() {
+async function loadRemoteStorageLocationsData() {
     remoteStorageLocations = await apiCall('/automation/destinations');
 }
 
-async function loadBackupSchedules() {
+async function loadBackupSchedulesData() {
     backupSchedules = await apiCall('/automation/schedules');
 }
 
-async function loadBackupFiles() {
+async function loadBackupFilesData() {
     // Load both local backup files and backup runs from automation
     const [localBackups, backupRuns] = await Promise.all([
         apiCall('/backup/list'),
         apiCall('/automation/runs')
     ]);
-    
-    backupFiles = localBackups.files || [];
+
+    backupFiles = [];
+
+    const localFiles = (localBackups && localBackups.files) ? localBackups.files : [];
+    backupFiles = backupFiles.concat(localFiles.map(file => ({
+        id: file.filename,
+        ...file,
+        type: 'local',
+        source: 'Local Storage',
+        destination_id: 'local'
+    })));
+
+    if (backupRuns && backupRuns.length > 0) {
+        backupFiles = backupFiles.concat(backupRuns.map(run => ({
+            id: run.id,
+            filename: run.backup_filename || `backup_${run.id}`,
+            created_at: run.created_at,
+            size_mb: run.file_size_mb || 0,
+            type: 'automation',
+            source: `${run.target_name || 'Unknown'} → ${run.destination_name || 'Unknown'}`,
+            status: run.status,
+            schedule_name: run.schedule_name,
+            destination_id: run.destination_id
+        })));
+    }
 }
 
+window.loadDatabasesData = loadDatabasesData;
+window.loadRemoteStorageLocationsData = loadRemoteStorageLocationsData;
+window.loadBackupSchedulesData = loadBackupSchedulesData;
+window.loadBackupFilesData = loadBackupFilesData;
+
 // Update schedule selects (used by schedules tab)
-function updateScheduleSelects() {
-    // This function will be called by tab scripts when needed
-    // The actual implementation is in backup-schedules.js
+async function updateScheduleSelects() {
+    try {
+        await loadRemoteStorageLocationsData();
+    } catch {
+    }
+
+    if (typeof window.updateBackupScheduleSelects === 'function') {
+        window.updateBackupScheduleSelects();
+    }
 }
+
+window.updateScheduleSelects = updateScheduleSelects;
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {

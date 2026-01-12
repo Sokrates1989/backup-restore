@@ -20,6 +20,14 @@ depends_on = None
 def upgrade() -> None:
     """Create tables for backup targets, destinations, schedules, and run history."""
 
+    op.alter_column(
+        "alembic_version",
+        "version_num",
+        existing_type=sa.String(length=32),
+        type_=sa.String(length=255),
+        existing_nullable=False,
+    )
+
     op.create_table(
         "backup_targets",
         sa.Column("id", sa.String(), nullable=False),
@@ -111,3 +119,11 @@ def downgrade() -> None:
 
     op.drop_index(op.f("ix_backup_targets_name"), table_name="backup_targets")
     op.drop_table("backup_targets")
+
+    op.alter_column(
+        "alembic_version",
+        "version_num",
+        existing_type=sa.String(length=255),
+        type_=sa.String(length=32),
+        existing_nullable=False,
+    )

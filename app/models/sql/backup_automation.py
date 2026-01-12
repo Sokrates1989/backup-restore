@@ -174,7 +174,7 @@ class BackupRun(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
 
-    schedule_id = Column(String, ForeignKey("backup_schedules.id"), nullable=False, index=True)
+    schedule_id = Column(String, ForeignKey("backup_schedules.id"), nullable=True, index=True)
 
     status = Column(String(32), nullable=False, default="started")
 

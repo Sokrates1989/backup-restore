@@ -13,6 +13,29 @@ from backend.services.automation.repository import AutomationRepository
 from backend.services.automation.serializers import target_to_dict
 
 
+def _is_running_in_docker() -> bool:
+    """Detect whether the process is running inside a Docker container.
+
+    Returns:
+        bool: True when running in Docker, False otherwise.
+    """
+
+    if os.path.exists("/.dockerenv"):
+        return True
+
+    cgroup_paths = ["/proc/1/cgroup", "/proc/self/cgroup"]
+    for path in cgroup_paths:
+        try:
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    if "docker" in f.read():
+                        return True
+        except OSError:
+            continue
+
+    return False
+
+
 def _normalize_local_test_db_address(db_type: str, host: str, port: int) -> tuple[str, int]:
     """Normalize host/port for local test DB connections when running in Docker.
 
@@ -45,6 +68,9 @@ def _normalize_local_test_db_address(db_type: str, host: str, port: int) -> tupl
         tuple[str, int]: Normalized (host, port).
     """
 
+    if not _is_running_in_docker():
+        return host, port
+
     localhost_aliases = {"localhost", "127.0.0.1", "::1"}
     if host not in localhost_aliases:
         return host, port
@@ -58,7 +84,9 @@ def _normalize_local_test_db_address(db_type: str, host: str, port: int) -> tupl
     if db_type == "neo4j" and port == 7688:
         return "test-neo4j", 7687
 
-    return host, port
+    # Fallback: allow connecting to services running on the host machine.
+    # Docker Desktop provides host.docker.internal for reaching the host.
+    return "host.docker.internal", port
 
 
 class TargetService:

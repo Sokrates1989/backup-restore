@@ -79,3 +79,37 @@ class RunNowResponse(BaseModel):
     status: str
     backup_filename: Optional[str] = None
     uploads: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class BackupNowRequest(BaseModel):
+    """Request to perform an immediate backup."""
+
+    target_id: str = Field(..., description="Backup target id")
+    destination_ids: List[str] = Field(default_factory=list, description="Destination ids to upload backup to")
+    use_local_storage: bool = Field(False, description="Use default local storage (/app/backups) instead of destinations")
+
+
+class BackupNowResponse(BaseModel):
+    """Response after performing an immediate backup."""
+
+    run_id: str
+    status: str
+    backup_filename: Optional[str] = None
+    uploads: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class RestoreNowRequest(BaseModel):
+    """Request to perform an immediate restore."""
+
+    target_id: str = Field(..., description="Backup target id to restore to")
+    destination_id: Optional[str] = Field(None, description="Destination id to restore from")
+    backup_id: str = Field(..., description="Backup file id or name to restore")
+    use_local_storage: bool = Field(False, description="Restore from default local storage (/app/backups)")
+
+
+class RestoreNowResponse(BaseModel):
+    """Response after performing a restore."""
+
+    status: str
+    message: str
+    details: Optional[Dict[str, Any]] = None

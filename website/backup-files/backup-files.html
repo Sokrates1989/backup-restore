@@ -3,10 +3,23 @@
     <div class="card">
         <div class="card-header">
             <h2>Backup Files</h2>
-            <button id="refresh-backup-files-btn" class="btn btn-secondary btn-sm">🔄 Refresh</button>
-            <button id="run-backup-btn" class="btn btn-primary btn-sm">▶️ Run Backup Now</button>
+            <div class="header-actions">
+                <button id="refresh-backup-files-btn" class="btn btn-secondary btn-sm">🔄 Refresh</button>
+                <button id="run-backup-btn" class="btn btn-primary btn-sm">▶️ Run Backup Now</button>
+            </div>
         </div>
-        <p class="hint">Available backup files (both local and from remote storage locations)</p>
+        
+        <!-- Storage Location Selector -->
+        <div class="form-group">
+            <label for="backup-files-storage-location">Browse Storage Location</label>
+            <select id="backup-files-storage-location">
+                <option value="all">All Locations (Local + Remote)</option>
+                <option value="local">Local Storage Only</option>
+                <!-- Remote locations populated by JS -->
+            </select>
+        </div>
+        
+        <p class="hint">Browse backup files from local storage or remote destinations</p>
         <div id="backup-files-list" class="items-list">
             <p class="loading">Loading backup files...</p>
         </div>

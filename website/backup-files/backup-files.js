@@ -2,78 +2,184 @@
  * Backup Files Tab JavaScript
  * 
  * Handles backup file management for the Backup Manager.
+ * Supports browsing local and remote storage locations.
  */
+
+let currentStorageLocation = 'all';
 
 // Backup Files Management Functions
 async function loadBackupFiles() {
     try {
-        // Load both local backup files and backup runs from automation
-        const [localBackups, backupRuns] = await Promise.all([
-            apiCall('/backup/list'),
-            apiCall('/automation/runs')
-        ]);
+        const location = document.getElementById('backup-files-storage-location')?.value || 'all';
+        currentStorageLocation = location;
+        
+        let allBackups = [];
 
-        backupFiles = (localBackups && localBackups.files) ? localBackups.files : [];
-        renderBackupFiles(backupRuns);
+        let localFiles = [];
+        let automationRuns = [];
+        const automationLocalFilenames = new Set();
+        
+        if (location === 'all' || location === 'local') {
+            try {
+                const backupRuns = await apiCall('/automation/runs');
+                automationRuns = Array.isArray(backupRuns) ? backupRuns : [];
+                if (location === 'local') {
+                    automationRuns = automationRuns.filter(r => (r.destination_id || '') === 'local');
+                }
+
+                automationRuns.forEach(run => {
+                    const filename = run.backup_filename || '';
+                    if ((run.destination_id || '') === 'local' && filename) {
+                        automationLocalFilenames.add(filename);
+                    }
+                });
+            } catch (e) {
+                console.log('No automation runs or error loading:', e);
+            }
+        }
+
+        if (location === 'all' || location === 'local') {
+            // Load local backup files
+            try {
+                const localBackups = await apiCall('/backup/list');
+                localFiles = (localBackups && localBackups.files) ? localBackups.files : [];
+                localFiles = localFiles.filter(f => !automationLocalFilenames.has(f.filename));
+            } catch (e) {
+                console.log('No local backups or error loading:', e);
+            }
+        }
+
+        if (automationRuns.length > 0) {
+            allBackups = allBackups.concat(automationRuns.map(run => {
+                const filename = run.backup_filename || `backup_${run.id}`;
+                const localFilename = automationLocalFilenames.has(filename) ? filename : '';
+                return {
+                    id: run.id,
+                    filename,
+                    local_filename: localFilename,
+                    created_at: run.created_at,
+                    size_mb: run.file_size_mb || 0,
+                    type: 'automation',
+                    source: `${run.target_name || 'Unknown'} → ${run.destination_name || 'Unknown'}`,
+                    status: run.status,
+                    schedule_name: run.schedule_name,
+                    destination_id: run.destination_id
+                };
+            }));
+        }
+
+        if (localFiles.length > 0) {
+            allBackups = allBackups.concat(localFiles.map(file => ({
+                id: file.filename,
+                ...file,
+                type: 'local',
+                source: 'Local Storage',
+                destination_id: 'local'
+            })));
+        }
+        
+        // Load from specific remote destination
+        if (location !== 'all' && location !== 'local') {
+            try {
+                const remoteBackups = await apiCall(`/automation/destinations/${location}/backups`);
+                if (remoteBackups && remoteBackups.length > 0) {
+                    const dest = remoteStorageLocations.find(d => d.id === location);
+                    allBackups = allBackups.concat(remoteBackups.map(file => ({
+                        id: file.id || file.name,
+                        filename: file.name,
+                        created_at: file.created_at,
+                        size_mb: file.size ? (file.size / 1024 / 1024).toFixed(2) : 0,
+                        type: 'remote',
+                        source: dest ? dest.name : 'Remote Storage',
+                        destination_id: location
+                    })));
+                }
+            } catch (e) {
+                console.log('Error loading remote backups:', e);
+            }
+        }
+        
+        backupFiles = allBackups;
+        renderBackupFiles();
     } catch (error) {
-        showStatus(`Failed to load backup files: ${error.message}`, 'error');
+        showStatus(`Failed to load backup files: ${error.message}`, 'error', true);
     }
 }
 
-function renderBackupFiles(backupRuns = []) {
+function updateBackupFilesStorageSelector() {
+    const select = document.getElementById('backup-files-storage-location');
+    if (!select) return;
+    
+    // Preserve current selection
+    const currentValue = select.value;
+    
+    // Rebuild options
+    let html = `
+        <option value="all">All Locations (Local + Remote)</option>
+        <option value="local">Local Storage Only</option>
+    `;
+    
+    remoteStorageLocations
+        .filter(location => location && location.id !== 'local' && location.destination_type !== 'local')
+        .forEach(location => {
+        const typeLabel = location.destination_type === 'local' ? '(Local Dir)' : 
+                         location.destination_type === 'sftp' ? '(SFTP)' : 
+                         location.destination_type === 'google_drive' ? '(Google Drive)' : '';
+        html += `<option value="${location.id}">${location.name} ${typeLabel}</option>`;
+    });
+    
+    select.innerHTML = html;
+    
+    // Restore selection if still valid
+    if ([...select.options].some(opt => opt.value === currentValue)) {
+        select.value = currentValue;
+    }
+}
+
+function renderBackupFiles() {
     const container = document.getElementById('backup-files-list');
     
-    if (backupFiles.length === 0 && backupRuns.length === 0) {
+    if (backupFiles.length === 0) {
         container.innerHTML = '<p class="no-items">No backup files found. Run a backup to get started.</p>';
         return;
     }
 
-    // Combine local files with automation runs for comprehensive view
-    const allBackups = [
-        ...backupFiles.map(file => ({
-            id: file.filename,
-            ...file,
-            type: 'local',
-            source: 'Local Storage'
-        })),
-        ...backupRuns.map(run => ({
-            id: run.id,
-            filename: run.backup_filename || `backup_${run.id}`,
-            created_at: run.created_at,
-            size_mb: run.file_size_mb || 0,
-            type: 'automation',
-            source: `${run.target_name || 'Unknown'} → ${run.destination_name || 'Unknown'}`,
-            status: run.status,
-            schedule_name: run.schedule_name
-        }))
-    ];
-
     // Sort by creation date (newest first)
-    allBackups.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const sortedBackups = [...backupFiles].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-    container.innerHTML = allBackups.map(backup => `
-        <div class="item">
-            <div class="item-header">
-                <h3>${backup.filename}</h3>
-                <div class="item-actions">
-                    <button class="btn btn-sm btn-secondary" onclick="viewBackupDetails('${backup.id}', '${backup.type}')">Details</button>
-                    ${backup.type === 'local' ? `
-                        <button class="btn btn-sm btn-primary" onclick="downloadBackup('${backup.filename}')">Download</button>
-                        <button class="btn btn-sm btn-warning" onclick="restoreFromBackup('${backup.filename}')">Restore</button>
-                    ` : ''}
-                    <button class="btn btn-sm btn-danger" onclick="deleteBackup('${backup.id}', '${backup.type}')">Delete</button>
+    container.innerHTML = sortedBackups.map(backup => {
+        const typeLabel = backup.type === 'local' ? 'Local File' : 
+                         backup.type === 'remote' ? 'Remote Storage' : 'Scheduled Backup';
+        const downloadFilename = backup.local_filename || backup.filename;
+        const canDownload = backup.type === 'local' || Boolean(backup.local_filename);
+        const canRestore = backup.type === 'local' || Boolean(backup.local_filename);
+        
+        return `
+            <div class="item">
+                <div class="item-header">
+                    <h3>${backup.filename}</h3>
+                    <div class="item-actions">
+                        <button class="btn btn-sm btn-secondary" onclick="viewBackupDetails('${backup.id}', '${backup.type}', '${backup.destination_id || ''}')">Details</button>
+                        ${canDownload ? `
+                            <button class="btn btn-sm btn-primary" onclick="downloadBackup('${downloadFilename}')">Download</button>
+                        ` : ''}
+                        ${canRestore ? `
+                            <button class="btn btn-sm btn-warning" onclick="restoreFromBackup('${downloadFilename}')">Restore</button>
+                        ` : ''}
+                        <button class="btn btn-sm btn-danger" onclick="deleteBackup('${backup.id}', '${backup.type}', '${backup.destination_id || ''}')">Delete</button>
+                    </div>
+                </div>
+                <div class="item-details">
+                    <p><strong>Type:</strong> ${typeLabel}</p>
+                    <p><strong>Source:</strong> ${backup.source}</p>
+                    ${backup.schedule_name ? `<p><strong>Schedule:</strong> ${backup.schedule_name}</p>` : ''}
+                    ${backup.status ? `<p><strong>Status:</strong> <span class="status ${backup.status}">${backup.status}</span></p>` : ''}
+                    <p><strong>Size:</strong> ${(backup.size_mb === 0 || backup.size_mb) ? `${backup.size_mb} MB` : 'Unknown'}</p>
+                    <p><strong>Created:</strong> ${backup.created_at ? new Date(backup.created_at).toLocaleString() : 'Unknown'}</p>
                 </div>
             </div>
-            <div class="item-details">
-                <p><strong>Type:</strong> ${backup.type === 'local' ? 'Local File' : 'Scheduled Backup'}</p>
-                <p><strong>Source:</strong> ${backup.source}</p>
-                ${backup.schedule_name ? `<p><strong>Schedule:</strong> ${backup.schedule_name}</p>` : ''}
-                ${backup.status ? `<p><strong>Status:</strong> <span class="status ${backup.status}">${backup.status}</span></p>` : ''}
-                <p><strong>Size:</strong> ${backup.size_mb ? `${backup.size_mb} MB` : 'Unknown'}</p>
-                <p><strong>Created:</strong> ${new Date(backup.created_at).toLocaleString()}</p>
-            </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 async function viewBackupDetails(backupId, type) {
@@ -224,33 +330,18 @@ async function deleteBackup(backupId, type) {
     
     try {
         if (type === 'automation') {
-            await apiCall(`/automation/runs/${backupId}`, 'DELETE');
+            if (typeof apiDeleteCall !== 'function') {
+                throw new Error('Delete helper not available');
+            }
+            await apiDeleteCall(`/automation/runs/${backupId}`);
         } else {
             const file = backupFiles.find(f => (f.filename || '') === backupId);
             const filename = file ? file.filename : backupId;
 
-            let deleteKey = localStorage.getItem('backup_delete_token') || '';
-            if (!deleteKey) {
-                deleteKey = prompt('Enter Delete API Key (X-Delete-Key):') || '';
-                deleteKey = deleteKey.trim();
-                if (!deleteKey) return;
-                localStorage.setItem('backup_delete_token', deleteKey);
+            if (typeof apiDeleteCall !== 'function') {
+                throw new Error('Delete helper not available');
             }
-
-            const response = await fetch(`/backup/delete/${filename}`, {
-                method: 'DELETE',
-                headers: {
-                    'X-Delete-Key': deleteKey,
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            if (!response.ok) {
-                const data = await response.json().catch(() => ({}));
-                throw new Error(data.detail || `HTTP ${response.status}`);
-            }
-
-            await response.json().catch(() => ({}));
+            await apiDeleteCall(`/backup/delete/${filename}`);
         }
         
         showStatus('Backup deleted successfully', 'success');
@@ -263,7 +354,7 @@ async function deleteBackup(backupId, type) {
 async function runBackupNow() {
     try {
         const schedules = await apiCall('/automation/schedules');
-        const activeSchedules = schedules.filter(s => s.is_active);
+        const activeSchedules = schedules.filter(s => s.enabled);
         
         if (activeSchedules.length === 0) {
             showStatus('No active backup schedules found', 'error');
@@ -291,9 +382,7 @@ async function runBackupNow() {
             return;
         }
         
-        const result = await apiCall('/automation/runs', 'POST', {
-            schedule_id: selectedSchedule.id
-        });
+        await apiCall(`/automation/schedules/${selectedSchedule.id}/run-now`, 'POST');
         
         showStatus('Backup started successfully', 'success');
         await loadBackupFiles();
@@ -308,6 +397,12 @@ function initBackupFilesTab() {
     document.getElementById('refresh-backup-files-btn').addEventListener('click', loadBackupFiles);
     document.getElementById('run-backup-btn').addEventListener('click', runBackupNow);
     
+    // Storage location selector
+    const storageSelect = document.getElementById('backup-files-storage-location');
+    if (storageSelect) {
+        storageSelect.addEventListener('change', loadBackupFiles);
+    }
+    
     // Modal close buttons
     document.querySelectorAll('.modal-close').forEach(btn => {
         btn.addEventListener('click', hideBackupDetailsModal);
@@ -319,4 +414,7 @@ function initBackupFilesTab() {
             hideBackupDetailsModal();
         }
     });
+    
+    // Update storage selector when destinations are loaded
+    updateBackupFilesStorageSelector();
 }

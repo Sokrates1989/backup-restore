@@ -20,6 +20,14 @@ services:
       DB_TYPE: ${DB_TYPE}
       DATABASE_URL: ${DATABASE_URL}
       DEBUG: ${DEBUG}
+      # Notification configuration
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
     volumes:
       # Mount individual directories for live-reloading of code.
       - ../app/main.py:/app/main.py

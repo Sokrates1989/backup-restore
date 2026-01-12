@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any, Dict, List, Optional
 
@@ -9,6 +10,7 @@ from backend.database.sql_handler import SQLHandler
 from backend.services.automation.config_crypto import encrypt_secrets, is_config_encryption_enabled
 from backend.services.automation.repository import AutomationRepository
 from backend.services.automation.serializers import destination_to_dict
+from models.sql.backup_automation import BackupDestination
 
 
 class DestinationService:
@@ -31,6 +33,34 @@ class DestinationService:
             items = await self.repo.list_destinations(session)
             return [destination_to_dict(d) for d in items]
 
+    async def ensure_local_destination_exists(self) -> Dict[str, Any]:
+        """Ensure a built-in local destination exists.
+
+        The UI and schedules rely on a consistent "Local Storage" option, even when
+        the user has not configured any remote destinations.
+
+        Returns:
+            Dict[str, Any]: Serialized destination.
+        """
+
+        async with self.handler.AsyncSessionLocal() as session:
+            existing = await session.get(BackupDestination, "local")
+            if existing:
+                return destination_to_dict(existing)
+
+            dest = BackupDestination(
+                id="local",
+                name="Local Storage",
+                destination_type="local",
+                config={"path": "/app/backups"},
+                config_encrypted=None,
+                is_active=True,
+            )
+            session.add(dest)
+            await session.commit()
+            await session.refresh(dest)
+            return destination_to_dict(dest)
+
     async def test_connection(self, *, dest_type: str, config: Dict[str, Any], secrets: Dict[str, Any]) -> Dict[str, Any]:
         """Test connection to a backup destination.
 
@@ -49,7 +79,7 @@ class DestinationService:
         try:
             if dest_type == "local":
                 # Test local directory access
-                path = config.get("path", "/backups")
+                path = config.get("path", "/app/backups")
                 if not os.path.exists(path):
                     os.makedirs(path, exist_ok=True)
                 if not os.access(path, os.W_OK):
@@ -59,14 +89,25 @@ class DestinationService:
             elif dest_type == "sftp":
                 # Test SFTP connection
                 import paramiko
+                import io
                 host = config.get("host", "")
                 port = config.get("port", 22)
-                username = secrets.get("username", "")
-                password = secrets.get("password", "")
+                username = config.get("username") or secrets.get("username") or ""
+                password = secrets.get("password") or config.get("password") or ""
+                private_key = secrets.get("private_key")
+                private_key_passphrase = secrets.get("private_key_passphrase")
                 
                 ssh = paramiko.SSHClient()
                 ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                ssh.connect(host, port=port, username=username, password=password, timeout=10)
+
+                if private_key:
+                    pkey = paramiko.RSAKey.from_private_key(
+                        io.StringIO(private_key),
+                        password=private_key_passphrase,
+                    )
+                    ssh.connect(host, port=port, username=username, pkey=pkey, timeout=10)
+                else:
+                    ssh.connect(host, port=port, username=username, password=password, timeout=10)
                 
                 # Test remote path
                 remote_path = config.get("path", "/backups")
@@ -85,15 +126,20 @@ class DestinationService:
             
             elif dest_type == "google_drive":
                 # Test Google Drive connection
-                import json
                 from googleapiclient.discovery import build
                 from google.oauth2 import service_account
                 
-                credentials_json = secrets.get("service_account_json", {})
-                if not credentials_json:
+                credentials_payload = secrets.get("service_account_json")
+                if not credentials_payload:
                     raise ValueError("Google Drive service account credentials required")
-                
-                credentials_info = json.loads(credentials_json)
+
+                if isinstance(credentials_payload, str):
+                    credentials_info = json.loads(credentials_payload)
+                elif isinstance(credentials_payload, dict):
+                    credentials_info = credentials_payload
+                else:
+                    raise ValueError("Invalid service_account_json format (expected JSON string or object)")
+
                 credentials = service_account.Credentials.from_service_account_info(
                     credentials_info,
                     scopes=['https://www.googleapis.com/auth/drive']
@@ -121,6 +167,12 @@ class DestinationService:
         secrets: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Create a destination."""
+
+        if destination_type == "google_drive" and "service_account_json" in (secrets or {}):
+            value = secrets.get("service_account_json")
+            if isinstance(value, dict):
+                secrets = dict(secrets)
+                secrets["service_account_json"] = json.dumps(value)
 
         if secrets and not is_config_encryption_enabled():
             raise ValueError("Secrets provided but CONFIG_ENCRYPTION_KEY is not configured")
@@ -156,6 +208,13 @@ class DestinationService:
             secrets_provided = secrets is not None
             encrypted = None
             if secrets_provided:
+                effective_type = destination_type or dest.destination_type
+                if effective_type == "google_drive" and secrets and "service_account_json" in secrets:
+                    value = secrets.get("service_account_json")
+                    if isinstance(value, dict):
+                        secrets = dict(secrets)
+                        secrets["service_account_json"] = json.dumps(value)
+
                 if secrets and not is_config_encryption_enabled():
                     raise ValueError("Secrets provided but CONFIG_ENCRYPTION_KEY is not configured")
                 encrypted = encrypt_secrets(secrets) if secrets else None
@@ -174,6 +233,9 @@ class DestinationService:
 
     async def delete_destination(self, destination_id: str) -> None:
         """Delete a destination."""
+
+        if destination_id == "local":
+            raise ValueError("The built-in 'Local Storage' destination cannot be deleted")
 
         async with self.handler.AsyncSessionLocal() as session:
             dest = await self.repo.get_destination(session, destination_id)

@@ -55,4 +55,46 @@
             <button id="cancel-database-btn" class="btn btn-secondary">Cancel</button>
         </div>
     </div>
+
+    <!-- Backup/Restore Action Modal -->
+    <div id="database-action-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="database-action-modal-title">Backup Database</h3>
+                <button class="modal-close" onclick="hideDatabaseActionModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="database-action-status" class="status hidden">
+                    <div class="status-text"></div>
+                    <button type="button" class="status-close" aria-label="Dismiss status message">×</button>
+                </div>
+                <input type="hidden" id="database-action-target-id">
+                <input type="hidden" id="database-action-type">
+                
+                <div class="form-group">
+                    <label for="database-action-destination">Storage Location</label>
+                    <select id="database-action-destination">
+                        <option value="">Select storage location...</option>
+                    </select>
+                </div>
+                
+                <div id="database-action-local-warning" class="warning-box hidden">
+                    <strong>⚠️ Warning:</strong> Local storage should only be used for testing. 
+                    It bloats the server and is less secure than remote storage. 
+                    For production use, configure SFTP or Google Drive.
+                </div>
+
+                <div id="database-action-restore-source" class="form-group hidden">
+                    <label for="database-action-backup-file">Backup File</label>
+                    <select id="database-action-backup-file">
+                        <option value="">Select backup file...</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="database-action-execute-btn" class="btn btn-primary">Execute</button>
+                <button class="btn btn-secondary" onclick="hideDatabaseActionModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
 </div>

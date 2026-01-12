@@ -21,6 +21,8 @@ from backend.services.automation.config_crypto import decrypt_secrets
 from backend.services.automation.retention import plan_retention, retention_from_dict
 from backend.services.automation.storage.google_drive import GoogleDriveConfig, GoogleDriveStorage
 from backend.services.automation.storage.sftp import SFTPConfig, SFTPStorage
+from backend.services.automation.storage.local import LocalConfig, LocalStorage
+from backend.services.automation.target_service import _normalize_local_test_db_address
 from backend.services.neo4j.backup_service import Neo4jBackupService
 from backend.services.sql.backup_service import BackupService
 from models.sql.backup_automation import BackupDestination, BackupRun, BackupSchedule, BackupTarget
@@ -223,9 +225,14 @@ class ScheduleExecutor:
         cfg = target.config or {}
 
         if target.db_type == "neo4j":
-            neo4j_url = str(cfg.get("neo4j_url", ""))
-            db_user = str(cfg.get("db_user", ""))
-            db_password = str(secrets.get("db_password", ""))
+            neo4j_url = str(cfg.get("neo4j_url", cfg.get("host", "")))
+            if not neo4j_url.startswith("bolt://") and not neo4j_url.startswith("neo4j://"):
+                raw_host = str(neo4j_url)
+                raw_port = int(cfg.get("port", 7687) or 7687)
+                host, port = _normalize_local_test_db_address(db_type="neo4j", host=raw_host, port=raw_port)
+                neo4j_url = f"bolt://{host}:{port}"
+            db_user = str(cfg.get("user", cfg.get("db_user", "")))
+            db_password = str(secrets.get("password", secrets.get("db_password", "")))
 
             service = Neo4jBackupService()
             filename, path = await run_in_threadpool(
@@ -242,15 +249,24 @@ class ScheduleExecutor:
             if db_type == "postgres":
                 db_type = "postgresql"
 
+            raw_host = str(cfg.get("host", cfg.get("db_host", "")))
+            raw_port = int(cfg.get("port", cfg.get("db_port", 0)) or 0)
+            if raw_port <= 0 and db_type == "postgresql":
+                raw_port = 5432
+            if raw_port <= 0 and db_type == "mysql":
+                raw_port = 3306
+            if raw_port > 0:
+                raw_host, raw_port = _normalize_local_test_db_address(db_type=db_type, host=raw_host, port=raw_port)
+
             service = BackupService()
             filename, path = await run_in_threadpool(
                 service.create_backup_to_temp,
                 db_type=db_type,
-                db_host=str(cfg.get("db_host", "")),
-                db_port=int(cfg.get("db_port", 0)),
-                db_name=str(cfg.get("db_name", "")),
-                db_user=str(cfg.get("db_user", "")),
-                db_password=str(secrets.get("db_password", "")),
+                db_host=raw_host,
+                db_port=raw_port,
+                db_name=str(cfg.get("database", cfg.get("db_name", ""))),
+                db_user=str(cfg.get("user", cfg.get("db_user", ""))),
+                db_password=str(secrets.get("password", secrets.get("db_password", ""))),
                 compress=True,
             )
             return filename, path
@@ -273,12 +289,16 @@ class ScheduleExecutor:
         secrets = decrypt_secrets(destination.config_encrypted)
         cfg = destination.config or {}
 
+        if destination.destination_type == "local":
+            local_cfg = LocalConfig(base_path=str(cfg.get("path", "/app/backups")))
+            return LocalStorage(local_cfg)
+
         if destination.destination_type == "sftp":
             sftp_cfg = SFTPConfig(
                 host=str(cfg.get("host", "")),
                 port=int(cfg.get("port", 22)),
                 username=str(cfg.get("username", "")),
-                base_path=str(cfg.get("base_path", "/backups")),
+                base_path=str(cfg.get("path", cfg.get("base_path", "/backups"))),
                 password=secrets.get("password"),
                 private_key=secrets.get("private_key"),
                 private_key_passphrase=secrets.get("private_key_passphrase"),

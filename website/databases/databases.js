@@ -27,6 +27,8 @@ function renderDatabases() {
             <div class="item-header">
                 <h3>${database.name}</h3>
                 <div class="item-actions">
+                    <button class="btn btn-sm btn-success" onclick="showDatabaseActionModal('${database.id}', 'backup')">Backup</button>
+                    <button class="btn btn-sm btn-warning" onclick="showDatabaseActionModal('${database.id}', 'restore')">Restore</button>
                     <button class="btn btn-sm btn-secondary" onclick="editDatabase('${database.id}')">Edit</button>
                     <button class="btn btn-sm btn-danger" onclick="deleteDatabase('${database.id}')">Delete</button>
                 </div>
@@ -282,12 +284,235 @@ async function deleteDatabase(id) {
     if (!confirm('Are you sure you want to delete this database?')) return;
     
     try {
-        await apiCall(`/automation/targets/${id}`, 'DELETE');
+        if (typeof apiDeleteCall !== 'function') {
+            throw new Error('Delete helper not available');
+        }
+        await apiDeleteCall(`/automation/targets/${id}`);
         showStatus('Database deleted');
         await loadDatabases();
         updateScheduleSelects();
     } catch (error) {
         showStatus(`Failed to delete database: ${error.message}`, 'error', true);
+    }
+}
+
+// Backup/Restore Modal Functions
+function setDatabaseActionStatus(message, type = 'success', persist = null) {
+    const el = document.getElementById('database-action-status');
+    if (!el) {
+        showStatus(message, type, persist);
+        return;
+    }
+
+    const shouldPersist = persist === null ? (type === 'error' || type === 'warning') : Boolean(persist);
+    const textEl = el.querySelector('.status-text');
+    const closeEl = el.querySelector('.status-close');
+
+    if (textEl) {
+        textEl.textContent = message;
+    } else {
+        el.textContent = message;
+    }
+
+    el.className = `status ${type}`;
+    el.classList.remove('hidden');
+
+    if (closeEl) {
+        closeEl.onclick = () => {
+            el.classList.add('hidden');
+        };
+    }
+
+    if (!shouldPersist) {
+        setTimeout(() => {
+            el.classList.add('hidden');
+        }, 5000);
+    }
+}
+
+function clearDatabaseActionStatus() {
+    const el = document.getElementById('database-action-status');
+    if (el) {
+        el.classList.add('hidden');
+    }
+}
+
+function showDatabaseActionModal(databaseId, actionType) {
+    const database = databases.find(d => d.id === databaseId);
+    if (!database) {
+        showStatus('Database not found', 'error');
+        return;
+    }
+
+    const modal = document.getElementById('database-action-modal');
+    const title = document.getElementById('database-action-modal-title');
+    const restoreSourceDiv = document.getElementById('database-action-restore-source');
+    
+    document.getElementById('database-action-target-id').value = databaseId;
+    document.getElementById('database-action-type').value = actionType;
+    
+    if (actionType === 'backup') {
+        title.textContent = `Backup: ${database.name}`;
+        restoreSourceDiv.classList.add('hidden');
+    } else {
+        title.textContent = `Restore: ${database.name}`;
+        restoreSourceDiv.classList.remove('hidden');
+    }
+    
+    updateDatabaseActionDestinations(actionType);
+    clearDatabaseActionStatus();
+    modal.classList.remove('hidden');
+}
+
+function hideDatabaseActionModal() {
+    document.getElementById('database-action-modal').classList.add('hidden');
+    document.getElementById('database-action-local-warning').classList.add('hidden');
+    clearDatabaseActionStatus();
+}
+
+function updateDatabaseActionDestinations(actionType) {
+    const select = document.getElementById('database-action-destination');
+    select.innerHTML = '<option value="">Select storage location...</option>';
+    
+    // Always add built-in local storage as default option (uses /app/backups)
+    select.innerHTML += '<option value="__local__" data-type="local">Local Storage (Default)</option>';
+    
+    // Add configured remote storage locations
+    remoteStorageLocations
+        .filter(location => location && location.id !== 'local' && location.destination_type !== 'local')
+        .forEach(location => {
+        const typeLabel = location.destination_type === 'local' ? '(Local Directory)' : 
+                         location.destination_type === 'sftp' ? '(SFTP)' : 
+                         location.destination_type === 'google_drive' ? '(Google Drive)' : '';
+        select.innerHTML += `<option value="${location.id}" data-type="${location.destination_type}">${location.name} ${typeLabel}</option>`;
+    });
+    
+    // Reset warning
+    document.getElementById('database-action-local-warning').classList.add('hidden');
+    
+    // Reset backup file selector
+    if (actionType === 'restore') {
+        document.getElementById('database-action-backup-file').innerHTML = '<option value="">Select backup file...</option>';
+    }
+}
+
+async function handleDatabaseActionDestinationChange() {
+    const select = document.getElementById('database-action-destination');
+    const selectedOption = select.options[select.selectedIndex];
+    const destType = selectedOption ? selectedOption.getAttribute('data-type') : '';
+    const warningDiv = document.getElementById('database-action-local-warning');
+    const actionType = document.getElementById('database-action-type').value;
+    
+    // Show/hide local warning
+    if (destType === 'local') {
+        warningDiv.classList.remove('hidden');
+    } else {
+        warningDiv.classList.add('hidden');
+    }
+    
+    // For restore, load available backup files from this destination
+    if (actionType === 'restore' && select.value) {
+        await loadBackupFilesForDestination(select.value);
+    }
+}
+
+async function loadBackupFilesForDestination(destinationId) {
+    const backupFileSelect = document.getElementById('database-action-backup-file');
+    const targetId = document.getElementById('database-action-target-id').value;
+    
+    try {
+        backupFileSelect.innerHTML = '<option value="">Loading...</option>';
+        
+        // Load backup files from this destination
+        let files;
+        if (destinationId === '__local__') {
+            // Load from default local storage
+            const result = await apiCall('/backup/list');
+            files = result.files || [];
+        } else {
+            files = await apiCall(`/automation/destinations/${destinationId}/backups?target_id=${targetId}`);
+        }
+        
+        backupFileSelect.innerHTML = '<option value="">Select backup file...</option>';
+        
+        if (files && files.length > 0) {
+            files.forEach(file => {
+                const name = file.filename || file.name || file.id || '';
+                const date = file.created_at ? new Date(file.created_at).toLocaleString() : 'Unknown';
+                const size = file.size_mb ? `${file.size_mb} MB` : (file.size ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : '');
+                backupFileSelect.innerHTML += `<option value="${name}">${name} (${date}) ${size}</option>`;
+            });
+        } else {
+            backupFileSelect.innerHTML = '<option value="">No backups found</option>';
+        }
+    } catch (error) {
+        backupFileSelect.innerHTML = '<option value="">Error loading backups</option>';
+        console.error('Failed to load backup files:', error);
+    }
+}
+
+async function executeDatabaseAction() {
+    const targetId = document.getElementById('database-action-target-id').value;
+    const actionType = document.getElementById('database-action-type').value;
+    const destinationId = document.getElementById('database-action-destination').value;
+    
+    if (!destinationId) {
+        setDatabaseActionStatus('Please select a storage location', 'error');
+        return;
+    }
+    
+    const database = databases.find(d => d.id === targetId);
+    const isDefaultLocal = destinationId === '__local__';
+    const destination = isDefaultLocal ? { name: 'Local Storage' } : remoteStorageLocations.find(d => d.id === destinationId);
+    
+    try {
+        if (actionType === 'backup') {
+            // Execute immediate backup
+            setDatabaseActionStatus(`Starting backup of ${database.name} to ${destination.name}...`, 'info', false);
+            
+            const payload = {
+                target_id: targetId,
+                use_local_storage: isDefaultLocal
+            };
+            if (!isDefaultLocal) {
+                payload.destination_ids = [destinationId];
+            }
+            
+            const result = await apiCall('/automation/backup-now', 'POST', payload);
+
+            showStatus(`Backup completed successfully! File: ${result.backup_filename || 'N/A'}`, 'success');
+        } else {
+            // Execute restore
+            const backupFileId = document.getElementById('database-action-backup-file').value;
+            
+            if (!backupFileId) {
+                setDatabaseActionStatus('Please select a backup file to restore', 'error');
+                return;
+            }
+            
+            if (!confirm(`Are you sure you want to restore ${database.name} from backup? This will overwrite the current database!`)) {
+                return;
+            }
+            
+            setDatabaseActionStatus(`Starting restore of ${database.name}...`, 'info', false);
+            
+            const restorePayload = {
+                target_id: targetId,
+                backup_id: backupFileId,
+                use_local_storage: isDefaultLocal
+            };
+            if (!isDefaultLocal) {
+                restorePayload.destination_id = destinationId;
+            }
+            
+            const result = await apiCall('/automation/restore-now', 'POST', restorePayload);
+
+            showStatus(`Restore completed successfully!`, 'success');
+        }
+        
+        hideDatabaseActionModal();
+    } catch (error) {
+        setDatabaseActionStatus(`${actionType === 'backup' ? 'Backup' : 'Restore'} failed: ${error.message}`, 'error', true);
     }
 }
 
@@ -307,4 +532,25 @@ function initDatabasesTab() {
     window.addEventListener('appVersionLoaded', () => {
         updateDatabaseFormUX();
     });
+
+    // Backup/Restore modal
+    const actionDestSelect = document.getElementById('database-action-destination');
+    if (actionDestSelect) {
+        actionDestSelect.addEventListener('change', handleDatabaseActionDestinationChange);
+    }
+    
+    const actionExecuteBtn = document.getElementById('database-action-execute-btn');
+    if (actionExecuteBtn) {
+        actionExecuteBtn.addEventListener('click', executeDatabaseAction);
+    }
+    
+    // Close modal when clicking outside
+    const actionModal = document.getElementById('database-action-modal');
+    if (actionModal) {
+        actionModal.addEventListener('click', (e) => {
+            if (e.target.id === 'database-action-modal') {
+                hideDatabaseActionModal();
+            }
+        });
+    }
 }

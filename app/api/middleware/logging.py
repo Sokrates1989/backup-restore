@@ -9,6 +9,9 @@ async def log_request_headers(request: Request, call_next):
     
     This middleware is only active when DEBUG mode is enabled.
     """
+    if request.url.path == "/health":
+        return await call_next(request)
+
     # Output basic request info.
     print(f"🔹 Received request: {request.method} {request.url}")
 

@@ -156,7 +156,16 @@ async def list_backups(
     backups_dir = _backups_dir()
     files = []
 
-    backup_extensions = (".sql", ".sql.gz", ".cypher", ".cypher.gz", ".dump", ".dump.gz")
+    backup_extensions = (
+        ".sql",
+        ".sql.gz",
+        ".cypher",
+        ".cypher.gz",
+        ".dump",
+        ".dump.gz",
+        ".db",
+        ".db.gz",
+    )
     for path in sorted(backups_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
         if path.is_file() and not path.name.startswith(".") and path.name.endswith(backup_extensions):
             stat = path.stat()

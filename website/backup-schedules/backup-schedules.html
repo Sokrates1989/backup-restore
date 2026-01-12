@@ -15,40 +15,167 @@
     <div id="backup-schedule-form" class="card hidden">
         <h2 id="backup-schedule-form-title">Add Backup Schedule</h2>
         <input type="hidden" id="backup-schedule-id">
-        <div class="form-group">
-            <label for="backup-schedule-name">Name</label>
-            <input type="text" id="backup-schedule-name" placeholder="e.g., Daily Production Backup">
+        
+        <!-- Basic Settings -->
+        <div class="form-section">
+            <h3>Basic Settings</h3>
+            <div class="form-group">
+                <label for="backup-schedule-name">Name</label>
+                <input type="text" id="backup-schedule-name" placeholder="e.g., Daily Production Backup">
+            </div>
+            <div class="form-group">
+                <label for="backup-schedule-database">Database</label>
+                <select id="backup-schedule-database">
+                    <option value="">Select a database...</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Storage Locations (select one or more)</label>
+                <div id="backup-schedule-destinations" class="checkbox-group">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="backup-schedule-interval">Backup Interval</label>
+                <select id="backup-schedule-interval">
+                    <option value="3600">Hourly</option>
+                    <option value="21600">Every 6 Hours</option>
+                    <option value="43200">Every 12 Hours</option>
+                    <option value="86400" selected>Daily</option>
+                    <option value="604800">Weekly</option>
+                    <option value="2592000">Monthly</option>
+                </select>
+            </div>
+            <div class="form-group inline-checkbox">
+                <input type="checkbox" id="backup-schedule-enabled" checked>
+                <label for="backup-schedule-enabled">Enabled</label>
+            </div>
         </div>
-        <div class="form-group">
-            <label for="backup-schedule-database">Database</label>
-            <select id="backup-schedule-database">
-                <option value="">Select a database...</option>
-            </select>
+
+        <!-- Encryption Settings -->
+        <div class="form-section">
+            <h3>Encryption (Optional)</h3>
+            <p class="hint">Encrypt backups with a password for additional security</p>
+            <div class="form-group inline-checkbox">
+                <input type="checkbox" id="backup-schedule-encrypt">
+                <label for="backup-schedule-encrypt">Enable backup encryption</label>
+            </div>
+            <div id="backup-schedule-encrypt-options" class="hidden">
+                <div class="form-group">
+                    <label for="backup-schedule-encrypt-password">Encryption Password</label>
+                    <input type="password" id="backup-schedule-encrypt-password" placeholder="Enter encryption password">
+                    <p class="hint warning">⚠️ Store this password safely! You cannot restore without it.</p>
+                </div>
+            </div>
         </div>
-        <div class="form-group">
-            <label for="backup-schedule-remote-storage-location">Remote Storage Location</label>
-            <select id="backup-schedule-remote-storage-location">
-                <option value="">Select a remote storage location...</option>
-            </select>
+
+        <!-- Retention Policy -->
+        <div class="form-section">
+            <h3>Retention Policy</h3>
+            <p class="hint">Control how many backups to keep and storage limits</p>
+            <div class="form-group">
+                <label for="backup-schedule-retention-type">Retention Type</label>
+                <select id="backup-schedule-retention-type">
+                    <option value="count">Keep N backups</option>
+                    <option value="days">Keep backups for N days</option>
+                    <option value="size">Limit total storage size</option>
+                    <option value="smart">Smart Retention (Recommended)</option>
+                </select>
+            </div>
+            <div id="retention-count-options">
+                <div class="form-group">
+                    <label for="backup-schedule-retention-count">Number of Backups to Keep</label>
+                    <input type="number" id="backup-schedule-retention-count" value="7" min="1" max="365">
+                </div>
+            </div>
+            <div id="retention-days-options" class="hidden">
+                <div class="form-group">
+                    <label for="backup-schedule-retention-days">Days to Keep Backups</label>
+                    <input type="number" id="backup-schedule-retention-days" value="30" min="1" max="3650">
+                </div>
+            </div>
+            <div id="retention-size-options" class="hidden">
+                <div class="form-group">
+                    <label for="backup-schedule-retention-size">Maximum Storage (MB)</label>
+                    <input type="number" id="backup-schedule-retention-size" value="1000" min="100">
+                </div>
+            </div>
+            <div id="retention-smart-options" class="hidden">
+                <div class="warning-box">
+                    <strong>🛡️ Smart Retention - Protection Against Late-Detected Corruption</strong>
+                    <p>Keeps older backups in a tiered manner to protect against ransomware or corruption detected after regular backups have been overwritten.</p>
+                </div>
+                <div class="form-group">
+                    <label for="backup-schedule-smart-daily">Daily backups to keep</label>
+                    <input type="number" id="backup-schedule-smart-daily" value="7" min="1" max="30">
+                    <p class="hint">Keep the last N daily backups</p>
+                </div>
+                <div class="form-group">
+                    <label for="backup-schedule-smart-weekly">Weekly backups to keep</label>
+                    <input type="number" id="backup-schedule-smart-weekly" value="4" min="0" max="52">
+                    <p class="hint">Keep one backup per week for the last N weeks</p>
+                </div>
+                <div class="form-group">
+                    <label for="backup-schedule-smart-monthly">Monthly backups to keep</label>
+                    <input type="number" id="backup-schedule-smart-monthly" value="6" min="0" max="24">
+                    <p class="hint">Keep one backup per month for the last N months</p>
+                </div>
+                <div class="form-group">
+                    <label for="backup-schedule-smart-yearly">Yearly backups to keep</label>
+                    <input type="number" id="backup-schedule-smart-yearly" value="2" min="0" max="10">
+                    <p class="hint">Keep one backup per year for the last N years</p>
+                </div>
+                <p class="hint">Note: Smart retention keeps older backups on purpose. From time to time you may want to manually review and delete older backups to save space.</p>
+            </div>
         </div>
-        <div class="form-group">
-            <label for="backup-schedule-interval">Backup Interval</label>
-            <select id="backup-schedule-interval">
-                <option value="hourly">Hourly</option>
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-            </select>
+
+        <!-- Notification Settings -->
+        <div class="form-section">
+            <h3>Notifications</h3>
+            <p class="hint">Get notified about backup status via Telegram or Email</p>
+            
+            <div class="form-group inline-checkbox">
+                <input type="checkbox" id="backup-schedule-notify-telegram">
+                <label for="backup-schedule-notify-telegram">Enable Telegram notifications</label>
+            </div>
+            <div id="backup-schedule-telegram-options" class="hidden">
+                <div class="form-group">
+                    <label for="backup-schedule-telegram-chat-id">Telegram Chat ID</label>
+                    <input type="text" id="backup-schedule-telegram-chat-id" placeholder="e.g., -1001234567890">
+                    <p class="hint">Chat ID where notifications will be sent. Get this from @userinfobot</p>
+                </div>
+                <div class="form-group">
+                    <label>Notify on:</label>
+                    <div class="checkbox-group-inline">
+                        <label><input type="checkbox" id="backup-schedule-telegram-on-success" checked> Success</label>
+                        <label><input type="checkbox" id="backup-schedule-telegram-on-failure" checked> Failure</label>
+                        <label><input type="checkbox" id="backup-schedule-telegram-on-warning"> Warnings</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group inline-checkbox">
+                <input type="checkbox" id="backup-schedule-notify-email">
+                <label for="backup-schedule-notify-email">Enable Email notifications</label>
+            </div>
+            <div id="backup-schedule-email-options" class="hidden">
+                <div class="form-group">
+                    <label for="backup-schedule-email-to">Email Address</label>
+                    <input type="email" id="backup-schedule-email-to" placeholder="admin@example.com">
+                </div>
+                <div class="form-group">
+                    <label>Notify on:</label>
+                    <div class="checkbox-group-inline">
+                        <label><input type="checkbox" id="backup-schedule-email-on-success"> Success</label>
+                        <label><input type="checkbox" id="backup-schedule-email-on-failure" checked> Failure</label>
+                        <label><input type="checkbox" id="backup-schedule-email-on-warning" checked> Warnings</label>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div class="form-group">
-            <label for="backup-schedule-retention">Retention Policy</label>
-            <input type="number" id="backup-schedule-retention" placeholder="Number of backups to keep" min="1">
-        </div>
-        <div class="form-group">
-            <label for="backup-schedule-enabled">Enabled</label>
-            <input type="checkbox" id="backup-schedule-enabled" checked>
-        </div>
+
         <div class="form-actions">
+            <button id="run-backup-schedule-now-btn" class="btn btn-success">Run Now</button>
             <button id="save-backup-schedule-btn" class="btn btn-primary">Save Backup Schedule</button>
             <button id="cancel-backup-schedule-btn" class="btn btn-secondary">Cancel</button>
         </div>

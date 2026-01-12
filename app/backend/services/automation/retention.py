@@ -14,7 +14,7 @@ remove) decisions.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional, Sequence, Tuple
 
 
@@ -23,7 +23,7 @@ class RetentionConfig:
     """Retention policy configuration.
 
     Attributes:
-        mode: Either "last_n" or "smart".
+        mode: One of "last_n", "smart", "max_age_days", "max_size".
         keep_last: Always keep the newest N backups.
         profile: Optional preset name ("low", "medium", "high") used in smart mode.
         daily: Keep 1 per day for N days (smart mode).
@@ -32,6 +32,8 @@ class RetentionConfig:
         yearly: Keep 1 per year for N years (smart mode).
         min_backups: Ensure at least this many backups are kept.
         max_backups: Ensure at most this many backups are kept.
+        max_age_days: Delete backups older than this many days (max_age_days mode).
+        max_size_bytes: Keep backups until the total size (bytes) reaches this limit (max_size mode).
     """
 
     mode: str = "last_n"
@@ -45,6 +47,9 @@ class RetentionConfig:
 
     min_backups: Optional[int] = None
     max_backups: Optional[int] = None
+
+    max_age_days: Optional[int] = None
+    max_size_bytes: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +73,29 @@ def retention_from_dict(data: Optional[Dict]) -> RetentionConfig:
     """
 
     data = data or {}
+
+    # UI format (stored in BackupSchedule.retention)
+    if isinstance(data.get("smart"), dict):
+        smart = data.get("smart") or {}
+        return RetentionConfig(
+            mode="smart",
+            keep_last=1,
+            daily=_to_int_or_none(smart.get("daily")),
+            weekly=_to_int_or_none(smart.get("weekly")),
+            monthly=_to_int_or_none(smart.get("monthly")),
+            yearly=_to_int_or_none(smart.get("yearly")),
+        )
+
+    if data.get("max_count") is not None:
+        return RetentionConfig(mode="last_n", keep_last=int(data.get("max_count")))
+
+    if data.get("max_days") is not None:
+        return RetentionConfig(mode="max_age_days", keep_last=1, max_age_days=int(data.get("max_days")))
+
+    if data.get("max_size_mb") is not None:
+        return RetentionConfig(mode="max_size", keep_last=1, max_size_bytes=int(data.get("max_size_mb")) * 1024 * 1024)
+
+    # Backend-native format
     return RetentionConfig(
         mode=str(data.get("mode", "last_n")),
         keep_last=int(data.get("keep_last", 10)),
@@ -78,6 +106,8 @@ def retention_from_dict(data: Optional[Dict]) -> RetentionConfig:
         yearly=_to_int_or_none(data.get("yearly")),
         min_backups=_to_int_or_none(data.get("min_backups")),
         max_backups=_to_int_or_none(data.get("max_backups")),
+        max_age_days=_to_int_or_none(data.get("max_age_days")),
+        max_size_bytes=_to_int_or_none(data.get("max_size_bytes")),
     )
 
 
@@ -126,6 +156,53 @@ def plan_retention(
         keep_last = max(retention.keep_last, 0)
         keep = backups_sorted[-keep_last:] if keep_last else []
         delete = backups_sorted[:-keep_last] if keep_last else list(backups_sorted)
+        return _apply_min_max_bounds(keep, delete, retention)
+
+    if retention.mode == "max_age_days":
+        if retention.max_age_days is None:
+            return _apply_min_max_bounds(list(backups_sorted), [], retention)
+
+        cutoff = now - timedelta(days=int(retention.max_age_days))
+        keep_last = max(retention.keep_last, 0)
+
+        keep_set = set()
+        for obj in backups_sorted[-keep_last:] if keep_last else []:
+            keep_set.add(obj.id)
+
+        for obj in backups_sorted:
+            created = obj.created_at
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            if created >= cutoff:
+                keep_set.add(obj.id)
+
+        keep = [b for b in backups_sorted if b.id in keep_set]
+        delete = [b for b in backups_sorted if b.id not in keep_set]
+        return _apply_min_max_bounds(keep, delete, retention)
+
+    if retention.mode == "max_size":
+        if retention.max_size_bytes is None:
+            return _apply_min_max_bounds(list(backups_sorted), [], retention)
+
+        max_bytes = int(retention.max_size_bytes)
+        newest_first = sorted(backups_sorted, key=lambda b: b.created_at, reverse=True)
+
+        keep_last = max(retention.keep_last, 0)
+        keep_set = set(obj.id for obj in newest_first[:keep_last])
+
+        total = 0
+        for obj in newest_first:
+            size = int(obj.size or 0)
+            if obj.id in keep_set:
+                total += size
+
+        for obj in newest_first[keep_last:]:
+            if total + int(obj.size or 0) <= max_bytes:
+                keep_set.add(obj.id)
+                total += int(obj.size or 0)
+
+        keep = [b for b in backups_sorted if b.id in keep_set]
+        delete = [b for b in backups_sorted if b.id not in keep_set]
         return _apply_min_max_bounds(keep, delete, retention)
 
     eff = _apply_profile(retention)

@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 
 from api.schemas.automation import (
+    BackupNowRequest,
+    BackupNowResponse,
     DestinationCreateRequest,
     DestinationUpdateRequest,
+    RestoreNowRequest,
+    RestoreNowResponse,
     RunDueRequest,
     RunNowResponse,
     ScheduleCreateRequest,
@@ -20,6 +25,7 @@ from backend.database.sql_handler import SQLHandler
 from backend.services.automation.destination_service import DestinationService
 from backend.services.automation.schedule_service import ScheduleService
 from backend.services.automation.target_service import TargetService
+from models.sql.backup_automation import BackupRun, BackupSchedule, BackupTarget
 
 
 router = APIRouter(prefix="/automation", tags=["Automation"])
@@ -110,7 +116,9 @@ async def delete_target(target_id: str, _: str = Depends(verify_delete_key)):
 async def list_destinations(_: str = Depends(verify_admin_key)):
     """List destinations."""
 
-    return await DestinationService(_get_sql_handler()).list_destinations()
+    service = DestinationService(_get_sql_handler())
+    await service.ensure_local_destination_exists()
+    return await service.list_destinations()
 
 
 @router.post("/destinations/test-connection")
@@ -119,7 +127,7 @@ async def test_destination_connection(payload: DestinationCreateRequest, _: str 
     
     try:
         result = await DestinationService(_get_sql_handler()).test_connection(
-            dest_type=payload.dest_type,
+            dest_type=payload.destination_type,
             config=payload.config,
             secrets=payload.secrets,
         )
@@ -183,6 +191,7 @@ async def create_schedule(payload: ScheduleCreateRequest, _: str = Depends(verif
     """Create a schedule."""
 
     try:
+        await DestinationService(_get_sql_handler()).ensure_local_destination_exists()
         return await ScheduleService(_get_sql_handler()).create_schedule(
             name=payload.name,
             target_id=payload.target_id,
@@ -200,6 +209,7 @@ async def update_schedule(schedule_id: str, payload: ScheduleUpdateRequest, _: s
     """Update a schedule."""
 
     try:
+        await DestinationService(_get_sql_handler()).ensure_local_destination_exists()
         return await ScheduleService(_get_sql_handler()).update_schedule(
             schedule_id,
             name=payload.name,
@@ -210,7 +220,7 @@ async def update_schedule(schedule_id: str, payload: ScheduleUpdateRequest, _: s
             enabled=payload.enabled,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.delete("/schedules/{schedule_id}")
@@ -239,3 +249,152 @@ async def run_due(payload: RunDueRequest, _: str = Depends(verify_admin_key)):
     """Runner endpoint to execute due schedules."""
 
     return await ScheduleService(_get_sql_handler()).run_due(max_schedules=payload.max_schedules)
+
+
+@router.post("/backup-now", response_model=BackupNowResponse)
+async def backup_now(payload: BackupNowRequest, _: str = Depends(verify_admin_key)):
+    """Perform an immediate backup of a target to specified destinations."""
+
+    from backend.services.automation.backup_service import BackupExecutionService
+
+    try:
+        service = BackupExecutionService(_get_sql_handler())
+        result = await service.backup_now(
+            target_id=payload.target_id,
+            destination_ids=payload.destination_ids,
+            use_local_storage=payload.use_local_storage,
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/restore-now", response_model=RestoreNowResponse)
+async def restore_now(payload: RestoreNowRequest, _: str = Depends(verify_admin_key)):
+    """Perform an immediate restore from a backup."""
+
+    from backend.services.automation.backup_service import BackupExecutionService
+
+    try:
+        service = BackupExecutionService(_get_sql_handler())
+        result = await service.restore_now(
+            target_id=payload.target_id,
+            destination_id=payload.destination_id,
+            backup_id=payload.backup_id,
+            use_local_storage=payload.use_local_storage,
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/runs")
+async def list_runs(_: str = Depends(verify_admin_key)):
+    """List recent backup runs (scheduled + immediate)."""
+
+    handler = _get_sql_handler()
+    async with handler.AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(BackupRun, BackupSchedule, BackupTarget)
+            .select_from(BackupRun)
+            .outerjoin(BackupSchedule, BackupRun.schedule_id == BackupSchedule.id)
+            .outerjoin(BackupTarget, BackupSchedule.target_id == BackupTarget.id)
+            .order_by(BackupRun.started_at.desc())
+            .limit(200)
+        )
+
+        items = []
+        for run, sched, target in result.all():
+            uploads = (run.details or {}).get("uploads") if isinstance(run.details, dict) else None
+            first_upload = uploads[0] if isinstance(uploads, list) and uploads else None
+
+            immediate_target_name = None
+            if not target and isinstance(run.details, dict):
+                raw_target_id = run.details.get("target_id")
+                if raw_target_id:
+                    t = await session.get(BackupTarget, raw_target_id)
+                    if t:
+                        immediate_target_name = t.name
+
+            items.append(
+                {
+                    "id": run.id,
+                    "schedule_id": run.schedule_id,
+                    "schedule_name": getattr(sched, "name", None) if sched else None,
+                    "target_id": getattr(sched, "target_id", None) if sched else None,
+                    "target_name": getattr(target, "name", None) if target else (immediate_target_name or None),
+                    "status": run.status,
+                    "backup_filename": run.backup_filename,
+                    "created_at": run.started_at.isoformat() if run.started_at else None,
+                    "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+                    "error_message": run.error_message,
+                    "destination_id": first_upload.get("destination_id") if isinstance(first_upload, dict) else None,
+                    "destination_name": first_upload.get("destination_name") if isinstance(first_upload, dict) else None,
+                    "file_size_mb": None,
+                }
+            )
+
+        return items
+
+
+@router.get("/runs/{run_id}")
+async def get_run(run_id: str, _: str = Depends(verify_admin_key)):
+    """Get a single backup run by id."""
+
+    handler = _get_sql_handler()
+    async with handler.AsyncSessionLocal() as session:
+        run = await session.get(BackupRun, run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
+
+        schedule = None
+        target = None
+        if run.schedule_id:
+            schedule = await session.get(BackupSchedule, run.schedule_id)
+            if schedule:
+                target = await session.get(BackupTarget, schedule.target_id)
+
+        return {
+            "id": run.id,
+            "schedule_id": run.schedule_id,
+            "schedule_name": schedule.name if schedule else None,
+            "target_id": schedule.target_id if schedule else None,
+            "target_name": target.name if target else None,
+            "status": run.status,
+            "backup_filename": run.backup_filename,
+            "created_at": run.started_at.isoformat() if run.started_at else None,
+            "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+            "details": run.details,
+            "error_message": run.error_message,
+        }
+
+
+@router.delete("/runs/{run_id}")
+async def delete_run(run_id: str, _: str = Depends(verify_delete_key)):
+    """Delete a run record (does not delete stored backup files)."""
+
+    handler = _get_sql_handler()
+    async with handler.AsyncSessionLocal() as session:
+        run = await session.get(BackupRun, run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail=f"Run not found: {run_id}")
+        await session.delete(run)
+        await session.commit()
+        return {"status": "success"}
+
+
+@router.get("/destinations/{destination_id}/backups")
+async def list_destination_backups(
+    destination_id: str,
+    target_id: str = None,
+    _: str = Depends(verify_admin_key),
+):
+    """List backup files available at a destination, optionally filtered by target."""
+
+    from backend.services.automation.backup_service import BackupExecutionService
+
+    try:
+        service = BackupExecutionService(_get_sql_handler())
+        return await service.list_backups(destination_id=destination_id, target_id=target_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
