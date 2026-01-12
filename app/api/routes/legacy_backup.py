@@ -18,6 +18,7 @@ import tempfile
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse
 
 from api.security import verify_admin_key, verify_delete_key, verify_restore_key
 from api.settings import settings
@@ -166,6 +167,30 @@ async def list_backups(
             })
 
     return {"files": files, "count": len(files)}
+
+
+@router.get("/download/{filename}")
+async def download_backup(
+    filename: str,
+    _: str = Depends(verify_admin_key),
+) -> FileResponse:
+    """Download a stored backup file.
+
+    Args:
+        filename: Backup filename to download.
+
+    Returns:
+        FileResponse: Backup file.
+
+    Raises:
+        HTTPException: If the file does not exist.
+    """
+
+    path = _backups_dir() / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Backup not found: {filename}")
+
+    return FileResponse(path=path, filename=path.name)
 
 
 @router.delete("/delete/{filename}")

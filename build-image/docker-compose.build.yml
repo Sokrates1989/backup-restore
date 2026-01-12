@@ -23,5 +23,9 @@ services:
       - UPDATE_VERSION=${UPDATE_VERSION:-true}
       # Pass through PUSH_IMAGE if set
       - PUSH_IMAGE=${PUSH_IMAGE:-}
+      # Which image(s) to build: all|api|web
+      - BUILD_TARGET=${BUILD_TARGET:-all}
+      # Target platform for buildx (default: linux/amd64)
+      - TARGET_PLATFORM=${TARGET_PLATFORM:-linux/amd64}
     command: sh -c "chmod +x build-image/build-image.sh && build-image/build-image.sh"
     network_mode: host

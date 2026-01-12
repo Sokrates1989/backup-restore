@@ -16,6 +16,10 @@
 # - SQLite: file-based (no port)
 
 services:
+  app:
+    volumes:
+      - ../.docker/test-sqlite-data:/data
+
   # =============================================================================
   # TEST POSTGRESQL DATABASE
   # =============================================================================

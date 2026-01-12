@@ -21,7 +21,13 @@ open_browser_incognito() {
     local test_databases="$3"  # Optional: "test" to indicate test databases mode
 
     local api_url="http://localhost:$port/docs"
-    local gui_url="http://localhost:$port/"
+    local web_port="${WEB_PORT:-}"
+    if [ -z "$web_port" ] && [ -f ".env" ]; then
+        web_port=$(grep "^WEB_PORT=" .env 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d ' "')
+    fi
+    web_port="${web_port:-8086}"
+
+    local gui_url="http://localhost:${web_port}/"
     local neo4j_url="http://localhost:7474"
     local urls=("$gui_url" "$api_url")
 
@@ -34,9 +40,11 @@ open_browser_incognito() {
     if [[ "$test_databases" == "test" ]]; then
         urls+=("http://localhost:5050")  # pgAdmin
         urls+=("http://localhost:8080")  # phpMyAdmin
-        urls+=("http://localhost:7475")  # Neo4j Browser (test)
-        urls+=("http://localhost:8082")  # Adminer
-        urls+=("http://localhost:8083")  # SQLite Web
+        urls+=("http://localhost:7475/browser?connectURL=neo4j://localhost:7688")  # Neo4j Browser (test)
+        urls+=("http://localhost:8082/")  # Adminer
+        urls+=("http://localhost:8085/")  # Adminer (SQLite)
+        urls+=("http://localhost:8084")  # SQLite Web
+        urls+=("http://localhost:8090")  # SQLite Browser (GUI)
         
         echo ""
         echo "🌐 Opening browser with all admin UIs:"
@@ -46,7 +54,9 @@ open_browser_incognito() {
         echo "  - phpMyAdmin: http://localhost:8080"
         echo "  - Neo4j Browser: http://localhost:7475"
         echo "  - Adminer: http://localhost:8082"
-        echo "  - SQLite Web: http://localhost:8083"
+        echo "  - Adminer (SQLite): http://localhost:8085"
+        echo "  - SQLite Web: http://localhost:8084"
+        echo "  - SQLite Browser (GUI): http://localhost:8090"
     fi
 
     # Add admin UIs if in admin mode
@@ -162,7 +172,12 @@ handle_backend_start() {
     echo "  Services starting:"
     echo "  - Backend API (port $port)"
     echo "  - PostgreSQL database"
-    echo "  - Web GUI at http://localhost:$port/"
+    local web_port="${WEB_PORT:-}"
+    if [ -z "$web_port" ] && [ -f ".env" ]; then
+        web_port=$(grep "^WEB_PORT=" .env 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d ' "')
+    fi
+    web_port="${web_port:-8086}"
+    echo "  - Web GUI at http://localhost:${web_port}/"
     echo "========================================"
     echo ""
     echo "🌐 Browser will open automatically when API is ready..."
@@ -194,6 +209,13 @@ handle_dependency_and_backend() {
     echo "========================================"
     echo "  API will be accessible at:"
     echo "  http://localhost:$port/docs"
+    echo "  Web GUI will be accessible at:"
+    local web_port="${WEB_PORT:-}"
+    if [ -z "$web_port" ] && [ -f ".env" ]; then
+        web_port=$(grep "^WEB_PORT=" .env 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d ' "')
+    fi
+    web_port="${web_port:-8086}"
+    echo "  http://localhost:${web_port}/"
     echo "========================================"
     echo ""
     echo "🌐 Browser will open automatically when API is ready..."
@@ -289,6 +311,17 @@ handle_build_production_image() {
     fi
 }
 
+handle_build_web_image() {
+    echo "🏗️  Building web UI Docker image (nginx)..."
+    echo ""
+    if [ -f "build-image/docker-compose.build.yml" ]; then
+        docker compose -f build-image/docker-compose.build.yml run --rm -e BUILD_TARGET=web build-image
+    else
+        echo "❌ build-image/docker-compose.build.yml not found"
+        echo "⚠️  Please ensure the build-image directory exists"
+    fi
+}
+
 handle_cicd_setup() {
     echo "🚀 CI/CD Pipeline einrichten..."
     echo ""
@@ -304,10 +337,16 @@ handle_open_backup_gui() {
     local port="$1"
     echo "🌐 Opening Backup Manager GUI..."
     echo ""
-    echo "   URL: http://localhost:$port/"
+    local web_port="${WEB_PORT:-}"
+    if [ -z "$web_port" ] && [ -f ".env" ]; then
+        web_port=$(grep "^WEB_PORT=" .env 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d ' "')
+    fi
+    web_port="${web_port:-8086}"
+
+    echo "   URL: http://localhost:${web_port}/"
     echo ""
     
-    local url="http://localhost:$port/"
+    local url="http://localhost:${web_port}/"
     
     if command -v open &> /dev/null; then
         open "$url"
@@ -478,7 +517,9 @@ handle_start_with_test_databases() {
     echo "  - phpMyAdmin: http://localhost:8080"
     echo "  - Neo4j Browser: http://localhost:7475"
     echo "  - Adminer: http://localhost:8082"
-    echo "  - SQLite Web: http://localhost:8083"
+    echo "  - Adminer (SQLite): http://localhost:8085"
+    echo "  - SQLite Web: http://localhost:8084"
+    echo "  - SQLite Browser (GUI): http://localhost:8090"
     echo "========================================"
     echo ""
     
@@ -497,46 +538,75 @@ handle_start_with_test_databases() {
     
     echo ""
     echo "🐳 Starting all services with test databases..."
-    docker compose --env-file .env -f "$compose_file" -f "$runner_file" -f "$test_db_file" up --build &
-    
-    # Store the compose process ID
-    local compose_pid=$!
-    
-    echo ""
-    echo "⏳ Waiting for services to be ready..."
-    
-    # Wait for API to be ready
-    local max_wait=120
-    local wait_time=0
-    while [ $wait_time -lt $max_wait ]; do
-        if curl -s "http://localhost:$port/health" >/dev/null 2>&1; then
-            echo "✅ API is ready!"
-            break
+
+    local timestamp
+    timestamp=$(date +%Y%m%d_%H%M%S)
+
+    local project_root
+    project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+    local log_dir="$project_root/logs/test-databases/$timestamp"
+    mkdir -p "$log_dir"
+
+    local compose_log_file="$log_dir/docker-compose.log"
+    local transcript_file="$log_dir/terminal-transcript.log"
+
+    : > "$compose_log_file"
+    : > "$transcript_file"
+
+    echo "[LOG] Writing container logs to: $compose_log_file"
+    echo "[LOG] Writing terminal transcript to: $transcript_file"
+
+    (
+        cd "$project_root" || exit 0
+
+        local deadline
+        deadline=$(( $(date +%s) + 60 ))
+
+        while [ "$(date +%s)" -lt "$deadline" ]; do
+            local running
+            running=$(docker compose --env-file .env -f "$compose_file" -f "$runner_file" -f "$test_db_file" ps --services --filter status=running 2>/dev/null || true)
+            if [ -n "$running" ]; then
+                break
+            fi
+            sleep 1
+        done
+
+        docker compose --env-file .env -f "$compose_file" -f "$runner_file" -f "$test_db_file" logs -f --no-color > "$compose_log_file" 2>&1
+    ) &
+    local logs_pid=$!
+
+    (
+        local max_wait=120
+        local wait_time=0
+        while [ $wait_time -lt $max_wait ]; do
+            if curl -s "http://localhost:$port/health" >/dev/null 2>&1; then
+                break
+            fi
+            sleep 2
+            wait_time=$((wait_time + 2))
+        done
+
+        open_browser_incognito "$port" "$compose_file" "test"
+    ) &
+    local browser_pid=$!
+
+    cd "$project_root" || return 1
+    if command -v script >/dev/null 2>&1; then
+        if script -q -c "true" /dev/null >/dev/null 2>&1; then
+            script -q -c "docker compose --env-file .env -f '$compose_file' -f '$runner_file' -f '$test_db_file' up --build" "$transcript_file"
+        else
+            script -q "$transcript_file" docker compose --env-file .env -f "$compose_file" -f "$runner_file" -f "$test_db_file" up --build
         fi
-        echo -n "."
-        sleep 2
-        wait_time=$((wait_time + 2))
-    done
-    
-    if [ $wait_time -ge $max_wait ]; then
-        echo ""
-        echo "⚠️  API not ready after ${max_wait}s, opening browser anyway..."
+    else
+        docker compose --env-file .env -f "$compose_file" -f "$runner_file" -f "$test_db_file" up --build
     fi
-    
-    echo ""
-    echo "🌐 Opening browser with all admin UIs..."
-    
-    # Open browser now that services are ready
-    open_browser_incognito "$port" "$compose_file" "test"
-    
-    echo ""
-    echo "✅ All services with test databases started!"
-    echo ""
-    echo "📋 Service status:"
-    docker compose --env-file .env -f "$compose_file" -f "$runner_file" -f "$test_db_file" ps
-    
-    # Wait for the compose process to finish (when user presses Ctrl+C)
-    wait $compose_pid
+
+    kill "$logs_pid" >/dev/null 2>&1 || true
+    wait "$logs_pid" >/dev/null 2>&1 || true
+
+    kill "$browser_pid" >/dev/null 2>&1 || true
+    wait "$browser_pid" >/dev/null 2>&1 || true
 }
 
 handle_start_admin_uis() {
@@ -652,7 +722,12 @@ handle_deploy_all_services() {
     echo "  - Backend API (port $port)"
     echo "  - PostgreSQL database"
     echo "  - Backup runner"
-    echo "  - Web GUI at http://localhost:$port/"
+    local web_port="${WEB_PORT:-}"
+    if [ -z "$web_port" ] && [ -f ".env" ]; then
+        web_port=$(grep "^WEB_PORT=" .env 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d ' \"')
+    fi
+    web_port="${web_port:-8086}"
+    echo "  - Web GUI at http://localhost:${web_port}/"
     echo "========================================"
     echo ""
     echo "🌐 Browser will open automatically when API is ready..."
@@ -687,7 +762,12 @@ handle_deploy_all_services_detached() {
     echo "  - Backend API (port $port)"
     echo "  - PostgreSQL database"
     echo "  - Backup runner"
-    echo "  - Web GUI at http://localhost:$port/"
+    local web_port="${WEB_PORT:-}"
+    if [ -z "$web_port" ] && [ -f ".env" ]; then
+        web_port=$(grep "^WEB_PORT=" .env 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d ' \"')
+    fi
+    web_port="${web_port:-8086}"
+    echo "  - Web GUI at http://localhost:${web_port}/"
     echo "========================================"
     echo ""
     echo "🌐 Browser will open automatically when API is ready..."

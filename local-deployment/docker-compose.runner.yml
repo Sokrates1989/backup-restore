@@ -15,6 +15,7 @@ services:
       dockerfile: Dockerfile
       args:
         PYTHON_VERSION: ${PYTHON_VERSION}-slim
+        IMAGE_TAG: ${IMAGE_TAG:-dev}
     command: ["python", "runner.py"]
     env_file:
       - ../.env

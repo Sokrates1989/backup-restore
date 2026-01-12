@@ -80,6 +80,9 @@ function showBackupScheduleForm(schedule = null) {
 
 function hideBackupScheduleForm() {
     document.getElementById('backup-schedule-form').classList.add('hidden');
+    if (typeof clearStatusMessages === 'function') {
+        clearStatusMessages();
+    }
 }
 
 function editBackupSchedule(id) {
@@ -101,7 +104,7 @@ function updateBackupScheduleSelects() {
 
 async function saveBackupSchedule() {
     const id = document.getElementById('backup-schedule-id').value;
-    const name = document.getElementById('backup-schedule-name').value.trim();
+    const name = trimValue(document.getElementById('backup-schedule-name').value);
     const databaseId = document.getElementById('backup-schedule-database').value;
     const remoteStorageLocationId = document.getElementById('backup-schedule-remote-storage-location').value;
     const interval = document.getElementById('backup-schedule-interval').value;

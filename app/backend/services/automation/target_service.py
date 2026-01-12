@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, List, Optional
 
 import asyncpg
@@ -10,6 +11,54 @@ from backend.database.sql_handler import SQLHandler
 from backend.services.automation.config_crypto import encrypt_secrets, is_config_encryption_enabled
 from backend.services.automation.repository import AutomationRepository
 from backend.services.automation.serializers import target_to_dict
+
+
+def _normalize_local_test_db_address(db_type: str, host: str, port: int) -> tuple[str, int]:
+    """Normalize host/port for local test DB connections when running in Docker.
+
+    The Admin UI runs in the user's browser on the host machine. The API runs inside
+    a Docker container. When the UI submits "localhost" plus a host-mapped port
+    (e.g. 5434 for test-postgres), "localhost" is interpreted inside the container
+    and will not reach the target DB.
+
+    This helper maps common local test DB inputs to Docker Compose service DNS names
+    and container-internal ports.
+
+    Why do we return a different port than the user entered?
+        Docker publishes container ports to the host using `HOST_PORT:CONTAINER_PORT`.
+        The user enters the host-exposed port (e.g. 5434), but the API container must
+        connect to the database service via the Docker network, which uses the
+        container port (e.g. 5432) and the service DNS name.
+
+        Example mappings come from:
+            local-deployment/docker-compose.test-databases.yml
+        - test-postgres: "5434:5432" (host 5434, container 5432)
+        - test-mysql:    "3306:3306" (host 3306, container 3306)
+        - test-neo4j:    "7688:7687" (host 7688, container 7687)
+
+    Args:
+        db_type: Database type.
+        host: Input host.
+        port: Input port.
+
+    Returns:
+        tuple[str, int]: Normalized (host, port).
+    """
+
+    localhost_aliases = {"localhost", "127.0.0.1", "::1"}
+    if host not in localhost_aliases:
+        return host, port
+
+    if db_type == "postgresql" and port == 5434:
+        return "test-postgres", 5432
+
+    if db_type == "mysql" and port == 3306:
+        return "test-mysql", 3306
+
+    if db_type == "neo4j" and port == 7688:
+        return "test-neo4j", 7687
+
+    return host, port
 
 
 class TargetService:
@@ -54,50 +103,75 @@ class TargetService:
         host = config.get("host", "localhost")
         port = config.get("port", 5432)
         database = config.get("database", "")
-        username = secrets.get("username", "")
-        password = secrets.get("password", "")
+        username = secrets.get("username") or secrets.get("user") or config.get("user") or ""
+        password = secrets.get("password") or ""
+
+        try:
+            port_int = int(port) if port is not None else 0
+        except (TypeError, ValueError):
+            port_int = 0
+
+        if port_int <= 0:
+            if db_type == "postgresql":
+                port_int = 5432
+            elif db_type == "mysql":
+                port_int = 3306
+            elif db_type == "neo4j":
+                port_int = 7687
+
+        if port_int > 0:
+            host, port_int = _normalize_local_test_db_address(db_type=db_type, host=host, port=port_int)
 
         try:
             if db_type == "postgresql":
                 # Test PostgreSQL connection
                 conn = psycopg2.connect(
                     host=host,
-                    port=port,
+                    port=port_int,
                     database=database,
                     user=username,
                     password=password,
                     connect_timeout=10
                 )
                 conn.close()
-                return {"db_type": db_type, "host": host, "port": port, "database": database}
+                return {"db_type": db_type, "host": host, "port": port_int, "database": database}
             
             elif db_type == "mysql":
                 # Test MySQL connection
                 import pymysql
                 conn = pymysql.connect(
                     host=host,
-                    port=port,
+                    port=port_int,
                     database=database,
                     user=username,
                     password=password,
                     connect_timeout=10
                 )
                 conn.close()
-                return {"db_type": db_type, "host": host, "port": port, "database": database}
+                return {"db_type": db_type, "host": host, "port": port_int, "database": database}
             
             elif db_type == "sqlite":
                 # Test SQLite connection
                 import sqlite3
-                db_path = config.get("path", database)
-                conn = sqlite3.connect(db_path)
+                db_path = config.get("path") or config.get("file") or database
+                if not db_path:
+                    raise ValueError("Missing SQLite path")
+
+                if not os.path.exists(db_path):
+                    raise ValueError(f"SQLite file does not exist: {db_path}")
+
+                conn = sqlite3.connect(f"file:{db_path}?mode=rw", uri=True)
                 conn.close()
                 return {"db_type": db_type, "path": db_path}
             
             elif db_type == "neo4j":
                 # Test Neo4j connection
                 from neo4j import GraphDatabase
-                uri = f"bolt://{host}:{port}"
-                driver = GraphDatabase.driver(uri, auth=(username, password))
+                uri = f"bolt://{host}:{port_int}"
+                if username or password:
+                    driver = GraphDatabase.driver(uri, auth=(username, password))
+                else:
+                    driver = GraphDatabase.driver(uri)
                 driver.verify_connectivity()
                 driver.close()
                 return {"db_type": db_type, "uri": uri}

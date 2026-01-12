@@ -223,10 +223,35 @@ header h1 {
 
 /* Status Messages */
 .status {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
     padding: 1rem;
     border-radius: 6px;
     margin-bottom: 1rem;
     font-weight: 500;
+}
+
+.status-text {
+    flex: 1;
+    white-space: pre-wrap;
+}
+
+.status-close {
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    border-radius: 6px;
+}
+
+.status-close:hover {
+    background: rgba(0, 0, 0, 0.05);
 }
 
 .status.hidden {

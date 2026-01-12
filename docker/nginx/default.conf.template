@@ -1,0 +1,119 @@
+# Nginx configuration for Backup-Restore Web UI
+# Serves static UI and proxies API requests to the backend app
+
+upstream api {
+    server $API_HOST:$API_PORT;
+}
+
+server {
+    listen 80;
+    server_name _;
+
+    # Serve static files
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    # API proxy endpoints
+    location /automation/ {
+        proxy_pass http://api/automation/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_set_header X-Admin-Key $http_x_admin_key;
+        proxy_set_header X-Restore-Key $http_x_restore_key;
+        proxy_set_header X-Delete-Key $http_x_delete_key;
+
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    location /backup/ {
+        proxy_pass http://api/backup/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_set_header X-Admin-Key $http_x_admin_key;
+        proxy_set_header X-Restore-Key $http_x_restore_key;
+        proxy_set_header X-Delete-Key $http_x_delete_key;
+
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    location /files/ {
+        proxy_pass http://api/files/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_set_header X-Admin-Key $http_x_admin_key;
+        proxy_set_header X-Restore-Key $http_x_restore_key;
+        proxy_set_header X-Delete-Key $http_x_delete_key;
+
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    location = /health {
+        proxy_pass http://api/health;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+
+    location = /version {
+        proxy_pass http://api/version;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+
+    location /docs {
+        proxy_pass http://api/docs;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+
+    location = /openapi.json {
+        proxy_pass http://api/openapi.json;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+
+    location /redoc {
+        proxy_pass http://api/redoc;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+
+    # SPA fallback - serve index.html for all other routes
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Cache static assets
+    location ~* \.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 7d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # Disable caching for HTML and JSON
+    location ~* \.(html|json)$ {
+        expires -1;
+        add_header Cache-Control "no-store, no-cache, must-revalidate";
+    }
+}

@@ -1,0 +1,24 @@
+# Dockerfile for Backup-Restore Web UI
+# Serves static web UI and proxies API requests to the backend app service
+
+FROM nginx:alpine
+
+# Install envsubst for nginx config templating
+RUN apk add --no-cache gettext
+
+# Copy website files
+COPY website/ /usr/share/nginx/html/
+
+# Copy nginx configuration template
+COPY docker/nginx/default.conf.template /etc/nginx/templates/default.conf.template
+
+# Create version file (will be overwritten during build if IMAGE_TAG is set)
+ARG IMAGE_TAG=dev
+RUN echo "{\"version\": \"${IMAGE_TAG}\"}" > /usr/share/nginx/html/version.json
+
+# Expose port 80
+EXPOSE 80
+
+# nginx will automatically process templates in /etc/nginx/templates/
+# and output to /etc/nginx/conf.d/ on startup
+CMD ["nginx", "-g", "daemon off;"]

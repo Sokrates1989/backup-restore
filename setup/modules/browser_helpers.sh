@@ -146,7 +146,13 @@ show_api_docs_delayed() {
 
     local api_url="http://localhost:${port}/docs"
     local api_health_url="http://localhost:${port}/health"
-    local web_url="http://localhost:${port}/"
+    local web_port="${WEB_PORT:-}"
+    if [ -z "$web_port" ] && [ -f ".env" ]; then
+        web_port=$(grep "^WEB_PORT=" .env 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d ' "')
+    fi
+    web_port="${web_port:-8086}"
+
+    local web_url="http://localhost:${web_port}/"
 
     echo ""
     echo "========================================"

@@ -5,7 +5,7 @@
 groups = ["default"]
 strategy = []
 lock_version = "4.5.0"
-content_hash = "sha256:e9262d60f60b607a0ae03c2334e8f688166cbfb81ae079bfb019040329b90794"
+content_hash = "sha256:d13fda9f3bd135447c2b5efacffa05ba903a5d35518f02eee59793f3b53fd9fc"
 
 [[metadata.targets]]
 requires_python = "==3.13.*"
@@ -13,8 +13,7 @@ requires_python = "==3.13.*"
 [[package]]
 name = "aiosqlite"
 version = "0.22.1"
-requires_python = ">=3.9"
-summary = "asyncio bridge to the standard sqlite3 module"
+summary = ""
 files = [
     {file = "aiosqlite-0.22.1-py3-none-any.whl", hash = "sha256:21c002eb13823fad740196c5a2e9d8e62f6243bd9e7e4a1f87fb5e44ecb4fceb"},
     {file = "aiosqlite-0.22.1.tar.gz", hash = "sha256:043e0bd78d32888c0a9ca90fc788b38796843360c855a7262a532813133a0650"},
@@ -23,13 +22,11 @@ files = [
 [[package]]
 name = "alembic"
 version = "1.18.0"
-requires_python = ">=3.10"
-summary = "A database migration tool for SQLAlchemy."
+summary = ""
 dependencies = [
-    "Mako",
-    "SQLAlchemy>=1.4.0",
-    "tomli; python_version < \"3.11\"",
-    "typing-extensions>=4.12",
+    "mako",
+    "sqlalchemy",
+    "typing-extensions",
 ]
 files = [
     {file = "alembic-1.18.0-py3-none-any.whl", hash = "sha256:3993fcfbc371aa80cdcf13f928b7da21b1c9f783c914f03c3c6375f58efd9250"},
@@ -39,8 +36,7 @@ files = [
 [[package]]
 name = "annotated-doc"
 version = "0.0.4"
-requires_python = ">=3.8"
-summary = "Document parameters, class attributes, return types, and variables inline, with Annotated."
+summary = ""
 files = [
     {file = "annotated_doc-0.0.4-py3-none-any.whl", hash = "sha256:571ac1dc6991c450b25a9c2d84a3705e2ae7a53467b5d111c24fa8baabbed320"},
     {file = "annotated_doc-0.0.4.tar.gz", hash = "sha256:fbcda96e87e9c92ad167c2e53839e57503ecfda18804ea28102353485033faa4"},
@@ -49,11 +45,7 @@ files = [
 [[package]]
 name = "annotated-types"
 version = "0.7.0"
-requires_python = ">=3.8"
-summary = "Reusable constraint types to use with typing.Annotated"
-dependencies = [
-    "typing-extensions>=4.0.0; python_version < \"3.9\"",
-]
+summary = ""
 files = [
     {file = "annotated_types-0.7.0-py3-none-any.whl", hash = "sha256:1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53"},
     {file = "annotated_types-0.7.0.tar.gz", hash = "sha256:aff07c09a53a08bc8cfccb9c85b05f1aa9a2a6f23728d790723543408344ce89"},
@@ -62,12 +54,9 @@ files = [
 [[package]]
 name = "anyio"
 version = "4.12.1"
-requires_python = ">=3.9"
-summary = "High-level concurrency and networking framework on top of asyncio or Trio"
+summary = ""
 dependencies = [
-    "exceptiongroup>=1.0.2; python_version < \"3.11\"",
-    "idna>=2.8",
-    "typing-extensions>=4.5; python_version < \"3.13\"",
+    "idna",
 ]
 files = [
     {file = "anyio-4.12.1-py3-none-any.whl", hash = "sha256:d405828884fc140aa80a3c667b8beed277f1dfedec42ba031bd6ac3db606ab6c"},
@@ -77,11 +66,7 @@ files = [
 [[package]]
 name = "asyncpg"
 version = "0.31.0"
-requires_python = ">=3.9.0"
-summary = "An asyncio PostgreSQL driver"
-dependencies = [
-    "async-timeout>=4.0.3; python_version < \"3.11.0\"",
-]
+summary = ""
 files = [
     {file = "asyncpg-0.31.0-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:c204fab1b91e08b0f47e90a75d1b3c62174dab21f670ad6c5d0f243a228f015b"},
     {file = "asyncpg-0.31.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:54a64f91839ba59008eccf7aad2e93d6e3de688d796f35803235ea1c4898ae1e"},
@@ -97,8 +82,7 @@ files = [
 [[package]]
 name = "bcrypt"
 version = "5.0.0"
-requires_python = ">=3.8"
-summary = "Modern password hashing for your software and your servers"
+summary = ""
 files = [
     {file = "bcrypt-5.0.0-cp313-cp313t-macosx_10_12_universal2.whl", hash = "sha256:f3c08197f3039bec79cee59a606d62b96b16669cff3949f21e74796b6e3cd2be"},
     {file = "bcrypt-5.0.0-cp313-cp313t-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:200af71bc25f22006f4069060c88ed36f8aa4ff7f53e67ff04d2ab3f1e79a5b2"},
@@ -151,8 +135,7 @@ files = [
 [[package]]
 name = "certifi"
 version = "2026.1.4"
-requires_python = ">=3.7"
-summary = "Python package for providing Mozilla's CA Bundle."
+summary = ""
 files = [
     {file = "certifi-2026.1.4-py3-none-any.whl", hash = "sha256:9943707519e4add1115f44c2bc244f782c0249876bf51b6599fee1ffbedd685c"},
     {file = "certifi-2026.1.4.tar.gz", hash = "sha256:ac726dd470482006e014ad384921ed6438c457018f4b3d204aea4281258b2120"},
@@ -161,8 +144,7 @@ files = [
 [[package]]
 name = "cffi"
 version = "2.0.0"
-requires_python = ">=3.9"
-summary = "Foreign Function Interface for Python calling C code."
+summary = ""
 dependencies = [
     "pycparser; implementation_name != \"PyPy\"",
 ]
@@ -185,8 +167,7 @@ files = [
 [[package]]
 name = "charset-normalizer"
 version = "3.4.4"
-requires_python = ">=3.7"
-summary = "The Real First Universal Charset Detector. Open, modern and actively maintained alternative to Chardet."
+summary = ""
 files = [
     {file = "charset_normalizer-3.4.4-cp313-cp313-macosx_10_13_universal2.whl", hash = "sha256:e1f185f86a6f3403aa2420e815904c67b2f9ebc443f045edd0de921108345794"},
     {file = "charset_normalizer-3.4.4-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:6b39f987ae8ccdf0d2642338faf2abb1862340facc796048b604ef14919e55ed"},
@@ -211,10 +192,9 @@ files = [
 [[package]]
 name = "click"
 version = "8.3.1"
-requires_python = ">=3.10"
-summary = "Composable command line interface toolkit"
+summary = ""
 dependencies = [
-    "colorama; platform_system == \"Windows\"",
+    "colorama; sys_platform == \"win32\"",
 ]
 files = [
     {file = "click-8.3.1-py3-none-any.whl", hash = "sha256:981153a64e25f12d547d3426c367a4857371575ee7ad18df2a6183ab0545b2a6"},
@@ -224,8 +204,7 @@ files = [
 [[package]]
 name = "colorama"
 version = "0.4.6"
-requires_python = "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,!=3.5.*,!=3.6.*,>=2.7"
-summary = "Cross-platform colored terminal text."
+summary = ""
 files = [
     {file = "colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"},
     {file = "colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44"},
@@ -234,12 +213,9 @@ files = [
 [[package]]
 name = "cryptography"
 version = "46.0.3"
-requires_python = "!=3.9.0,!=3.9.1,>=3.8"
-summary = "cryptography is a package which provides cryptographic recipes and primitives to Python developers."
+summary = ""
 dependencies = [
-    "cffi>=1.14; python_full_version == \"3.8.*\" and platform_python_implementation != \"PyPy\"",
-    "cffi>=2.0.0; python_full_version >= \"3.9\" and platform_python_implementation != \"PyPy\"",
-    "typing-extensions>=4.13.2; python_full_version < \"3.11\"",
+    "cffi; platform_python_implementation != \"PyPy\"",
 ]
 files = [
     {file = "cryptography-46.0.3-cp311-abi3-macosx_10_9_universal2.whl", hash = "sha256:109d4ddfadf17e8e7779c39f9b18111a09efb969a301a31e987416a0191ed93a"},
@@ -278,8 +254,7 @@ files = [
 [[package]]
 name = "dnspython"
 version = "2.8.0"
-requires_python = ">=3.10"
-summary = "DNS toolkit"
+summary = ""
 files = [
     {file = "dnspython-2.8.0-py3-none-any.whl", hash = "sha256:01d9bbc4a2d76bf0db7c1f729812ded6d912bd318d3b1cf81d30c0f845dbf3af"},
     {file = "dnspython-2.8.0.tar.gz", hash = "sha256:181d3c6996452cb1189c4046c61599b84a5a86e099562ffde77d26984ff26d0f"},
@@ -288,11 +263,10 @@ files = [
 [[package]]
 name = "email-validator"
 version = "2.3.0"
-requires_python = ">=3.8"
-summary = "A robust email address syntax and deliverability validation library."
+summary = ""
 dependencies = [
-    "dnspython>=2.0.0",
-    "idna>=2.0.0",
+    "dnspython",
+    "idna",
 ]
 files = [
     {file = "email_validator-2.3.0-py3-none-any.whl", hash = "sha256:80f13f623413e6b197ae73bb10bf4eb0908faf509ad8362c5edeb0be7fd450b4"},
@@ -302,13 +276,12 @@ files = [
 [[package]]
 name = "fastapi"
 version = "0.128.0"
-requires_python = ">=3.9"
-summary = "FastAPI framework, high performance, easy to learn, fast to code, ready for production"
+summary = ""
 dependencies = [
-    "annotated-doc>=0.0.2",
-    "pydantic>=2.7.0",
-    "starlette<0.51.0,>=0.40.0",
-    "typing-extensions>=4.8.0",
+    "annotated-doc",
+    "pydantic",
+    "starlette",
+    "typing-extensions",
 ]
 files = [
     {file = "fastapi-0.128.0-py3-none-any.whl", hash = "sha256:aebd93f9716ee3b4f4fcfe13ffb7cf308d99c9f3ab5622d8877441072561582d"},
@@ -318,16 +291,13 @@ files = [
 [[package]]
 name = "google-api-core"
 version = "2.29.0"
-requires_python = ">=3.7"
-summary = "Google API client core library"
+summary = ""
 dependencies = [
-    "google-auth<3.0.0,>=2.14.1",
-    "googleapis-common-protos<2.0.0,>=1.56.2",
-    "importlib-metadata>=1.4; python_version < \"3.8\"",
-    "proto-plus<2.0.0,>=1.22.3",
-    "proto-plus<2.0.0,>=1.25.0; python_version >= \"3.13\"",
-    "protobuf!=3.20.0,!=3.20.1,!=4.21.0,!=4.21.1,!=4.21.2,!=4.21.3,!=4.21.4,!=4.21.5,<7.0.0,>=3.19.5",
-    "requests<3.0.0,>=2.18.0",
+    "google-auth",
+    "googleapis-common-protos",
+    "proto-plus",
+    "protobuf",
+    "requests",
 ]
 files = [
     {file = "google_api_core-2.29.0-py3-none-any.whl", hash = "sha256:d30bc60980daa36e314b5d5a3e5958b0200cb44ca8fa1be2b614e932b75a3ea9"},
@@ -337,14 +307,13 @@ files = [
 [[package]]
 name = "google-api-python-client"
 version = "2.187.0"
-requires_python = ">=3.7"
-summary = "Google API Client Library for Python"
+summary = ""
 dependencies = [
-    "google-api-core!=2.0.*,!=2.1.*,!=2.2.*,!=2.3.0,<3.0.0,>=1.31.5",
-    "google-auth!=2.24.0,!=2.25.0,<3.0.0,>=1.32.0",
-    "google-auth-httplib2<1.0.0,>=0.2.0",
-    "httplib2<1.0.0,>=0.19.0",
-    "uritemplate<5,>=3.0.1",
+    "google-api-core",
+    "google-auth",
+    "google-auth-httplib2",
+    "httplib2",
+    "uritemplate",
 ]
 files = [
     {file = "google_api_python_client-2.187.0-py3-none-any.whl", hash = "sha256:d8d0f6d85d7d1d10bdab32e642312ed572bdc98919f72f831b44b9a9cebba32f"},
@@ -354,11 +323,10 @@ files = [
 [[package]]
 name = "google-auth"
 version = "2.47.0"
-requires_python = ">=3.8"
-summary = "Google Authentication Library"
+summary = ""
 dependencies = [
-    "pyasn1-modules>=0.2.1",
-    "rsa<5,>=3.1.4",
+    "pyasn1-modules",
+    "rsa",
 ]
 files = [
     {file = "google_auth-2.47.0-py3-none-any.whl", hash = "sha256:c516d68336bfde7cf0da26aab674a36fedcf04b37ac4edd59c597178760c3498"},
@@ -368,11 +336,10 @@ files = [
 [[package]]
 name = "google-auth-httplib2"
 version = "0.3.0"
-requires_python = ">=3.7"
-summary = "Google Authentication Library: httplib2 transport"
+summary = ""
 dependencies = [
-    "google-auth<3.0.0,>=1.32.0",
-    "httplib2<1.0.0,>=0.19.0",
+    "google-auth",
+    "httplib2",
 ]
 files = [
     {file = "google_auth_httplib2-0.3.0-py3-none-any.whl", hash = "sha256:426167e5df066e3f5a0fc7ea18768c08e7296046594ce4c8c409c2457dd1f776"},
@@ -382,10 +349,9 @@ files = [
 [[package]]
 name = "googleapis-common-protos"
 version = "1.72.0"
-requires_python = ">=3.7"
-summary = "Common protobufs used in Google APIs"
+summary = ""
 dependencies = [
-    "protobuf!=4.21.1,!=4.21.2,!=4.21.3,!=4.21.4,!=4.21.5,<7.0.0,>=3.20.2",
+    "protobuf",
 ]
 files = [
     {file = "googleapis_common_protos-1.72.0-py3-none-any.whl", hash = "sha256:4299c5a82d5ae1a9702ada957347726b167f9f8d1fc352477702a1e851ff4038"},
@@ -395,13 +361,11 @@ files = [
 [[package]]
 name = "greenlet"
 version = "3.3.0"
-requires_python = ">=3.10"
-summary = "Lightweight in-process concurrent programming"
+summary = ""
 files = [
     {file = "greenlet-3.3.0-cp313-cp313-macosx_11_0_universal2.whl", hash = "sha256:a1e41a81c7e2825822f4e068c48cb2196002362619e2d70b148f20a831c00739"},
     {file = "greenlet-3.3.0-cp313-cp313-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:9f515a47d02da4d30caaa85b69474cec77b7929b2e936ff7fb853d42f4bf8808"},
     {file = "greenlet-3.3.0-cp313-cp313-manylinux_2_24_ppc64le.manylinux_2_28_ppc64le.whl", hash = "sha256:7d2d9fd66bfadf230b385fdc90426fcd6eb64db54b40c495b72ac0feb5766c54"},
-    {file = "greenlet-3.3.0-cp313-cp313-manylinux_2_24_s390x.manylinux_2_28_s390x.whl", hash = "sha256:30a6e28487a790417d036088b3bcb3f3ac7d8babaa7d0139edbaddebf3af9492"},
     {file = "greenlet-3.3.0-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:087ea5e004437321508a8d6f20efc4cfec5e3c30118e1417ea96ed1d93950527"},
     {file = "greenlet-3.3.0-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:ab97cf74045343f6c60a39913fa59710e4bd26a536ce7ab2397adf8b27e67c39"},
     {file = "greenlet-3.3.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:5375d2e23184629112ca1ea89a53389dddbffcf417dad40125713d88eb5f96e8"},
@@ -412,8 +376,7 @@ files = [
 [[package]]
 name = "h11"
 version = "0.16.0"
-requires_python = ">=3.8"
-summary = "A pure-Python, bring-your-own-I/O implementation of HTTP/1.1"
+summary = ""
 files = [
     {file = "h11-0.16.0-py3-none-any.whl", hash = "sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86"},
     {file = "h11-0.16.0.tar.gz", hash = "sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1"},
@@ -422,11 +385,10 @@ files = [
 [[package]]
 name = "httpcore"
 version = "1.0.9"
-requires_python = ">=3.8"
-summary = "A minimal low-level HTTP client."
+summary = ""
 dependencies = [
     "certifi",
-    "h11>=0.16",
+    "h11",
 ]
 files = [
     {file = "httpcore-1.0.9-py3-none-any.whl", hash = "sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55"},
@@ -436,10 +398,9 @@ files = [
 [[package]]
 name = "httplib2"
 version = "0.31.0"
-requires_python = ">=3.6"
-summary = "A comprehensive HTTP client library."
+summary = ""
 dependencies = [
-    "pyparsing<4,>=3.0.4",
+    "pyparsing",
 ]
 files = [
     {file = "httplib2-0.31.0-py3-none-any.whl", hash = "sha256:b9cd78abea9b4e43a7714c6e0f8b6b8561a6fc1e95d5dbd367f5bf0ef35f5d24"},
@@ -449,12 +410,11 @@ files = [
 [[package]]
 name = "httpx"
 version = "0.28.1"
-requires_python = ">=3.8"
-summary = "The next generation HTTP client."
+summary = ""
 dependencies = [
     "anyio",
     "certifi",
-    "httpcore==1.*",
+    "httpcore",
     "idna",
 ]
 files = [
@@ -465,8 +425,7 @@ files = [
 [[package]]
 name = "idna"
 version = "3.11"
-requires_python = ">=3.8"
-summary = "Internationalized Domain Names in Applications (IDNA)"
+summary = ""
 files = [
     {file = "idna-3.11-py3-none-any.whl", hash = "sha256:771a87f49d9defaf64091e6e6fe9c18d4833f140bd19464795bc32d966ca37ea"},
     {file = "idna-3.11.tar.gz", hash = "sha256:795dafcc9c04ed0c1fb032c2aa73654d8e8c5023a7df64a53f39190ada629902"},
@@ -475,8 +434,7 @@ files = [
 [[package]]
 name = "invoke"
 version = "2.2.1"
-requires_python = ">=3.6"
-summary = "Pythonic task execution"
+summary = ""
 files = [
     {file = "invoke-2.2.1-py3-none-any.whl", hash = "sha256:2413bc441b376e5cd3f55bb5d364f973ad8bdd7bf87e53c79de3c11bf3feecc8"},
     {file = "invoke-2.2.1.tar.gz", hash = "sha256:515bf49b4a48932b79b024590348da22f39c4942dff991ad1fb8b8baea1be707"},
@@ -485,10 +443,9 @@ files = [
 [[package]]
 name = "mako"
 version = "1.3.10"
-requires_python = ">=3.8"
-summary = "A super-fast templating language that borrows the best ideas from the existing templating languages."
+summary = ""
 dependencies = [
-    "MarkupSafe>=0.9.2",
+    "markupsafe",
 ]
 files = [
     {file = "mako-1.3.10-py3-none-any.whl", hash = "sha256:baef24a52fc4fc514a0887ac600f9f1cff3d82c61d4d700a1fa84d597b88db59"},
@@ -498,8 +455,7 @@ files = [
 [[package]]
 name = "markupsafe"
 version = "3.0.3"
-requires_python = ">=3.9"
-summary = "Safely add untrusted strings to HTML/XML markup."
+summary = ""
 files = [
     {file = "markupsafe-3.0.3-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:e1cf1972137e83c5d4c136c43ced9ac51d0e124706ee1c8aa8532c1287fa8795"},
     {file = "markupsafe-3.0.3-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:116bb52f642a37c115f517494ea5feb03889e04df47eeff5b130b1808ce7c219"},
@@ -529,8 +485,7 @@ files = [
 [[package]]
 name = "neo4j"
 version = "6.0.3"
-requires_python = ">=3.10"
-summary = "Neo4j Bolt driver for Python"
+summary = ""
 dependencies = [
     "pytz",
 ]
@@ -542,13 +497,12 @@ files = [
 [[package]]
 name = "paramiko"
 version = "4.0.0"
-requires_python = ">=3.9"
-summary = "SSH2 protocol library"
+summary = ""
 dependencies = [
-    "bcrypt>=3.2",
-    "cryptography>=3.3",
-    "invoke>=2.0",
-    "pynacl>=1.5",
+    "bcrypt",
+    "cryptography",
+    "invoke",
+    "pynacl",
 ]
 files = [
     {file = "paramiko-4.0.0-py3-none-any.whl", hash = "sha256:0e20e00ac666503bf0b4eda3b6d833465a2b7aff2e2b3d79a8bba5ef144ee3b9"},
@@ -558,10 +512,9 @@ files = [
 [[package]]
 name = "proto-plus"
 version = "1.27.0"
-requires_python = ">=3.7"
-summary = "Beautiful, Pythonic protocol buffers"
+summary = ""
 dependencies = [
-    "protobuf<7.0.0,>=3.19.0",
+    "protobuf",
 ]
 files = [
     {file = "proto_plus-1.27.0-py3-none-any.whl", hash = "sha256:1baa7f81cf0f8acb8bc1f6d085008ba4171eaf669629d1b6d1673b21ed1c0a82"},
@@ -571,7 +524,6 @@ files = [
 [[package]]
 name = "protobuf"
 version = "6.33.3"
-requires_python = ">=3.9"
 summary = ""
 files = [
     {file = "protobuf-6.33.3-cp310-abi3-win32.whl", hash = "sha256:b4046f9f2ede57ad5b1d9917baafcbcad42f8151a73c755a1e2ec9557b0a764f"},
@@ -587,8 +539,7 @@ files = [
 [[package]]
 name = "psycopg2-binary"
 version = "2.9.11"
-requires_python = ">=3.9"
-summary = "psycopg2 - Python-PostgreSQL Database Adapter"
+summary = ""
 files = [
     {file = "psycopg2-binary-2.9.11.tar.gz", hash = "sha256:b6aed9e096bf63f9e75edf2581aa9a7e7186d97ab5c177aa6c87797cd591236c"},
     {file = "psycopg2_binary-2.9.11-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:b8fb3db325435d34235b044b199e56cdf9ff41223a4b9752e8576465170bb38c"},
@@ -607,8 +558,7 @@ files = [
 [[package]]
 name = "pyasn1"
 version = "0.6.1"
-requires_python = ">=3.8"
-summary = "Pure-Python implementation of ASN.1 types and DER/BER/CER codecs (X.208)"
+summary = ""
 files = [
     {file = "pyasn1-0.6.1-py3-none-any.whl", hash = "sha256:0d632f46f2ba09143da3a8afe9e33fb6f92fa2320ab7e886e2d0f7672af84629"},
     {file = "pyasn1-0.6.1.tar.gz", hash = "sha256:6f580d2bdd84365380830acf45550f2511469f673cb4a5ae3857a3170128b034"},
@@ -617,10 +567,9 @@ files = [
 [[package]]
 name = "pyasn1-modules"
 version = "0.4.2"
-requires_python = ">=3.8"
-summary = "A collection of ASN.1-based protocols modules"
+summary = ""
 dependencies = [
-    "pyasn1<0.7.0,>=0.6.1",
+    "pyasn1",
 ]
 files = [
     {file = "pyasn1_modules-0.4.2-py3-none-any.whl", hash = "sha256:29253a9207ce32b64c3ac6600edc75368f98473906e8fd1043bd6b5b1de2c14a"},
@@ -630,8 +579,7 @@ files = [
 [[package]]
 name = "pycparser"
 version = "2.23"
-requires_python = ">=3.8"
-summary = "C parser in Python"
+summary = ""
 files = [
     {file = "pycparser-2.23-py3-none-any.whl", hash = "sha256:e5c6e8d3fbad53479cab09ac03729e0a9faf2bee3db8208a550daf5af81a5934"},
     {file = "pycparser-2.23.tar.gz", hash = "sha256:78816d4f24add8f10a06d6f05b4d424ad9e96cfebf68a4ddc99c65c0720d00c2"},
@@ -640,13 +588,12 @@ files = [
 [[package]]
 name = "pydantic"
 version = "2.12.5"
-requires_python = ">=3.9"
-summary = "Data validation using Python type hints"
+summary = ""
 dependencies = [
-    "annotated-types>=0.6.0",
-    "pydantic-core==2.41.5",
-    "typing-extensions>=4.14.1",
-    "typing-inspection>=0.4.2",
+    "annotated-types",
+    "pydantic-core",
+    "typing-extensions",
+    "typing-inspection",
 ]
 files = [
     {file = "pydantic-2.12.5-py3-none-any.whl", hash = "sha256:e561593fccf61e8a20fc46dfc2dfe075b8be7d0188df33f221ad1f0139180f9d"},
@@ -656,10 +603,9 @@ files = [
 [[package]]
 name = "pydantic-core"
 version = "2.41.5"
-requires_python = ">=3.9"
-summary = "Core functionality for Pydantic validation and serialization"
+summary = ""
 dependencies = [
-    "typing-extensions>=4.14.1",
+    "typing-extensions",
 ]
 files = [
     {file = "pydantic_core-2.41.5-cp313-cp313-macosx_10_12_x86_64.whl", hash = "sha256:941103c9be18ac8daf7b7adca8228f8ed6bb7a1849020f643b3a14d15b1924d9"},
@@ -682,12 +628,11 @@ files = [
 [[package]]
 name = "pydantic-settings"
 version = "2.12.0"
-requires_python = ">=3.10"
-summary = "Settings management using Pydantic"
+summary = ""
 dependencies = [
-    "pydantic>=2.7.0",
-    "python-dotenv>=0.21.0",
-    "typing-inspection>=0.4.0",
+    "pydantic",
+    "python-dotenv",
+    "typing-inspection",
 ]
 files = [
     {file = "pydantic_settings-2.12.0-py3-none-any.whl", hash = "sha256:fddb9fd99a5b18da837b29710391e945b1e30c135477f484084ee513adb93809"},
@@ -698,10 +643,9 @@ files = [
 name = "pydantic"
 version = "2.12.5"
 extras = ["email"]
-requires_python = ">=3.9"
-summary = "Data validation using Python type hints"
+summary = ""
 dependencies = [
-    "email-validator>=2.0.0",
+    "email-validator",
     "pydantic==2.12.5",
 ]
 files = [
@@ -710,13 +654,20 @@ files = [
 ]
 
 [[package]]
+name = "pymysql"
+version = "1.1.2"
+summary = ""
+files = [
+    {file = "pymysql-1.1.2-py3-none-any.whl", hash = "sha256:e6b1d89711dd51f8f74b1631fe08f039e7d76cf67a42a323d3178f0f25762ed9"},
+    {file = "pymysql-1.1.2.tar.gz", hash = "sha256:4961d3e165614ae65014e361811a724e2044ad3ea3739de9903ae7c21f539f03"},
+]
+
+[[package]]
 name = "pynacl"
 version = "1.6.2"
-requires_python = ">=3.8"
-summary = "Python binding to the Networking and Cryptography (NaCl) library"
+summary = ""
 dependencies = [
-    "cffi>=1.4.1; platform_python_implementation != \"PyPy\" and python_version < \"3.9\"",
-    "cffi>=2.0.0; platform_python_implementation != \"PyPy\" and python_version >= \"3.9\"",
+    "cffi; platform_python_implementation != \"PyPy\"",
 ]
 files = [
     {file = "pynacl-1.6.2-cp38-abi3-macosx_10_10_universal2.whl", hash = "sha256:c949ea47e4206af7c8f604b8278093b674f7c79ed0d4719cc836902bf4517465"},
@@ -737,8 +688,7 @@ files = [
 [[package]]
 name = "pyparsing"
 version = "3.3.1"
-requires_python = ">=3.9"
-summary = "pyparsing - Classes and methods to define and execute parsing grammars"
+summary = ""
 files = [
     {file = "pyparsing-3.3.1-py3-none-any.whl", hash = "sha256:023b5e7e5520ad96642e2c6db4cb683d3970bd640cdf7115049a6e9c3682df82"},
     {file = "pyparsing-3.3.1.tar.gz", hash = "sha256:47fad0f17ac1e2cad3de3b458570fbc9b03560aa029ed5e16ee5554da9a2251c"},
@@ -747,8 +697,7 @@ files = [
 [[package]]
 name = "python-dotenv"
 version = "1.2.1"
-requires_python = ">=3.9"
-summary = "Read key-value pairs from a .env file and set them as environment variables"
+summary = ""
 files = [
     {file = "python_dotenv-1.2.1-py3-none-any.whl", hash = "sha256:b81ee9561e9ca4004139c6cbba3a238c32b03e4894671e181b671e8cb8425d61"},
     {file = "python_dotenv-1.2.1.tar.gz", hash = "sha256:42667e897e16ab0d66954af0e60a9caa94f0fd4ecf3aaf6d2d260eec1aa36ad6"},
@@ -757,8 +706,7 @@ files = [
 [[package]]
 name = "python-multipart"
 version = "0.0.21"
-requires_python = ">=3.10"
-summary = "A streaming multipart parser for Python"
+summary = ""
 files = [
     {file = "python_multipart-0.0.21-py3-none-any.whl", hash = "sha256:cf7a6713e01c87aa35387f4774e812c4361150938d20d232800f75ffcf266090"},
     {file = "python_multipart-0.0.21.tar.gz", hash = "sha256:7137ebd4d3bbf70ea1622998f902b97a29434a9e8dc40eb203bbcf7c2a2cba92"},
@@ -767,7 +715,7 @@ files = [
 [[package]]
 name = "pytz"
 version = "2025.2"
-summary = "World timezone definitions, modern and historical"
+summary = ""
 files = [
     {file = "pytz-2025.2-py2.py3-none-any.whl", hash = "sha256:5ddf76296dd8c44c26eb8f4b6f35488f3ccbf6fbbd7adee0b7262d43f0ec2f00"},
     {file = "pytz-2025.2.tar.gz", hash = "sha256:360b9e3dbb49a209c21ad61809c7fb453643e048b38924c765813546746e81c3"},
@@ -776,13 +724,12 @@ files = [
 [[package]]
 name = "requests"
 version = "2.32.5"
-requires_python = ">=3.9"
-summary = "Python HTTP for Humans."
+summary = ""
 dependencies = [
-    "certifi>=2017.4.17",
-    "charset-normalizer<4,>=2",
-    "idna<4,>=2.5",
-    "urllib3<3,>=1.21.1",
+    "certifi",
+    "charset-normalizer",
+    "idna",
+    "urllib3",
 ]
 files = [
     {file = "requests-2.32.5-py3-none-any.whl", hash = "sha256:2462f94637a34fd532264295e186976db0f5d453d1cdd31473c85a6a161affb6"},
@@ -792,10 +739,9 @@ files = [
 [[package]]
 name = "rsa"
 version = "4.9.1"
-requires_python = "<4,>=3.6"
-summary = "Pure-Python RSA implementation"
+summary = ""
 dependencies = [
-    "pyasn1>=0.1.3",
+    "pyasn1",
 ]
 files = [
     {file = "rsa-4.9.1-py3-none-any.whl", hash = "sha256:68635866661c6836b8d39430f97a996acbd61bfa49406748ea243539fe239762"},
@@ -805,12 +751,10 @@ files = [
 [[package]]
 name = "sqlalchemy"
 version = "2.0.45"
-requires_python = ">=3.7"
-summary = "Database Abstraction Library"
+summary = ""
 dependencies = [
-    "greenlet>=1; platform_machine == \"win32\" or platform_machine == \"WIN32\" or platform_machine == \"AMD64\" or platform_machine == \"amd64\" or platform_machine == \"x86_64\" or platform_machine == \"ppc64le\" or platform_machine == \"aarch64\"",
-    "importlib-metadata; python_version < \"3.8\"",
-    "typing-extensions>=4.6.0",
+    "greenlet; platform_machine == \"AMD64\" or platform_machine == \"WIN32\" or platform_machine == \"aarch64\" or platform_machine == \"amd64\" or platform_machine == \"ppc64le\" or platform_machine == \"win32\" or platform_machine == \"x86_64\"",
+    "typing-extensions",
 ]
 files = [
     {file = "sqlalchemy-2.0.45-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:fe187fc31a54d7fd90352f34e8c008cf3ad5d064d08fedd3de2e8df83eb4a1cf"},
@@ -828,11 +772,9 @@ files = [
 [[package]]
 name = "starlette"
 version = "0.50.0"
-requires_python = ">=3.10"
-summary = "The little ASGI library that shines."
+summary = ""
 dependencies = [
-    "anyio<5,>=3.6.2",
-    "typing-extensions>=4.10.0; python_version < \"3.13\"",
+    "anyio",
 ]
 files = [
     {file = "starlette-0.50.0-py3-none-any.whl", hash = "sha256:9e5391843ec9b6e472eed1365a78c8098cfceb7a74bfd4d6b1c0c0095efb3bca"},
@@ -842,8 +784,7 @@ files = [
 [[package]]
 name = "typing-extensions"
 version = "4.15.0"
-requires_python = ">=3.9"
-summary = "Backported and Experimental Type Hints for Python 3.9+"
+summary = ""
 files = [
     {file = "typing_extensions-4.15.0-py3-none-any.whl", hash = "sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548"},
     {file = "typing_extensions-4.15.0.tar.gz", hash = "sha256:0cea48d173cc12fa28ecabc3b837ea3cf6f38c6d1136f85cbaaf598984861466"},
@@ -852,10 +793,9 @@ files = [
 [[package]]
 name = "typing-inspection"
 version = "0.4.2"
-requires_python = ">=3.9"
-summary = "Runtime typing introspection tools"
+summary = ""
 dependencies = [
-    "typing-extensions>=4.12.0",
+    "typing-extensions",
 ]
 files = [
     {file = "typing_inspection-0.4.2-py3-none-any.whl", hash = "sha256:4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3d0cbad5b521545e7"},
@@ -865,8 +805,7 @@ files = [
 [[package]]
 name = "uritemplate"
 version = "4.2.0"
-requires_python = ">=3.9"
-summary = "Implementation of RFC 6570 URI Templates"
+summary = ""
 files = [
     {file = "uritemplate-4.2.0-py3-none-any.whl", hash = "sha256:962201ba1c4edcab02e60f9a0d3821e82dfc5d2d6662a21abd533879bdb8a686"},
     {file = "uritemplate-4.2.0.tar.gz", hash = "sha256:480c2ed180878955863323eea31b0ede668795de182617fef9c6ca09e6ec9d0e"},
@@ -875,8 +814,7 @@ files = [
 [[package]]
 name = "urllib3"
 version = "2.6.3"
-requires_python = ">=3.9"
-summary = "HTTP library with thread-safe connection pooling, file post, and more."
+summary = ""
 files = [
     {file = "urllib3-2.6.3-py3-none-any.whl", hash = "sha256:bf272323e553dfb2e87d9bfd225ca7b0f467b919d7bbd355436d3fd37cb0acd4"},
     {file = "urllib3-2.6.3.tar.gz", hash = "sha256:1b62b6884944a57dbe321509ab94fd4d3b307075e0c2eae991ac71ee15ad38ed"},
@@ -885,12 +823,10 @@ files = [
 [[package]]
 name = "uvicorn"
 version = "0.40.0"
-requires_python = ">=3.10"
-summary = "The lightning-fast ASGI server."
+summary = ""
 dependencies = [
-    "click>=7.0",
-    "h11>=0.8",
-    "typing-extensions>=4.0; python_version < \"3.11\"",
+    "click",
+    "h11",
 ]
 files = [
     {file = "uvicorn-0.40.0-py3-none-any.whl", hash = "sha256:c6c8f55bc8bf13eb6fa9ff87ad62308bbbc33d0b67f84293151efe87e0d5f2ee"},

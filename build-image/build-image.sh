@@ -159,36 +159,100 @@ PYTHON_VERSION="${PYTHON_VERSION:-3.13}"
 # Determine target platform for buildx (default to linux/amd64 for Swarm nodes)
 TARGET_PLATFORM="${TARGET_PLATFORM:-linux/amd64}"
 
+# Which image(s) to build
+# - all: build and push API + Web
+# - api: build and push only the API image
+# - web: build and push only the Web (nginx) image
+BUILD_TARGET="${BUILD_TARGET:-all}"
+
+BUILD_API=false
+BUILD_WEB=false
+case "$BUILD_TARGET" in
+    all)
+        BUILD_API=true
+        BUILD_WEB=true
+        ;;
+    api)
+        BUILD_API=true
+        BUILD_WEB=false
+        ;;
+    web)
+        BUILD_API=false
+        BUILD_WEB=true
+        ;;
+    *)
+        echo "❌ Invalid BUILD_TARGET: $BUILD_TARGET"
+        echo "   Valid values: all, api, web"
+        exit 1
+        ;;
+esac
+
+WEB_IMAGE_NAME="${IMAGE_NAME}-web"
+
 echo "📋 Build Configuration:"
 echo "   Image Name:     $IMAGE_NAME"
 echo "   Image Version:  $IMAGE_VERSION"
+echo "   Web Image Name: $WEB_IMAGE_NAME"
 echo "   Python Version: $PYTHON_VERSION"
 echo "   Target platform: $TARGET_PLATFORM"
+echo "   Build Target:   $BUILD_TARGET"
 echo ""
 
-# Build the image
-echo "🔨 Building Docker image..."
-echo "   Tag: $IMAGE_NAME:$IMAGE_VERSION"
-echo ""
+API_BUILD_EXIT_CODE=0
+WEB_BUILD_EXIT_CODE=0
 
-docker buildx build \
-    --platform "$TARGET_PLATFORM" \
-    --build-arg PYTHON_VERSION="${PYTHON_VERSION}" \
-    --build-arg IMAGE_TAG="$IMAGE_VERSION" \
-    -t "$IMAGE_NAME:$IMAGE_VERSION" \
-    -t "$IMAGE_NAME:latest" \
-    -f Dockerfile \
-    .
+if [ "$BUILD_API" = true ]; then
+    echo "🔨 Building API Docker image..."
+    echo "   Tag: $IMAGE_NAME:$IMAGE_VERSION"
+    echo ""
 
-if [ $? -eq 0 ]; then
+    docker buildx build \
+        --platform "$TARGET_PLATFORM" \
+        --build-arg PYTHON_VERSION="${PYTHON_VERSION}" \
+        --build-arg IMAGE_TAG="$IMAGE_VERSION" \
+        --load \
+        -t "$IMAGE_NAME:$IMAGE_VERSION" \
+        -t "$IMAGE_NAME:latest" \
+        -f Dockerfile \
+        . || API_BUILD_EXIT_CODE=$?
+
+    if [ $API_BUILD_EXIT_CODE -eq 0 ]; then
+        echo ""
+        echo "✅ API image built successfully!"
+        echo "   $IMAGE_NAME:$IMAGE_VERSION"
+        echo "   $IMAGE_NAME:latest"
+    else
+        echo ""
+        echo "❌ API image build failed!"
+        exit 1
+    fi
+fi
+
+if [ "$BUILD_WEB" = true ]; then
     echo ""
-    echo "✅ Image built successfully!"
-    echo "   $IMAGE_NAME:$IMAGE_VERSION"
-    echo "   $IMAGE_NAME:latest"
-else
+    echo "🌐 Building Web UI Docker image (nginx)..."
+    echo "   Tag: $WEB_IMAGE_NAME:$IMAGE_VERSION"
     echo ""
-    echo "❌ Image build failed!"
-    exit 1
+
+    docker buildx build \
+        --platform "$TARGET_PLATFORM" \
+        --build-arg IMAGE_TAG="$IMAGE_VERSION" \
+        --load \
+        -t "$WEB_IMAGE_NAME:$IMAGE_VERSION" \
+        -t "$WEB_IMAGE_NAME:latest" \
+        -f Dockerfile_web \
+        . || WEB_BUILD_EXIT_CODE=$?
+
+    if [ $WEB_BUILD_EXIT_CODE -eq 0 ]; then
+        echo ""
+        echo "✅ Web image built successfully!"
+        echo "   $WEB_IMAGE_NAME:$IMAGE_VERSION"
+        echo "   $WEB_IMAGE_NAME:latest"
+    else
+        echo ""
+        echo "❌ Web image build failed!"
+        exit 1
+    fi
 fi
 
 
@@ -310,13 +374,28 @@ push_with_login_retry() {
 echo ""
 echo "🚀 Pushing image to registry..."
 registry="$(infer_registry "$IMAGE_NAME" || true)"
-push_with_login_retry "$IMAGE_NAME:$IMAGE_VERSION" "$registry" || exit 1
-push_with_login_retry "$IMAGE_NAME:latest" "$registry" || exit 1
+
+if [ "$BUILD_API" = true ]; then
+  push_with_login_retry "$IMAGE_NAME:$IMAGE_VERSION" "$registry" || exit 1
+  push_with_login_retry "$IMAGE_NAME:latest" "$registry" || exit 1
+fi
+
+if [ "$BUILD_WEB" = true ]; then
+  web_registry="$(infer_registry "$WEB_IMAGE_NAME" || true)"
+  push_with_login_retry "$WEB_IMAGE_NAME:$IMAGE_VERSION" "$web_registry" || exit 1
+  push_with_login_retry "$WEB_IMAGE_NAME:latest" "$web_registry" || exit 1
+fi
 
 echo ""
 echo "✅ Image pushed successfully!"
-echo "   $IMAGE_NAME:$IMAGE_VERSION"
-echo "   $IMAGE_NAME:latest"
+if [ "$BUILD_API" = true ]; then
+  echo "   $IMAGE_NAME:$IMAGE_VERSION"
+  echo "   $IMAGE_NAME:latest"
+fi
+if [ "$BUILD_WEB" = true ]; then
+  echo "   $WEB_IMAGE_NAME:$IMAGE_VERSION"
+  echo "   $WEB_IMAGE_NAME:latest"
+fi
 
 echo ""
 echo "🎉 Build process complete!"

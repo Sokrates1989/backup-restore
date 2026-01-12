@@ -48,7 +48,8 @@ function Open-BrowserInIncognito {
     )
 
     $apiUrl = "http://localhost:$Port/docs"
-    $guiUrl = "http://localhost:$Port/"
+    $webPort = Get-EnvVariable -VariableName "WEB_PORT" -EnvFile ".env" -DefaultValue "8086"
+    $guiUrl = "http://localhost:$webPort/"
     $neo4jUrl = "http://localhost:7474"
     $includeNeo4j = $ComposeFile -like "*neo4j*"
 
@@ -66,9 +67,11 @@ function Open-BrowserInIncognito {
         $urls += @(
             "http://localhost:5050"  # pgAdmin
             "http://localhost:8080"  # phpMyAdmin
-            "http://localhost:7475"  # Neo4j Browser (test)
+            "http://localhost:7475/browser?connectURL=neo4j://localhost:7688"  # Neo4j Browser (test)
             "http://localhost:8082"  # Adminer
-            "http://localhost:8083"  # SQLite Web
+            "http://localhost:8085"  # Adminer (SQLite)
+            "http://localhost:8084"  # SQLite Web
+            "http://localhost:8090"  # SQLite Browser (GUI)
         )
         
         Write-Host ""
@@ -79,7 +82,9 @@ function Open-BrowserInIncognito {
         Write-Host "  - phpMyAdmin: http://localhost:8080" -ForegroundColor Gray
         Write-Host "  - Neo4j Browser: http://localhost:7475" -ForegroundColor Gray
         Write-Host "  - Adminer: http://localhost:8082" -ForegroundColor Gray
-        Write-Host "  - SQLite Web: http://localhost:8083" -ForegroundColor Gray
+        Write-Host "  - Adminer (SQLite): http://localhost:8085" -ForegroundColor Gray
+        Write-Host "  - SQLite Web: http://localhost:8084" -ForegroundColor Gray
+        Write-Host "  - SQLite Browser (GUI): http://localhost:8090" -ForegroundColor Gray
     }
 
     # Add admin UIs if in admin mode
@@ -200,7 +205,8 @@ function Start-Backend {
     Write-Host "  Services starting:" -ForegroundColor Yellow
     Write-Host "  - Backend API (port $Port)" -ForegroundColor Gray
     Write-Host "  - PostgreSQL database" -ForegroundColor Gray
-    Write-Host "  - Web GUI at http://localhost:$Port/" -ForegroundColor Gray
+    $webPort = Get-EnvVariable -VariableName "WEB_PORT" -EnvFile ".env" -DefaultValue "8086"
+    Write-Host "  - Web GUI at http://localhost:$webPort/" -ForegroundColor Gray
     Write-Host "========================================" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "Browser will open automatically when API is ready..." -ForegroundColor Yellow
@@ -350,6 +356,17 @@ function Build-ProductionImage {
     }
 }
 
+function Build-WebImage {
+    Write-Host "Building web UI Docker image (nginx)..." -ForegroundColor Cyan
+    Write-Host ""
+    if (Test-Path build-image\docker-compose.build.yml) {
+        docker compose -f build-image\docker-compose.build.yml run --rm -e BUILD_TARGET=web build-image
+    } else {
+        Write-Host "build-image\docker-compose.build.yml not found" -ForegroundColor Red
+        Write-Host "Please ensure the build-image directory exists" -ForegroundColor Yellow
+    }
+}
+
 function Start-CICDSetup {
     Write-Host "Setting up CI/CD Pipeline..." -ForegroundColor Cyan
     Write-Host ""
@@ -378,7 +395,8 @@ function Deploy-AllServices {
     Write-Host "   - Backend API (port $Port)" -ForegroundColor Gray
     Write-Host "   - PostgreSQL database" -ForegroundColor Gray
     Write-Host "   - Backup runner (periodic execution)" -ForegroundColor Gray
-    Write-Host "   - Web GUI at http://localhost:$Port/" -ForegroundColor Gray
+    $webPort = Get-EnvVariable -VariableName "WEB_PORT" -EnvFile ".env" -DefaultValue "8086"
+    Write-Host "   - Web GUI at http://localhost:$webPort/" -ForegroundColor Gray
     Write-Host ""
 
     # Check if runner compose file exists
@@ -454,10 +472,11 @@ function Open-BackupGUI {
 
     Write-Host "[WEB] Opening Backup Manager GUI..." -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "   URL: http://localhost:$Port/" -ForegroundColor Gray
+    $webPort = Get-EnvVariable -VariableName "WEB_PORT" -EnvFile ".env" -DefaultValue "8086"
+    Write-Host "   URL: http://localhost:$webPort/" -ForegroundColor Gray
     Write-Host ""
 
-    $url = "http://localhost:$Port/"
+    $url = "http://localhost:$webPort/"
     Start-Process $url
 }
 
@@ -671,8 +690,9 @@ function Start-WithTestDatabases {
     # IMPORTANT: Start the browser opener BEFORE docker compose.
     # In undetached mode, docker compose blocks the script, so starting it after would never run.
     if (Get-Command Show-RelevantPagesDelayed -ErrorAction SilentlyContinue) {
+        $webPort = Get-EnvVariable -VariableName "WEB_PORT" -EnvFile ".env" -DefaultValue "8086"
         $urlsToOpen = @(
-            "http://localhost:$Port/",
+            "http://localhost:$webPort/",
             "http://localhost:$Port/docs",
             "http://localhost:5050",
             "http://localhost:8080",
@@ -917,6 +937,7 @@ function Show-MainMenu {
     $MENU_DIAGNOSTICS = $menuNext; $menuNext++
 
     $MENU_BUILD = $menuNext; $menuNext++
+    $MENU_BUILD_WEB = $menuNext; $menuNext++
     $MENU_CICD = $menuNext; $menuNext++
     $MENU_BUMP_VERSION = $menuNext; $menuNext++
 
@@ -944,6 +965,7 @@ function Show-MainMenu {
     Write-Host "" 
     Write-Host "Build / CI/CD:" -ForegroundColor Yellow
     Write-Host "  $MENU_BUILD) Build Production Docker Image" -ForegroundColor Gray
+    Write-Host "  $MENU_BUILD_WEB) Build Website Docker Image (nginx)" -ForegroundColor Gray
     Write-Host "  $MENU_CICD) Setup CI/CD Pipeline" -ForegroundColor Gray
     Write-Host "  $MENU_BUMP_VERSION) Bump release version for docker image" -ForegroundColor Gray
     Write-Host "" 
@@ -990,6 +1012,10 @@ function Show-MainMenu {
         "$MENU_BUILD" {
             Build-ProductionImage
             $summary = "Production Docker image build triggered"
+        }
+        "$MENU_BUILD_WEB" {
+            Build-WebImage
+            $summary = "Website Docker image build triggered"
         }
         "$MENU_CICD" {
             Start-CICDSetup

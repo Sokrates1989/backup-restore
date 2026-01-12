@@ -13,8 +13,10 @@
             <p class="subtitle">Automated Backup Configuration</p>
         </header>
         
-        <!-- Global Status Messages -->
-        <div id="status-message" class="status hidden"></div>
+        <div id="status-message" class="status hidden">
+            <div class="status-text"></div>
+            <button type="button" class="status-close" aria-label="Dismiss status message">×</button>
+        </div>
 
         <!-- Login Section -->
         <section id="login-section" class="card">
@@ -42,10 +44,16 @@
                 <!-- Content will be loaded from individual tab files -->
             </div>
 
+            <div id="status-message-bottom" class="status hidden">
+                <div class="status-text"></div>
+                <button type="button" class="status-close" aria-label="Dismiss status message">×</button>
+            </div>
+
             <!-- Actions -->
             <div class="card actions">
                 <button id="logout-btn" class="btn btn-danger">Logout</button>
             </div>
+
         </section>
 
         <footer>

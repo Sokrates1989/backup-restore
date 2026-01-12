@@ -9,11 +9,11 @@ async function loadBackupFiles() {
     try {
         // Load both local backup files and backup runs from automation
         const [localBackups, backupRuns] = await Promise.all([
-            apiCall('/backup/files'),
+            apiCall('/backup/list'),
             apiCall('/automation/runs')
         ]);
-        
-        backupFiles = localBackups;
+
+        backupFiles = (localBackups && localBackups.files) ? localBackups.files : [];
         renderBackupFiles(backupRuns);
     } catch (error) {
         showStatus(`Failed to load backup files: ${error.message}`, 'error');
@@ -31,6 +31,7 @@ function renderBackupFiles(backupRuns = []) {
     // Combine local files with automation runs for comprehensive view
     const allBackups = [
         ...backupFiles.map(file => ({
+            id: file.filename,
             ...file,
             type: 'local',
             source: 'Local Storage'
@@ -83,8 +84,12 @@ async function viewBackupDetails(backupId, type) {
             details = await apiCall(`/automation/runs/${backupId}`);
         } else {
             // For local files, get basic info
-            const file = backupFiles.find(f => f.id === backupId);
-            details = file;
+            const file = backupFiles.find(f => (f.filename || '') === backupId);
+            details = {
+                ...(file || {}),
+                id: backupId,
+                type: 'local'
+            };
         }
         
         showBackupDetailsModal(details);
@@ -186,7 +191,27 @@ async function restoreFromBackup(filename) {
     }
     
     try {
-        await apiCall(`/backup/restore/${filename}`, 'POST');
+        let restoreKey = localStorage.getItem('backup_restore_token') || '';
+        if (!restoreKey) {
+            restoreKey = prompt('Enter Restore API Key (X-Restore-Key):') || '';
+            restoreKey = restoreKey.trim();
+            if (!restoreKey) return;
+            localStorage.setItem('backup_restore_token', restoreKey);
+        }
+
+        const response = await fetch(`/backup/restore/${filename}`, {
+            method: 'POST',
+            headers: {
+                'X-Restore-Key': restoreKey
+            }
+        });
+
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.detail || `HTTP ${response.status}`);
+        }
+
+        await response.json().catch(() => ({}));
         showStatus('Database restore initiated successfully', 'success');
         await loadBackupFiles();
     } catch (error) {
@@ -201,7 +226,31 @@ async function deleteBackup(backupId, type) {
         if (type === 'automation') {
             await apiCall(`/automation/runs/${backupId}`, 'DELETE');
         } else {
-            await apiCall(`/backup/files/${backupId}`, 'DELETE');
+            const file = backupFiles.find(f => (f.filename || '') === backupId);
+            const filename = file ? file.filename : backupId;
+
+            let deleteKey = localStorage.getItem('backup_delete_token') || '';
+            if (!deleteKey) {
+                deleteKey = prompt('Enter Delete API Key (X-Delete-Key):') || '';
+                deleteKey = deleteKey.trim();
+                if (!deleteKey) return;
+                localStorage.setItem('backup_delete_token', deleteKey);
+            }
+
+            const response = await fetch(`/backup/delete/${filename}`, {
+                method: 'DELETE',
+                headers: {
+                    'X-Delete-Key': deleteKey,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data.detail || `HTTP ${response.status}`);
+            }
+
+            await response.json().catch(() => ({}));
         }
         
         showStatus('Backup deleted successfully', 'success');

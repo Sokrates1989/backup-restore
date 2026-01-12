@@ -108,6 +108,9 @@ function showRemoteStorageLocationForm(location = null) {
 
 function hideRemoteStorageLocationForm() {
     document.getElementById('remote-storage-location-form').classList.add('hidden');
+    if (typeof clearStatusMessages === 'function') {
+        clearStatusMessages();
+    }
 }
 
 function editRemoteStorageLocation(id) {
@@ -152,7 +155,7 @@ async function testRemoteStorageLocationConnection() {
             config.port = parseInt(document.getElementById('remote-storage-sftp-port').value) || 22;
             config.path = document.getElementById('remote-storage-sftp-path').value.trim();
             secrets.username = document.getElementById('remote-storage-sftp-user').value.trim();
-            secrets.password = document.getElementById('remote-storage-sftp-password').value;
+            secrets.password = trimValue(document.getElementById('remote-storage-sftp-password').value);
             
             if (!config.host || !secrets.username) {
                 showStatus('Please fill in host and username to test connection', 'error');
@@ -216,7 +219,7 @@ async function saveRemoteStorageLocation() {
             config.port = parseInt(document.getElementById('remote-storage-sftp-port').value) || 22;
             config.username = document.getElementById('remote-storage-sftp-user').value.trim();
             config.path = document.getElementById('remote-storage-sftp-path').value.trim();
-            const sftpPassword = document.getElementById('remote-storage-sftp-password').value;
+            const sftpPassword = trimValue(document.getElementById('remote-storage-sftp-password').value);
             if (sftpPassword) secrets.password = sftpPassword;
             break;
         case 'google_drive':

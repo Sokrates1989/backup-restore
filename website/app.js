@@ -20,13 +20,66 @@ const loginBtn = document.getElementById('login-btn');
 const loginError = document.getElementById('login-error');
 const logoutBtn = document.getElementById('logout-btn');
 const statusMessage = document.getElementById('status-message');
+const statusMessageBottom = document.getElementById('status-message-bottom');
 const tabContentContainer = document.getElementById('tab-content-container');
+
+function trimValue(value) {
+    if (value === null || value === undefined) return '';
+    return String(value).trim();
+}
+
+function clearStatusMessages() {
+    if (statusMessage) statusMessage.classList.add('hidden');
+    if (statusMessageBottom) statusMessageBottom.classList.add('hidden');
+}
+
+window.clearStatusMessages = clearStatusMessages;
+window.trimValue = trimValue;
+
+async function loadAndDisplayAppVersion() {
+    const versionEl = document.getElementById('app-version');
+    if (!versionEl) return;
+
+    const setVersion = (rawVersion) => {
+        const version = trimValue(rawVersion) || 'unknown';
+        versionEl.textContent = version;
+        window.APP_VERSION = version;
+
+        const versionLower = version.toLowerCase();
+        window.APP_IS_DEV = versionLower === 'dev' || versionLower.includes('local');
+
+        window.dispatchEvent(new Event('appVersionLoaded'));
+    };
+
+    try {
+        const response = await fetch('./version.json', { cache: 'no-store' });
+        if (response.ok) {
+            const data = await response.json();
+            setVersion(data.version);
+            return;
+        }
+    } catch {
+    }
+
+    try {
+        const response = await fetch('/version', { cache: 'no-store' });
+        if (response.ok) {
+            const data = await response.json();
+            setVersion(data.IMAGE_TAG);
+            return;
+        }
+    } catch {
+    }
+
+    setVersion('unknown');
+}
 
 // Tab Elements
 const tabs = document.querySelectorAll('.tab');
 
 // API Functions
 async function apiCall(endpoint, method = 'GET', body = null) {
+    const suppressLogoutStatus = endpoint === '/automation/targets' && method === 'GET' && body === null;
     const options = {
         method,
         headers: {
@@ -43,7 +96,7 @@ async function apiCall(endpoint, method = 'GET', body = null) {
     
     if (!response.ok) {
         if (response.status === 401 || response.status === 403) {
-            handleLogout();
+            handleLogout(!suppressLogoutStatus, 'error', 'Session expired or invalid token');
             throw new Error('Session expired or invalid token');
         }
         const data = await response.json().catch(() => ({}));
@@ -54,14 +107,36 @@ async function apiCall(endpoint, method = 'GET', body = null) {
 }
 
 // UI Functions
-function showStatus(message, type = 'success') {
-    statusMessage.textContent = message;
-    statusMessage.className = `status ${type}`;
-    statusMessage.classList.remove('hidden');
+function setStatusMessage(el, message, type, persist) {
+    if (!el) return;
+    const textEl = el.querySelector('.status-text');
+    const closeEl = el.querySelector('.status-close');
+    if (textEl) {
+        textEl.textContent = message;
+    } else {
+        el.textContent = message;
+    }
 
-    setTimeout(() => {
-        statusMessage.classList.add('hidden');
-    }, 5000);
+    el.className = `status ${type}`;
+    el.classList.remove('hidden');
+
+    if (closeEl) {
+        closeEl.onclick = () => {
+            clearStatusMessages();
+        };
+    }
+
+    if (!persist) {
+        setTimeout(() => {
+            el.classList.add('hidden');
+        }, 5000);
+    }
+}
+
+function showStatus(message, type = 'success', persist = null) {
+    const shouldPersist = type === 'error' || type === 'warning';
+    setStatusMessage(statusMessage, message, type, shouldPersist);
+    setStatusMessage(statusMessageBottom, message, type, shouldPersist);
 }
 
 function showLogin() {
@@ -140,7 +215,7 @@ async function loadTabData(tabName) {
                 break;
         }
     } catch (error) {
-        showStatus(`Failed to load ${tabName} data: ${error.message}`, 'error');
+        showStatus(`Failed to load ${tabName} data: ${error.message}`, 'error', true);
     }
 }
 
@@ -179,14 +254,16 @@ async function handleLogin() {
         
     } catch (error) {
         adminToken = '';
-        loginError.textContent = error.message;
+        loginError.textContent = error.message === 'Session expired or invalid token' ? 'Incorrect API key' : error.message;
         loginError.classList.remove('hidden');
     }
 }
 
-function handleLogout() {
+function handleLogout(showStatusMessage = true, statusType = 'success', statusText = 'Logged out') {
     showLogin();
-    showStatus('Logged out');
+    if (showStatusMessage) {
+        showStatus(statusText, statusType, false);
+    }
 }
 
 // Global data loading functions (used by tab scripts)
@@ -205,11 +282,11 @@ async function loadBackupSchedules() {
 async function loadBackupFiles() {
     // Load both local backup files and backup runs from automation
     const [localBackups, backupRuns] = await Promise.all([
-        apiCall('/backup/files'),
+        apiCall('/backup/list'),
         apiCall('/automation/runs')
     ]);
     
-    backupFiles = localBackups;
+    backupFiles = localBackups.files || [];
 }
 
 // Update schedule selects (used by schedules tab)
@@ -220,6 +297,8 @@ function updateScheduleSelects() {
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
+    loadAndDisplayAppVersion();
+
     // Check for saved token
     const savedToken = localStorage.getItem('backup_admin_token');
     if (savedToken) {

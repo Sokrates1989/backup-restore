@@ -345,9 +345,11 @@ function Show-RelevantPagesDelayed {
         $apiPort = Get-EnvVariable -VariableName "PORT" -EnvFile ".env" -DefaultValue "8083"
     }
 
+    $webPort = Get-EnvVariable -VariableName "WEB_PORT" -EnvFile ".env" -DefaultValue "8086"
+
     $apiUrl = "http://localhost:$apiPort/docs"
     $apiHealthUrl = "http://localhost:$apiPort/health"
-    $webUrl = "http://localhost:$apiPort/"
+    $webUrl = "http://localhost:$webPort/"
 
     Write-Host "" 
     Write-Host "========================================" -ForegroundColor Yellow

@@ -11,6 +11,7 @@ services:
       dockerfile: Dockerfile
       args:
         PYTHON_VERSION: ${PYTHON_VERSION}-slim
+        IMAGE_TAG: ${IMAGE_TAG:-dev}
     ports:
       - "${PORT}:8000"
     env_file:
@@ -42,6 +43,20 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
+
+  web:
+    build:
+      context: ..
+      dockerfile: Dockerfile_web
+      args:
+        IMAGE_TAG: ${IMAGE_TAG:-dev}
+    environment:
+      API_HOST: app
+      API_PORT: "8000"
+    ports:
+      - "${WEB_PORT:-8086}:80"
+    depends_on:
+      - app
 
   neo4j:
     image: neo4j:5-community
