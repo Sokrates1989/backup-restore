@@ -154,7 +154,36 @@ async def main_loop(
         max_schedules: Maximum schedules per cycle.
     """
 
+    async def wait_for_api_ready(timeout_seconds: int = 120) -> None:
+        """Wait until the API health endpoint is reachable.
+
+        Args:
+            timeout_seconds: Maximum time to wait for the API.
+
+        Returns:
+            None
+        """
+
+        deadline = time.time() + timeout_seconds
+        health_url = f"{api_url}/health"
+
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            while time.time() < deadline:
+                try:
+                    resp = await client.get(health_url)
+                    if resp.status_code == 200:
+                        return
+                except Exception:
+                    pass
+
+                await asyncio.sleep(1)
+
     logger.info(f"Backup runner started (mode={mode}, interval={interval}s)")
+
+    if mode == "api":
+        logger.info("Waiting for API to become ready...")
+        await wait_for_api_ready()
+        logger.info("API is ready")
 
     while True:
         await run_cycle(mode, api_url, api_key, max_schedules)

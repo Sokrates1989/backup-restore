@@ -1,0 +1,32 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "App PostgreSQL",
+      "Group": "Local",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "apidb",
+      "Username": "postgres",
+      "SSLMode": "prefer",
+      "PasswordExecCommand": "sh -lc 'echo \"$PGADMIN_DB_PASSWORD_APP\"'",
+      "ConnectionParameters": {
+        "sslmode": "prefer",
+        "connect_timeout": 10
+      }
+    },
+    "2": {
+      "Name": "Test PostgreSQL",
+      "Group": "Test Databases",
+      "Host": "test-postgres",
+      "Port": 5432,
+      "MaintenanceDB": "testdb",
+      "Username": "testuser",
+      "SSLMode": "prefer",
+      "PasswordExecCommand": "sh -lc 'echo \"$PGADMIN_DB_PASSWORD_TEST\"'",
+      "ConnectionParameters": {
+        "sslmode": "prefer",
+        "connect_timeout": 10
+      }
+    }
+  }
+}

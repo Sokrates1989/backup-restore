@@ -20,7 +20,7 @@ services:
   # TEST POSTGRESQL DATABASE
   # =============================================================================
   test-postgres:
-    image: postgres:16-alpine
+    image: postgres:16
     environment:
       POSTGRES_DB: ${TEST_POSTGRES_DB:-testdb}
       POSTGRES_USER: ${TEST_POSTGRES_USER:-testuser}
@@ -30,7 +30,7 @@ services:
     volumes:
       - ../.docker/test-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${TEST_POSTGRES_USER:-testuser}"]
+      test: ["CMD-SHELL", "pg_isready -U ${TEST_POSTGRES_USER:-testuser} -d ${TEST_POSTGRES_DB:-testdb}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -61,9 +61,10 @@ services:
   test-neo4j:
     image: neo4j:5-community
     environment:
-      NEO4J_AUTH: ${TEST_NEO4J_USER:-neo4j}/${TEST_NEO4J_PASSWORD:-testpass}
+      NEO4J_AUTH: none
       NEO4J_PLUGINS: '["apoc"]'
       NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_server_bolt_advertised__address: localhost:7688
     ports:
       - "7475:7474"  # HTTP Browser UI
       - "7688:7687"  # Bolt protocol
@@ -71,7 +72,7 @@ services:
       - ../.docker/test-neo4j-data:/data
       - ../.docker/test-neo4j-logs:/logs
     healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u ${TEST_NEO4J_USER:-neo4j} -p ${TEST_NEO4J_PASSWORD:-testpass} 'RETURN 1'"]
+      test: ["CMD-SHELL", "cypher-shell 'RETURN 1'"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -86,17 +87,22 @@ services:
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@local.dev}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_DISABLE_POSTFIX: "1"
+      PGADMIN_LISTEN_ADDRESS: 0.0.0.0
+      PGADMIN_LISTEN_PORT: 5050
       PGADMIN_CONFIG_SERVER_MODE: "False"
       PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+      PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
+      PGADMIN_DB_PASSWORD_APP: ${DB_PASSWORD:-postgres}
+      PGADMIN_DB_PASSWORD_TEST: ${TEST_POSTGRES_PASSWORD:-testpass}
     ports:
-      - "5050:80"
+      - "5050:5050"
     volumes:
-      - ../.docker/pgadmin-data:/var/lib/pgadmin
-      - ./scripts/pgadmin-setup.sh:/pgadmin4/setup.sh:ro
+      - ./scripts/pgadmin-servers.json:/pgadmin4/servers.json:ro
     depends_on:
       test-postgres:
         condition: service_healthy
-    entrypoint: ["/bin/sh", "-c", "chmod +x /pgadmin4/setup.sh && /pgadmin4/setup.sh && /entrypoint.sh"]
 
   # phpMyAdmin for MySQL
   phpmyadmin:
@@ -109,21 +115,45 @@ services:
       UPLOAD_LIMIT: 300M
     ports:
       - "8080:80"
+    volumes:
+      - ./scripts/phpmyadmin-config.user.inc.php:/etc/phpmyadmin/config.user.inc.php:ro
     depends_on:
       test-mysql:
         condition: service_healthy
 
   # Adminer - Universal database admin (supports PostgreSQL, MySQL, SQLite, and more)
   adminer:
-    image: adminer:latest
+    image: ghcr.io/jeliebig/adminer-autologin:latest
     environment:
-      ADMINER_DEFAULT_SERVER: test-postgres
-      ADMINER_DESIGN: dracula
+      ADMINER_PLUGINS: login-env-vars
+      ADMINER_DRIVER: pgsql
+      ADMINER_SERVER: test-postgres
+      ADMINER_USERNAME: ${TEST_POSTGRES_USER:-testuser}
+      ADMINER_PASSWORD: ${TEST_POSTGRES_PASSWORD:-testpass}
+      ADMINER_DB: ${TEST_POSTGRES_DB:-testdb}
     ports:
       - "8082:8080"
+    volumes:
+      - ../.docker/test-sqlite-data:/data
     depends_on:
-      - test-postgres
-      - test-mysql
+      test-postgres:
+        condition: service_healthy
+      test-mysql:
+        condition: service_healthy
+
+  adminer-sqlite:
+    image: ghcr.io/jeliebig/adminer-autologin:latest
+    environment:
+      ADMINER_PLUGINS: login-env-vars
+      ADMINER_DRIVER: sqlite
+      ADMINER_SERVER: ""
+      ADMINER_USERNAME: ""
+      ADMINER_PASSWORD: ""
+      ADMINER_DB: /data/test.db
+    ports:
+      - "8085:8080"
+    volumes:
+      - ../.docker/test-sqlite-data:/data
 
   # =============================================================================
   # SQLITE TEST ENVIRONMENT
@@ -133,7 +163,20 @@ services:
   sqlite-web:
     image: coleifer/sqlite-web:latest
     ports:
-      - "8083:8080"
+      - "8084:8080"
     volumes:
       - ../.docker/test-sqlite-data:/data
     command: sqlite_web -H 0.0.0.0 /data/test.db
+
+  sqlitebrowser:
+    image: linuxserver/sqlitebrowser:latest
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: Etc/UTC
+    ports:
+      - "8090:3000"
+      - "8091:3001"
+    volumes:
+      - ../.docker/test-sqlite-data:/data
+      - ../.docker/sqlitebrowser-config:/config

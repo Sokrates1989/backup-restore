@@ -40,7 +40,7 @@ function Wait-ForUrl {
     while ($stopwatch.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
         try {
             $response = Invoke-WebRequest -Uri $Url -Method Get -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop
-            if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) { return $true }
+            if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300) { return $true }
         } catch {
             try {
                 $ex = $_.Exception
@@ -320,18 +320,30 @@ function Show-RelevantPagesDelayed {
     .PARAMETER ComposeFile
     Compose file used to determine which services are present.
 
+    .PARAMETER Port
+    Host port of the API (overrides reading from .env when provided).
+
     .PARAMETER TimeoutSeconds
     Maximum time to wait for services in seconds (default: 120).
+
+    .PARAMETER UrlsToOpen
+    Optional explicit list of URLs to open after the API becomes ready.
+    If omitted, defaults to API docs + Web UI.
 
     .NOTES
     Reads ports from `.env` via Get-EnvVariable (defined in docker_helpers.ps1).
     #>
     param(
         [string]$ComposeFile,
-        [int]$TimeoutSeconds = 120
+        [int]$TimeoutSeconds = 120,
+        [int]$Port = 0,
+        [string[]]$UrlsToOpen = $null
     )
 
-    $apiPort = Get-EnvVariable -VariableName "API_PORT" -EnvFile ".env" -DefaultValue "8083"
+    $apiPort = $Port
+    if ($apiPort -le 0) {
+        $apiPort = Get-EnvVariable -VariableName "PORT" -EnvFile ".env" -DefaultValue "8083"
+    }
 
     $apiUrl = "http://localhost:$apiPort/docs"
     $apiHealthUrl = "http://localhost:$apiPort/health"
@@ -355,10 +367,15 @@ function Show-RelevantPagesDelayed {
     $browserHelpersFile = Join-Path $scriptPath "browser_helpers.ps1"
     
     # Build list of URLs to open
-    $urlsToOpen = @($webUrl, $apiUrl)
+    $urlsToOpen = $UrlsToOpen
+    if (-not $urlsToOpen -or $urlsToOpen.Count -eq 0) {
+        $urlsToOpen = @($webUrl, $apiUrl)
+    }
 
-    # Build Open-Url calls for each URL
-    $openUrlCommands = ($urlsToOpen | ForEach-Object { "Open-Url '$_'" }) -join "`n    "
+    $urlsToOpenLiteral = ($urlsToOpen | ForEach-Object {
+        $escaped = $_.Replace("'", "''")
+        "    '$escaped'"
+    }) -join "`n"
     
     # Write script to a temp file to avoid -EncodedCommand (flagged by some AV software)
     $tempScript = Join-Path $env:TEMP "backup_restore_browser_open_$([guid]::NewGuid().ToString('N').Substring(0,8)).ps1"
@@ -396,7 +413,37 @@ try {
     Write-Host 'Opening browsers...' -ForegroundColor Green
     Add-Content -Path `$logFile -Value ("[{0}] Opening URLs..." -f (Get-Date)) -Encoding UTF8
     Start-Sleep -Seconds 1
-    $openUrlCommands
+    `$urlsToOpen = @(
+$urlsToOpenLiteral
+    )
+
+    foreach (`$u in `$urlsToOpen) {
+        try {
+            `$sw = [System.Diagnostics.Stopwatch]::StartNew()
+            `$ready = `$false
+            while (`$sw.Elapsed.TotalSeconds -lt 30) {
+                try {
+                    Invoke-WebRequest -Uri `$u -Method Get -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop | Out-Null
+                    `$ready = `$true
+                    break
+                } catch {
+                    try {
+                        `$ex = `$_.Exception
+                        if (`$ex -and `$ex.Response -and `$ex.Response.StatusCode) {
+                            `$ready = `$true
+                            break
+                        }
+                    } catch {
+                    }
+                }
+                Start-Sleep -Milliseconds 1000
+            }
+            try { Add-Content -Path `$logFile -Value ("[{0}] URL ready={1} url={2}" -f (Get-Date), `$ready, `$u) -Encoding UTF8 } catch {}
+        } catch {
+        }
+
+        Open-Url `$u
+    }
     Add-Content -Path `$logFile -Value ("[{0}] Open-Url calls done." -f (Get-Date)) -Encoding UTF8
 } catch {
     try { Add-Content -Path `$logFile -Value ("[{0}] ERROR opening URLs: {1}" -f (Get-Date), `$_.Exception.Message) -Encoding UTF8 } catch {}

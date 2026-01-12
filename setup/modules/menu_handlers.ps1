@@ -393,7 +393,7 @@ function Deploy-AllServices {
     # IMPORTANT: Start the browser opener BEFORE docker compose.
     # In undetached mode, docker compose blocks the script, so starting it after would never run.
     if (Get-Command Show-RelevantPagesDelayed -ErrorAction SilentlyContinue) {
-        Show-RelevantPagesDelayed -ComposeFile $ComposeFile -TimeoutSeconds 120
+        Show-RelevantPagesDelayed -ComposeFile $ComposeFile -TimeoutSeconds 120 -Port $Port
     }
 
     Write-Host "[DOCKER] Starting services ($detachMode)..." -ForegroundColor Cyan
@@ -409,7 +409,7 @@ function Deploy-AllServices {
     Write-Host "[WAIT] Waiting for services to be ready..." -ForegroundColor Cyan
 
     # Wait for backend health
-    $maxWait = 30
+    $maxWait = 60
     $waitCount = 0
     do {
         try {
@@ -632,7 +632,9 @@ function Start-WithTestDatabases {
     Write-Host "  - phpMyAdmin: http://localhost:8080" -ForegroundColor Gray
     Write-Host "  - Neo4j Browser: http://localhost:7475" -ForegroundColor Gray
     Write-Host "  - Adminer: http://localhost:8082" -ForegroundColor Gray
-    Write-Host "  - SQLite Web: http://localhost:8083" -ForegroundColor Gray
+    Write-Host "  - Adminer (SQLite): http://localhost:8085" -ForegroundColor Gray
+    Write-Host "  - SQLite Web: http://localhost:8084" -ForegroundColor Gray
+    Write-Host "  - SQLite Browser (GUI): http://localhost:8090" -ForegroundColor Gray
     Write-Host "========================================" -ForegroundColor Yellow
     Write-Host ""
 
@@ -650,6 +652,12 @@ function Start-WithTestDatabases {
     }
 
     Write-Host ""
+    Write-Host "[CLEAN] Stopping any previous stack (freeing ports)..." -ForegroundColor Cyan
+    docker compose --env-file .env -f $ComposeFile -f $runnerFile down --remove-orphans | Out-Null
+    docker compose --env-file .env -f $ComposeFile -f $runnerFile -f $testDbFile down --remove-orphans | Out-Null
+    Write-Host "[OK] Previous stack stopped (if any)" -ForegroundColor Green
+
+    Write-Host ""
     Write-Host "[CLEAN] Cleaning up old test database data..." -ForegroundColor Cyan
     
     # Remove test database data to ensure fresh setup
@@ -659,6 +667,92 @@ function Start-WithTestDatabases {
     Write-Host "[OK] Old test data removed" -ForegroundColor Green
     Write-Host ""
     Write-Host "[DOCKER] Starting all services with test databases..." -ForegroundColor Cyan
+    
+    # IMPORTANT: Start the browser opener BEFORE docker compose.
+    # In undetached mode, docker compose blocks the script, so starting it after would never run.
+    if (Get-Command Show-RelevantPagesDelayed -ErrorAction SilentlyContinue) {
+        $urlsToOpen = @(
+            "http://localhost:$Port/",
+            "http://localhost:$Port/docs",
+            "http://localhost:5050",
+            "http://localhost:8080",
+            "http://localhost:7475/browser?connectURL=neo4j://localhost:7688",
+            "http://localhost:8082/",
+            "http://localhost:8085/",
+            "http://localhost:8084",
+            "http://localhost:8090"
+        )
+
+        Show-RelevantPagesDelayed -ComposeFile $ComposeFile -TimeoutSeconds 120 -Port $Port -UrlsToOpen $urlsToOpen
+    }
+
+    Write-Host ""
+    Write-Host "[DOCKER] Starting all services with test databases (undetached)..." -ForegroundColor Cyan
+
+    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+    $logDir = Join-Path $projectRoot (Join-Path "logs" (Join-Path "test-databases" $timestamp))
+    New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+    $composeLogFile = Join-Path $logDir "docker-compose.log"
+    Set-Content -Path $composeLogFile -Value "" -Encoding utf8
+    Write-Host "[LOG] Writing docker-compose container logs to: $composeLogFile" -ForegroundColor Gray
+
+    $envFilePath = (Resolve-Path ".env").Path
+
+    $composeArgsBase = @(
+        "--ansi", "never",
+        "--progress", "plain",
+        "--env-file", $envFilePath,
+        "-f", $ComposeFile,
+        "-f", $runnerFile,
+        "-f", $testDbFile
+    )
+
+    $logJob = Start-Job -ScriptBlock {
+        param($ProjectRoot, $LogFile, $ComposeArgsBase)
+
+        Set-Location $ProjectRoot
+
+        try {
+            Add-Content -Path $LogFile -Value ("[{0}] docker compose logs -f started" -f (Get-Date)) -Encoding utf8
+        } catch {
+        }
+
+        $deadline = (Get-Date).AddSeconds(60)
+        while ((Get-Date) -lt $deadline) {
+            try {
+                $running = & docker compose @ComposeArgsBase ps --services --filter status=running 2>$null
+                if ($running -and $running.Count -gt 0) {
+                    break
+                }
+            } catch {
+            }
+            Start-Sleep -Seconds 1
+        }
+
+        try {
+            & docker compose @ComposeArgsBase logs -f --no-color 2>&1 | ForEach-Object {
+                try { Add-Content -Path $LogFile -Value $_ -Encoding utf8 } catch { }
+            }
+        } finally {
+            try {
+                Add-Content -Path $LogFile -Value ("[{0}] docker compose logs -f stopped" -f (Get-Date)) -Encoding utf8
+            } catch {
+            }
+        }
+    } -ArgumentList $projectRoot, $composeLogFile, $composeArgsBase
+
+    try {
+        & docker compose @composeArgsBase up --build
+    } finally {
+        try { Stop-Job -Job $logJob -Force -ErrorAction SilentlyContinue } catch { }
+        try { Remove-Job -Job $logJob -Force -ErrorAction SilentlyContinue } catch { }
+    }
+    return
+
+    # NOTE: The code below is unreachable in undetached mode because docker compose up blocks.
+    # It is kept for reference if you later switch to detached mode.
     $composeJob = Start-Job -ScriptBlock {
         param($envFile, $composeFile, $runnerFile, $testDbFile)
         docker compose --env-file $envFile -f $composeFile -f $runnerFile -f $testDbFile up --build
@@ -693,11 +787,10 @@ function Start-WithTestDatabases {
         Write-Host "`n[WARNING]  API not ready after $maxWait seconds, opening browser anyway..." -ForegroundColor Yellow
     }
     
+    # NOTE: In undetached mode, the browser opener already started before docker compose.
+    # This block is only reachable if you switch to detached mode later.
     Write-Host ""
     Write-Host "[WEB] Opening browser with all admin UIs..." -ForegroundColor Cyan
-    
-    # Open browser now that services are ready
-    Open-BrowserInIncognito -Port $Port -ComposeFile $ComposeFile -Mode "test"
 
     Write-Host ""
     Write-Host "[OK] All services with test databases started!" -ForegroundColor Green

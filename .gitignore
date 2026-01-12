@@ -47,3 +47,6 @@ python-dependency-management/config.env
 
 # .DS_Store files of macOS.
 .DS_Store
+
+# Logs.
+logs/

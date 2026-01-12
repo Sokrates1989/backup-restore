@@ -45,3 +45,8 @@ services:
       - ../website:/app/website
       # Note: .venv is built into the image, not mounted as a volume
       # This ensures dependencies always match pdm.lock from the build
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()\"" ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
