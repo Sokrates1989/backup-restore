@@ -81,35 +81,35 @@ build_gitlab_ci() {
     
     # Format branches for GitLab
     local branches_yaml=$(format_branches_gitlab "$branches")
-    
-    # Create .gitlab-ci.yml
-    cat > "$project_root/.gitlab-ci.yml" << EOF
-# GitLab CI/CD Pipeline
-# Placeholder for GitLab implementation
-# TODO: Implement GitLab CI/CD template
 
-stages:
-  - build
-  - deploy
+    local template_path=""
+    case "$deployment_target" in
+        linux-swarm)
+            template_path="$SCRIPT_DIR/../templates/gitlab/.gitlab-ci-linux.yml"
+            ;;
+        azure-aci)
+            template_path="$SCRIPT_DIR/../templates/gitlab/.gitlab-ci-azure-aci.yml"
+            ;;
+        azure-appservice)
+            template_path="$SCRIPT_DIR/../templates/gitlab/.gitlab-ci-azure-app.yml"
+            ;;
+        build-only)
+            template_path="$SCRIPT_DIR/../templates/gitlab/.gitlab-ci.yml.example"
+            ;;
+        *)
+            error_message "Unknown deployment target: $deployment_target"
+            exit 1
+            ;;
+    esac
 
-variables:
-  IMAGE_NAME: $image_name
+    if [ ! -f "$template_path" ]; then
+        error_message "GitLab CI template not found: $template_path"
+        exit 1
+    fi
 
-build:
-  stage: build
-  only:$branches_yaml
-  script:
-    - echo "Build stage - TODO"
+    sed "s|__BRANCHES__|$branches_yaml|g" "$template_path" > "$project_root/.gitlab-ci.yml"
 
-deploy:
-  stage: deploy
-  only:$branches_yaml
-  script:
-    - echo "Deploy stage - TODO"
-EOF
-    
     success_message "GitLab CI configuration created: .gitlab-ci.yml"
-    warning_message "GitLab CI template needs full implementation"
 }
 
 # Update .env file IMAGE_VERSION

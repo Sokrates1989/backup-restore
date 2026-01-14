@@ -12,6 +12,7 @@ WORKDIR /app
 
 # Install database client tools for backup/restore
 RUN apt-get update && apt-get install -y \
+    ca-certificates \
     postgresql-client \
     mariadb-client \
     && rm -rf /var/lib/apt/lists/*

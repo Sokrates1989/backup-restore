@@ -72,6 +72,12 @@ class RunDueRequest(BaseModel):
     max_schedules: int = Field(10, description="Maximum number of schedules to execute")
 
 
+class RunEnabledNowRequest(BaseModel):
+    """Request to execute enabled schedules immediately."""
+
+    max_schedules: int = Field(50, description="Maximum number of schedules to execute")
+
+
 class RunNowResponse(BaseModel):
     """Response after triggering a schedule execution."""
 
@@ -104,6 +110,11 @@ class RestoreNowRequest(BaseModel):
     target_id: str = Field(..., description="Backup target id to restore to")
     destination_id: Optional[str] = Field(None, description="Destination id to restore from")
     backup_id: str = Field(..., description="Backup file id or name to restore")
+    encryption_password: Optional[str] = Field(
+        None,
+        description="Password for decrypting encrypted backups (required when restoring encrypted artifacts)",
+    )
+    confirmation: str = Field(..., description='Type RESTORE to confirm the restore operation')
     use_local_storage: bool = Field(False, description="Restore from default local storage (/app/backups)")
 
 

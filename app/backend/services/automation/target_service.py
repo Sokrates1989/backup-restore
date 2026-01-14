@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+import uuid
 
 import asyncpg
 import psycopg2
@@ -11,6 +13,7 @@ from backend.database.sql_handler import SQLHandler
 from backend.services.automation.config_crypto import encrypt_secrets, is_config_encryption_enabled
 from backend.services.automation.repository import AutomationRepository
 from backend.services.automation.serializers import target_to_dict
+from models.sql.backup_automation import AuditEvent
 
 
 def _is_running_in_docker() -> bool:
@@ -238,6 +241,28 @@ class TargetService:
                 config=config or {},
                 config_encrypted=encrypted,
             )
+
+            try:
+                now = datetime.now(timezone.utc)
+                session.add(
+                    AuditEvent(
+                        id=str(uuid.uuid4()),
+                        operation="target_create",
+                        trigger="manual",
+                        status="success",
+                        started_at=now,
+                        finished_at=now,
+                        target_id=target.id,
+                        target_name=target.name,
+                        details={"db_type": target.db_type},
+                    )
+                )
+                await session.commit()
+            except Exception:
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass
             return target_to_dict(target)
 
     async def update_target(
@@ -272,6 +297,8 @@ class TargetService:
             if not target:
                 raise ValueError(f"Target not found: {target_id}")
 
+            before = {"name": target.name, "db_type": target.db_type, "is_active": target.is_active}
+
             secrets_provided = secrets is not None
             encrypted = None
             if secrets_provided:
@@ -289,6 +316,29 @@ class TargetService:
                 is_active=is_active,
                 secrets_provided=secrets_provided,
             )
+
+            try:
+                now = datetime.now(timezone.utc)
+                after = {"name": updated.name, "db_type": updated.db_type, "is_active": updated.is_active}
+                session.add(
+                    AuditEvent(
+                        id=str(uuid.uuid4()),
+                        operation="target_update",
+                        trigger="manual",
+                        status="success",
+                        started_at=now,
+                        finished_at=now,
+                        target_id=updated.id,
+                        target_name=updated.name,
+                        details={"before": before, "after": after},
+                    )
+                )
+                await session.commit()
+            except Exception:
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass
             return target_to_dict(updated)
 
     async def delete_target(self, target_id: str) -> None:
@@ -305,4 +355,27 @@ class TargetService:
             target = await self.repo.get_target(session, target_id)
             if not target:
                 raise ValueError(f"Target not found: {target_id}")
+            target_name = target.name
             await self.repo.delete_target(session, target)
+
+            try:
+                now = datetime.now(timezone.utc)
+                session.add(
+                    AuditEvent(
+                        id=str(uuid.uuid4()),
+                        operation="target_delete",
+                        trigger="manual",
+                        status="success",
+                        started_at=now,
+                        finished_at=now,
+                        target_id=target_id,
+                        target_name=target_name,
+                        details={},
+                    )
+                )
+                await session.commit()
+            except Exception:
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass

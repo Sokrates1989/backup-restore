@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
+import uuid
 from typing import Any, Dict, List, Optional
 
 from backend.database.sql_handler import SQLHandler
 from backend.services.automation.config_crypto import encrypt_secrets, is_config_encryption_enabled
 from backend.services.automation.repository import AutomationRepository
 from backend.services.automation.serializers import destination_to_dict
-from models.sql.backup_automation import BackupDestination
+from models.sql.backup_automation import AuditEvent, BackupDestination
 
 
 class DestinationService:
@@ -120,9 +122,22 @@ class DestinationService:
                         sftp.mkdir(remote_path)
                     except:
                         pass  # Directory might already exist or we don't have permission
+
+                # Verify write + delete permissions
+                test_name = f".backup-restore-test-{os.getpid()}.tmp"
+                test_path = f"{remote_path.rstrip('/')}/{test_name}"
+                try:
+                    with sftp.open(test_path, "w") as f:
+                        f.write("test")
+                    sftp.remove(test_path)
+                except Exception as exc:
+                    raise ValueError(
+                        f"SFTP path '{remote_path}' is not writable/deletable ({exc}). "
+                        "Check folder ownership/permissions (chown/chmod) on the remote server."
+                    )
                 
                 ssh.close()
-                return {"dest_type": dest_type, "host": host, "port": port, "path": remote_path}
+                return {"dest_type": dest_type, "host": host, "port": port, "path": remote_path, "writable": True}
             
             elif dest_type == "google_drive":
                 # Test Google Drive connection
@@ -186,6 +201,28 @@ class DestinationService:
                 config=config or {},
                 config_encrypted=encrypted,
             )
+
+            try:
+                now = datetime.now(timezone.utc)
+                session.add(
+                    AuditEvent(
+                        id=str(uuid.uuid4()),
+                        operation="destination_create",
+                        trigger="manual",
+                        status="success",
+                        started_at=now,
+                        finished_at=now,
+                        destination_id=dest.id,
+                        destination_name=dest.name,
+                        details={"destination_type": dest.destination_type},
+                    )
+                )
+                await session.commit()
+            except Exception:
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass
             return destination_to_dict(dest)
 
     async def update_destination(
@@ -204,6 +241,8 @@ class DestinationService:
             dest = await self.repo.get_destination(session, destination_id)
             if not dest:
                 raise ValueError(f"Destination not found: {destination_id}")
+
+            before = {"name": dest.name, "destination_type": dest.destination_type, "is_active": dest.is_active}
 
             secrets_provided = secrets is not None
             encrypted = None
@@ -229,6 +268,33 @@ class DestinationService:
                 is_active=is_active,
                 secrets_provided=secrets_provided,
             )
+
+            try:
+                now = datetime.now(timezone.utc)
+                after = {
+                    "name": updated.name,
+                    "destination_type": updated.destination_type,
+                    "is_active": updated.is_active,
+                }
+                session.add(
+                    AuditEvent(
+                        id=str(uuid.uuid4()),
+                        operation="destination_update",
+                        trigger="manual",
+                        status="success",
+                        started_at=now,
+                        finished_at=now,
+                        destination_id=updated.id,
+                        destination_name=updated.name,
+                        details={"before": before, "after": after},
+                    )
+                )
+                await session.commit()
+            except Exception:
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass
             return destination_to_dict(updated)
 
     async def delete_destination(self, destination_id: str) -> None:
@@ -241,4 +307,27 @@ class DestinationService:
             dest = await self.repo.get_destination(session, destination_id)
             if not dest:
                 raise ValueError(f"Destination not found: {destination_id}")
+            dest_name = dest.name
             await self.repo.delete_destination(session, dest)
+
+            try:
+                now = datetime.now(timezone.utc)
+                session.add(
+                    AuditEvent(
+                        id=str(uuid.uuid4()),
+                        operation="destination_delete",
+                        trigger="manual",
+                        status="success",
+                        started_at=now,
+                        finished_at=now,
+                        destination_id=destination_id,
+                        destination_name=dest_name,
+                        details={},
+                    )
+                )
+                await session.commit()
+            except Exception:
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass

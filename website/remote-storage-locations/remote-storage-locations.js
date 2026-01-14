@@ -29,8 +29,8 @@ function renderRemoteStorageLocations() {
             <div class="item-header">
                 <h3>${location.name}</h3>
                 <div class="item-actions">
-                    ${location.id === 'local' ? '' : `<button class="btn btn-sm btn-secondary" onclick="editRemoteStorageLocation('${location.id}')">Edit</button>`}
-                    ${location.id === 'local' ? '' : `<button class="btn btn-sm btn-danger" onclick="deleteRemoteStorageLocation('${location.id}')">Delete</button>`}
+                    ${location.id === 'local' ? '' : `<button class="btn btn-sm btn-secondary" data-action="dest-edit" data-id="${location.id}">Edit</button>`}
+                    ${location.id === 'local' ? '' : `<button class="btn btn-sm btn-danger" data-action="dest-delete" data-id="${location.id}">Delete</button>`}
                 </div>
             </div>
             <div class="item-details">
@@ -62,6 +62,11 @@ function getRemoteStorageLocationDetails(location) {
 function showRemoteStorageLocationForm(location = null) {
     const form = document.getElementById('remote-storage-location-form');
     const title = document.getElementById('remote-storage-location-form-title');
+    const tabRoot = document.getElementById('remote-storage-locations-tab');
+
+    if (tabRoot && tabRoot.firstElementChild !== form) {
+        tabRoot.insertBefore(form, tabRoot.firstElementChild);
+    }
     
     if (location) {
         title.textContent = 'Edit Remote Storage Location';
@@ -202,7 +207,7 @@ async function testRemoteStorageLocationConnection() {
             break;
         case 'google_drive':
             config.folder_id = document.getElementById('remote-storage-gdrive-folder').value.trim();
-            const creds = document.getElementById('remote-storage-gdrive-credentials').value.trim();
+            const creds = normalizeJsonText(document.getElementById('remote-storage-gdrive-credentials').value);
             if (!creds) {
                 showStatus('Please enter service account credentials to test connection', 'error');
                 return;
@@ -280,7 +285,7 @@ async function saveRemoteStorageLocation() {
             break;
         case 'google_drive':
             config.folder_id = document.getElementById('remote-storage-gdrive-folder').value.trim();
-            const creds = document.getElementById('remote-storage-gdrive-credentials').value.trim();
+            const creds = normalizeJsonText(document.getElementById('remote-storage-gdrive-credentials').value);
             if (creds) {
                 try {
                     JSON.parse(creds);
@@ -359,5 +364,81 @@ function initRemoteStorageLocationsTab() {
     document.getElementById('test-remote-storage-location-connection-btn').addEventListener('click', testRemoteStorageLocationConnection);
     document.getElementById('save-remote-storage-location-btn').addEventListener('click', saveRemoteStorageLocation);
     document.getElementById('cancel-remote-storage-location-btn').addEventListener('click', hideRemoteStorageLocationForm);
+
+    const closeBtn = document.getElementById('remote-storage-location-form-close-btn');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', hideRemoteStorageLocationForm);
+    }
     document.getElementById('remote-storage-location-type').addEventListener('change', updateRemoteStorageLocationConfigVisibility);
+
+    const gdriveFile = document.getElementById('remote-storage-gdrive-credentials-file');
+    if (gdriveFile) {
+        gdriveFile.addEventListener('change', handleGDriveCredentialsFile);
+    }
+
+    const gdriveTextarea = document.getElementById('remote-storage-gdrive-credentials');
+    if (gdriveTextarea) {
+        gdriveTextarea.addEventListener('blur', () => {
+            tryNormalizeGDriveTextarea();
+        });
+    }
+
+    const list = document.getElementById('remote-storage-locations-list');
+    if (list) {
+        list.addEventListener('click', (e) => {
+            const btn = e.target.closest('button[data-action]');
+            if (!btn) return;
+            const action = btn.getAttribute('data-action');
+            const id = btn.getAttribute('data-id');
+            if (!id) return;
+
+            if (action === 'dest-edit') {
+                editRemoteStorageLocation(id);
+            } else if (action === 'dest-delete') {
+                deleteRemoteStorageLocation(id);
+            }
+        });
+    }
+}
+
+function normalizeJsonText(raw) {
+    const trimmed = trimValue(raw);
+    if (!trimmed) return '';
+    try {
+        const parsed = JSON.parse(trimmed);
+        return JSON.stringify(parsed, null, 2);
+    } catch {
+        return trimmed;
+    }
+}
+
+function tryNormalizeGDriveTextarea() {
+    const el = document.getElementById('remote-storage-gdrive-credentials');
+    if (!el) return;
+    const normalized = normalizeJsonText(el.value);
+    el.value = normalized;
+}
+
+async function handleGDriveCredentialsFile(event) {
+    try {
+        const file = event.target.files && event.target.files[0];
+        if (!file) return;
+        if (file.size > 512 * 1024) {
+            showStatus('Service account JSON file is too large', 'error');
+            return;
+        }
+
+        const text = await file.text();
+        const normalized = normalizeJsonText(text);
+        const parsed = JSON.parse(normalized);
+
+        const textarea = document.getElementById('remote-storage-gdrive-credentials');
+        if (textarea) {
+            textarea.value = JSON.stringify(parsed, null, 2);
+        }
+
+        showStatus('Loaded service account JSON from file', 'success');
+    } catch {
+        showStatus('Invalid JSON file for service account credentials', 'error');
+    }
 }

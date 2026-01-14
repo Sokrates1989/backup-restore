@@ -3,7 +3,10 @@
     <div class="card">
         <div class="card-header">
             <h2>Backup Schedules</h2>
-            <button id="add-backup-schedule-btn" class="btn btn-primary btn-sm">+ Add Backup Schedule</button>
+            <div class="header-actions">
+                <button id="run-enabled-schedules-btn" class="btn btn-primary btn-sm" title="Run all enabled schedules immediately">Run All Now</button>
+                <button id="add-backup-schedule-btn" class="btn btn-secondary btn-sm">+ Add Backup Schedule</button>
+            </div>
         </div>
         <p class="hint">When and how often to run backups from databases to remote storage locations</p>
         <div id="backup-schedules-list" class="items-list">
@@ -13,7 +16,10 @@
 
     <!-- Add/Edit Backup Schedule Form -->
     <div id="backup-schedule-form" class="card hidden">
-        <h2 id="backup-schedule-form-title">Add Backup Schedule</h2>
+        <div class="form-header">
+            <h2 id="backup-schedule-form-title">Add Backup Schedule</h2>
+            <button type="button" id="backup-schedule-form-close-btn" class="modal-close" aria-label="Close">×</button>
+        </div>
         <input type="hidden" id="backup-schedule-id">
         
         <!-- Basic Settings -->
@@ -45,6 +51,12 @@
                     <option value="604800">Weekly</option>
                     <option value="2592000">Monthly</option>
                 </select>
+            </div>
+
+            <div id="backup-schedule-daily-time-group" class="form-group">
+                <label for="backup-schedule-daily-time">Run Time (UTC)</label>
+                <input type="time" id="backup-schedule-daily-time" value="">
+                <p id="backup-schedule-daily-time-hint" class="hint">Anchor time for the schedule. For Daily, default: 03:30.</p>
             </div>
             <div class="form-group inline-checkbox">
                 <input type="checkbox" id="backup-schedule-enabled" checked>
@@ -140,17 +152,14 @@
             </div>
             <div id="backup-schedule-telegram-options" class="hidden">
                 <div class="form-group">
-                    <label for="backup-schedule-telegram-chat-id">Telegram Chat ID</label>
-                    <input type="text" id="backup-schedule-telegram-chat-id" placeholder="e.g., -1001234567890">
-                    <p class="hint">Chat ID where notifications will be sent. Get this from @userinfobot</p>
+                    <label>Telegram Recipients</label>
+                    <div id="backup-schedule-telegram-recipients"></div>
+                    <button type="button" id="backup-schedule-add-telegram-recipient" class="btn btn-secondary btn-sm">+ Add Telegram Chat</button>
+                    <p class="hint">Add one or more Telegram chat IDs. <a href="https://wiki.fe-wi.com/en/public/new-telegram-bot">How to setup telegram bot</a>. Set the minimum severity per recipient.</p>
                 </div>
-                <div class="form-group">
-                    <label>Notify on:</label>
-                    <div class="checkbox-group-inline">
-                        <label><input type="checkbox" id="backup-schedule-telegram-on-success" checked> Success</label>
-                        <label><input type="checkbox" id="backup-schedule-telegram-on-failure" checked> Failure</label>
-                        <label><input type="checkbox" id="backup-schedule-telegram-on-warning"> Warnings</label>
-                    </div>
+                <div class="form-group inline-checkbox">
+                    <input type="checkbox" id="backup-schedule-telegram-attach">
+                    <label for="backup-schedule-telegram-attach">Attach backup file to Telegram (may be large)</label>
                 </div>
             </div>
 
@@ -160,22 +169,19 @@
             </div>
             <div id="backup-schedule-email-options" class="hidden">
                 <div class="form-group">
-                    <label for="backup-schedule-email-to">Email Address</label>
-                    <input type="email" id="backup-schedule-email-to" placeholder="admin@example.com">
+                    <label>Email Recipients</label>
+                    <div id="backup-schedule-email-recipients"></div>
+                    <button type="button" id="backup-schedule-add-email-recipient" class="btn btn-secondary btn-sm">+ Add Email Address</button>
+                    <p class="hint">Add one or more email recipients. Set the minimum severity per recipient.</p>
                 </div>
-                <div class="form-group">
-                    <label>Notify on:</label>
-                    <div class="checkbox-group-inline">
-                        <label><input type="checkbox" id="backup-schedule-email-on-success"> Success</label>
-                        <label><input type="checkbox" id="backup-schedule-email-on-failure" checked> Failure</label>
-                        <label><input type="checkbox" id="backup-schedule-email-on-warning" checked> Warnings</label>
-                    </div>
+                <div class="form-group inline-checkbox">
+                    <input type="checkbox" id="backup-schedule-email-attach">
+                    <label for="backup-schedule-email-attach">Attach backup file to Email (may be large)</label>
                 </div>
             </div>
         </div>
 
         <div class="form-actions">
-            <button id="run-backup-schedule-now-btn" class="btn btn-success">Run Now</button>
             <button id="save-backup-schedule-btn" class="btn btn-primary">Save Backup Schedule</button>
             <button id="cancel-backup-schedule-btn" class="btn btn-secondary">Cancel</button>
         </div>

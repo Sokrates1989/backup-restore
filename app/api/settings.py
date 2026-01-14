@@ -18,12 +18,25 @@ class Settings(BaseSettings):
     BACKUP_DELETE_API_KEY: str = ""  # Level 3: Delete operations (destructive)
     BACKUP_DELETE_API_KEY_FILE: str = ""  # Path to file containing delete API key
 
+    # Local/dev safety toggles
+    # When True, SQL backup/restore commands are allowed to disable MySQL TLS/SSL
+    # verification to work around self-signed certificates in local deployments.
+    # Do NOT enable this for production.
+    ALLOW_INSECURE_MYSQL_SSL: bool = False
+
     CONFIG_ENCRYPTION_KEY: str = ""  # Symmetric key for encrypting stored destination/target secrets
     CONFIG_ENCRYPTION_KEY_FILE: str = ""  # Path to file containing config encryption key
     
     # Database Type Configuration
     DB_TYPE: Literal["neo4j", "postgresql", "mysql", "sqlite"] = "neo4j"
     DB_MODE: Literal["local", "standalone"] = "local"
+
+    # Logging
+    LOG_LEVEL: str = "INFO"
+    LOG_DIR: str = "/app/logs"
+    LOG_FILENAME: str = "backup-restore.log"
+    LOG_MAX_BYTES: int = 10 * 1024 * 1024
+    LOG_BACKUP_COUNT: int = 5
 
     # Neo4j Configuration
     NEO4J_URL: str = ""

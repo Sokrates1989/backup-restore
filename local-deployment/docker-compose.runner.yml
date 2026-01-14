@@ -16,6 +16,11 @@ services:
       args:
         PYTHON_VERSION: ${PYTHON_VERSION}-slim
         IMAGE_TAG: ${IMAGE_TAG:-dev}
+    develop:
+      watch:
+        - action: sync+restart
+          path: ../app
+          target: /app
     command: ["python", "runner.py"]
     env_file:
       - ../.env

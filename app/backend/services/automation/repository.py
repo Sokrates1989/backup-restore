@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import select
 
+from backend.services.automation.schedule_timing import compute_initial_next_run_at
 from models.sql.backup_automation import BackupDestination, BackupSchedule, BackupTarget
 
 
@@ -180,13 +181,20 @@ class AutomationRepository:
     ) -> BackupSchedule:
         """Create a schedule and attach destinations."""
 
+        now = datetime.now(timezone.utc)
+
         schedule = BackupSchedule(
             id=str(uuid.uuid4()),
             name=name,
             target_id=target_id,
             enabled=enabled,
             interval_seconds=interval_seconds,
-            next_run_at=datetime.now(timezone.utc) if enabled else None,
+            next_run_at=compute_initial_next_run_at(
+                now=now,
+                enabled=enabled,
+                interval_seconds=interval_seconds,
+                retention=retention or {},
+            ),
             retention=retention or {},
         )
         schedule.destinations = destinations
@@ -209,6 +217,8 @@ class AutomationRepository:
     ) -> BackupSchedule:
         """Update a schedule."""
 
+        now = datetime.now(timezone.utc)
+
         if name is not None:
             schedule.name = name
         if target_id is not None:
@@ -219,10 +229,26 @@ class AutomationRepository:
             schedule.retention = retention
         if enabled is not None:
             schedule.enabled = enabled
-            if enabled and schedule.next_run_at is None:
-                schedule.next_run_at = datetime.now(timezone.utc)
+
+        if schedule.enabled:
+            should_recompute = (
+                schedule.next_run_at is None
+                or enabled is True
+                or interval_seconds is not None
+                or retention is not None
+            )
+            if should_recompute:
+                schedule.next_run_at = compute_initial_next_run_at(
+                    now=now,
+                    enabled=True,
+                    interval_seconds=int(schedule.interval_seconds),
+                    retention=schedule.retention or {},
+                )
+        else:
+            schedule.next_run_at = None
 
         if destinations is not None:
+            await session.refresh(schedule, attribute_names=["destinations"])
             schedule.destinations = destinations
 
         await session.commit()

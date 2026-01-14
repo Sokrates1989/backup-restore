@@ -1,0 +1,90 @@
+<!-- History Tab -->
+<div id="history-tab" class="tab-content hidden">
+    <div class="card">
+        <div class="card-header">
+            <h2>History</h2>
+            <div class="header-actions">
+                <button id="refresh-history-btn" class="btn btn-secondary btn-sm">🔄 Refresh</button>
+            </div>
+        </div>
+
+        <div class="filter-sort-row">
+            <div class="filter-sort-col">
+                <div class="filter-sort-title"><span class="filter-sort-icon">≡</span> Filters</div>
+                <div class="form-group">
+                    <label for="history-database-filter">Filter by Database</label>
+                    <select id="history-database-filter">
+                        <option value="">All Databases</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="history-operation-filter">Filter by Operation</label>
+                    <select id="history-operation-filter">
+                        <option value="">All Operations</option>
+                        <option value="backup">Backup</option>
+                        <option value="restore">Restore</option>
+                        <option value="delete_backup">Delete Backup</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="history-trigger-filter">Filter by Trigger</label>
+                    <select id="history-trigger-filter">
+                        <option value="">All Triggers</option>
+                        <option value="manual">Manual</option>
+                        <option value="scheduled">Scheduled</option>
+                        <option value="non_scheduled">Everything except scheduled</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="history-start-date">Start Date</label>
+                    <input type="datetime-local" id="history-start-date">
+                </div>
+
+                <div class="form-group">
+                    <label for="history-end-date">End Date</label>
+                    <input type="datetime-local" id="history-end-date">
+                </div>
+            </div>
+
+            <div class="filter-sort-col">
+                <div class="filter-sort-title"><span class="filter-sort-icon">⇅</span> Sort</div>
+                <div class="form-group">
+                    <label for="history-sort">Sort by</label>
+                    <select id="history-sort">
+                        <option value="newest" selected>Newest</option>
+                        <option value="oldest">Oldest</option>
+                        <option value="db_name">Database Name (grouped)</option>
+                        <option value="operation">Operation</option>
+                        <option value="status">Status</option>
+                        <option value="trigger">Trigger</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <p class="hint">Shows audit events for important operations (backup/restore/delete). History entries are not deletable.</p>
+
+        <div id="history-list" class="items-list">
+            <p class="loading">Loading history...</p>
+        </div>
+    </div>
+
+    <!-- History Details Modal -->
+    <div id="history-details-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>History Details</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="history-details-content"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-close btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+</div>

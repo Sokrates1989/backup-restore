@@ -1,19 +1,11 @@
 <!-- Databases Tab -->
 <div id="databases-tab" class="tab-content active">
-    <div class="card">
-        <div class="card-header">
-            <h2>Databases</h2>
-            <button id="add-database-btn" class="btn btn-primary btn-sm">+ Add Database</button>
-        </div>
-        <p class="hint">Databases to back up from / restore to</p>
-        <div id="databases-list" class="items-list">
-            <p class="loading">Loading databases...</p>
-        </div>
-    </div>
-
     <!-- Add/Edit Database Form -->
     <div id="database-form" class="card hidden">
-        <h2 id="database-form-title">Add Database</h2>
+        <div class="form-header">
+            <h2 id="database-form-title">Add Database</h2>
+            <button type="button" id="database-form-close-btn" class="modal-close" aria-label="Close">×</button>
+        </div>
         <p id="database-connection-help" class="hint"></p>
         <input type="hidden" id="database-id">
         <div class="form-group">
@@ -56,12 +48,23 @@
         </div>
     </div>
 
+    <div class="card">
+        <div class="card-header">
+            <h2>Databases</h2>
+            <button id="add-database-btn" class="btn btn-primary btn-sm">+ Add Database</button>
+        </div>
+        <p class="hint">Databases to back up from / restore to</p>
+        <div id="databases-list" class="items-list">
+            <p class="loading">Loading databases...</p>
+        </div>
+    </div>
+
     <!-- Backup/Restore Action Modal -->
     <div id="database-action-modal" class="modal hidden">
         <div class="modal-content">
             <div class="modal-header">
                 <h3 id="database-action-modal-title">Backup Database</h3>
-                <button class="modal-close" onclick="hideDatabaseActionModal()">&times;</button>
+                <button class="modal-close">&times;</button>
             </div>
             <div class="modal-body">
                 <div id="database-action-status" class="status hidden">
@@ -90,10 +93,15 @@
                         <option value="">Select backup file...</option>
                     </select>
                 </div>
+
+                <div id="database-action-encryption-password-group" class="form-group hidden">
+                    <label for="database-action-encryption-password">Encryption Password</label>
+                    <input type="password" id="database-action-encryption-password" placeholder="Enter encryption password">
+                </div>
             </div>
             <div class="modal-footer">
                 <button id="database-action-execute-btn" class="btn btn-primary">Execute</button>
-                <button class="btn btn-secondary" onclick="hideDatabaseActionModal()">Cancel</button>
+                <button class="btn btn-secondary modal-close">Cancel</button>
             </div>
         </div>
     </div>

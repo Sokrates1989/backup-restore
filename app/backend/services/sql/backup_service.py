@@ -101,6 +101,22 @@ class BackupService:
         except Exception as e:
             print(f"Warning: Failed to check lock: {e}")
             return None
+
+    def _looks_like_gzip(self, path: Path) -> bool:
+        """Return True when the file appears to be gzip-compressed.
+
+        Args:
+            path: File path.
+
+        Returns:
+            bool: True if the file starts with the gzip magic bytes.
+        """
+
+        try:
+            with open(path, "rb") as f:
+                return f.read(2) == b"\x1f\x8b"
+        except Exception:
+            return False
         
     def create_backup_to_temp(
         self,
@@ -225,19 +241,33 @@ class BackupService:
             '-h', db_host,
             '-P', str(db_port),
             '-u', db_user,
-            f'-p{db_password}',
             db_name,
             '--single-transaction',  # Consistent backup
             '--skip-lock-tables',    # Don't lock tables
         ]
+
+        env = os.environ.copy()
+        env["MYSQL_PWD"] = db_password
+
+        def _ssl_disabled_args() -> list[str]:
+            if dump_cmd.startswith("mariadb"):
+                return ["--skip-ssl"]
+            return ["--ssl-mode=DISABLED"]
+
+        def _should_allow_insecure_ssl() -> bool:
+            try:
+                from api.settings import settings
+
+                return bool(getattr(settings, "DEBUG", False) or getattr(settings, "ALLOW_INSECURE_MYSQL_SSL", False))
+            except Exception:
+                return False
+
+        def _looks_like_tls_error(stderr: str) -> bool:
+            low = str(stderr or "").lower()
+            return "tls/ssl error" in low or "self-signed" in low or "certificate" in low
         
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                check=True,
-                text=True
-            )
+            result = subprocess.run(cmd, env=env, capture_output=True, check=True, text=True)
             
             if compress:
                 with gzip.open(filepath, 'wt', encoding='utf-8') as f:
@@ -249,6 +279,22 @@ class BackupService:
             return filename, filepath
             
         except subprocess.CalledProcessError as e:
+            if _should_allow_insecure_ssl() and _looks_like_tls_error(e.stderr):
+                try:
+                    retry_cmd = cmd + _ssl_disabled_args()
+                    result = subprocess.run(retry_cmd, env=env, capture_output=True, check=True, text=True)
+
+                    if compress:
+                        with gzip.open(filepath, 'wt', encoding='utf-8') as f:
+                            f.write(result.stdout)
+                    else:
+                        with open(filepath, 'w', encoding='utf-8') as f:
+                            f.write(result.stdout)
+
+                    return filename, filepath
+                except subprocess.CalledProcessError:
+                    pass
+
             raise Exception(f"MySQL backup failed: {e.stderr}")
     
     def _backup_sqlite(self, timestamp: str, compress: bool, db_name: str) -> tuple[str, Path]:
@@ -508,8 +554,10 @@ class BackupService:
                 warnings=warnings
             )
             
-            # Check if file is compressed
-            is_compressed = backup_file.suffix == '.gz'
+            # Check if file is compressed.
+            # Some providers (e.g. Google Drive) restore by file-id and the temp file
+            # may not preserve the original .gz suffix.
+            is_compressed = backup_file.suffix == '.gz' or self._looks_like_gzip(backup_file)
             
             # Drop existing database data before restore
             try:
@@ -571,24 +619,12 @@ class BackupService:
             if target_api_url and target_api_key:
                 try:
                     import httpx
-                    import asyncio
-                    
-                    async def unlock_api():
-                        try:
-                            async with httpx.AsyncClient(timeout=10.0) as client:
-                                await client.post(
-                                    f"{target_api_url}/database/unlock",
-                                    headers={"X-Admin-Key": target_api_key}
-                                )
-                                print(f"✅ Unlocked target API: {target_api_url}")
-                        except Exception as e:
-                            print(f"Warning: Failed to unlock target API: {e}")
-                    
-                    # Run async unlock in sync context
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(unlock_api())
-                    loop.close()
+                    with httpx.Client(timeout=10.0) as client:
+                        client.post(
+                            f"{target_api_url}/database/unlock",
+                            headers={"X-Admin-Key": target_api_key},
+                        )
+                    print(f"✅ Unlocked target API: {target_api_url}")
                 except Exception as e:
                     print(f"Warning: Failed to unlock target API: {e}")
     
@@ -637,9 +673,28 @@ class BackupService:
             '-h', db_host,
             '-P', str(db_port),
             '-u', db_user,
-            f'-p{db_password}',
             db_name,
         ]
+
+        env = os.environ.copy()
+        env["MYSQL_PWD"] = db_password
+
+        def _ssl_disabled_args() -> list[str]:
+            if mysql_cmd.startswith("mariadb"):
+                return ["--skip-ssl"]
+            return ["--ssl-mode=DISABLED"]
+
+        def _should_allow_insecure_ssl() -> bool:
+            try:
+                from api.settings import settings
+
+                return bool(getattr(settings, "DEBUG", False) or getattr(settings, "ALLOW_INSECURE_MYSQL_SSL", False))
+            except Exception:
+                return False
+
+        def _looks_like_tls_error(stderr: str) -> bool:
+            low = str(stderr or "").lower()
+            return "tls/ssl error" in low or "self-signed" in low or "certificate" in low
         
         try:
             if is_compressed:
@@ -649,15 +704,17 @@ class BackupService:
                 with open(backup_file, 'r', encoding='utf-8') as f:
                     sql_content = f.read()
             
-            result = subprocess.run(
-                cmd,
-                input=sql_content,
-                capture_output=True,
-                check=True,
-                text=True
-            )
+            subprocess.run(cmd, env=env, input=sql_content, capture_output=True, check=True, text=True)
             
         except subprocess.CalledProcessError as e:
+            if _should_allow_insecure_ssl() and _looks_like_tls_error(e.stderr):
+                try:
+                    retry_cmd = cmd + _ssl_disabled_args()
+                    subprocess.run(retry_cmd, env=env, input=sql_content, capture_output=True, check=True, text=True)
+                    return
+                except subprocess.CalledProcessError:
+                    pass
+
             raise Exception(f"MySQL restore failed: {e.stderr}")
     
     def _restore_sqlite(self, backup_file: Path, is_compressed: bool, db_name: str) -> None:
@@ -745,10 +802,16 @@ class BackupService:
         drop_sql = f"""
         SET FOREIGN_KEY_CHECKS = 0;
         SET @tables = NULL;
-        SELECT GROUP_CONCAT(table_name) INTO @tables
+        SELECT GROUP_CONCAT(CONCAT('`', REPLACE(table_name, '`', '``'), '`')) INTO @tables
         FROM information_schema.tables
-        WHERE table_schema = '{db_name}';
-        SET @tables = CONCAT('DROP TABLE IF EXISTS ', @tables);
+        WHERE table_schema = '{db_name}'
+          AND table_type = 'BASE TABLE';
+
+        SET @tables = IF(
+            @tables IS NULL OR @tables = '',
+            'SELECT 1',
+            CONCAT('DROP TABLE IF EXISTS ', @tables)
+        );
         PREPARE stmt FROM @tables;
         EXECUTE stmt;
         DEALLOCATE PREPARE stmt;
@@ -794,15 +857,37 @@ class BackupService:
         try:
             conn = sqlite3.connect(db_file)
             cursor = conn.cursor()
-            
-            # Get all table names
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-            tables = cursor.fetchall()
-            
-            # Drop each table
-            for table in tables:
-                cursor.execute(f"DROP TABLE IF EXISTS {table[0]};")
-            
+
+            def _quote_identifier(identifier: str) -> str:
+                """Quote a SQLite identifier.
+
+                Args:
+                    identifier: Table/view/trigger name.
+
+                Returns:
+                    str: Safely quoted identifier.
+                """
+
+                return '"' + str(identifier).replace('"', '""') + '"'
+
+            cursor.execute("PRAGMA foreign_keys=OFF;")
+
+            # Drop objects in a safe order. Also skip internal SQLite tables.
+            for obj_type in ("view", "trigger", "table"):
+                cursor.execute(
+                    "SELECT name FROM sqlite_master WHERE type=? AND name NOT LIKE 'sqlite_%';",
+                    (obj_type,),
+                )
+                objects = cursor.fetchall()
+                for (name,) in objects:
+                    cursor.execute(f"DROP {obj_type.upper()} IF EXISTS {_quote_identifier(name)};")
+
+            # Reset autoincrement counters when the sqlite_sequence table exists.
+            try:
+                cursor.execute("DELETE FROM sqlite_sequence;")
+            except sqlite3.OperationalError:
+                pass
+
             conn.commit()
             conn.close()
         except Exception as e:

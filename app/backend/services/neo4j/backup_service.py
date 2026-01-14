@@ -96,6 +96,22 @@ class Neo4jBackupService:
         except Exception as e:
             print(f"Warning: Failed to check lock: {e}")
             return None
+
+    def _looks_like_gzip(self, path: Path) -> bool:
+        """Return True when the file appears to be gzip-compressed.
+
+        Args:
+            path: File path.
+
+        Returns:
+            bool: True if the file starts with the gzip magic bytes.
+        """
+
+        try:
+            with open(path, "rb") as f:
+                return f.read(2) == b"\x1f\x8b"
+        except Exception:
+            return False
         
     def create_backup_to_temp(self, neo4j_url: str, db_user: str, db_password: str, compress: bool = True) -> Tuple[str, Path]:
         """
@@ -287,8 +303,10 @@ class Neo4jBackupService:
         if not self._acquire_lock("restore"):
             raise Exception("Failed to acquire lock for restore operation")
         
-        # Check if file is compressed
-        is_compressed = backup_file.suffix == '.gz'
+        # Check if file is compressed.
+        # Some providers (e.g. Google Drive) restore by file-id and the temp file
+        # may not preserve the original .gz suffix.
+        is_compressed = backup_file.suffix == '.gz' or self._looks_like_gzip(backup_file)
         
         try:
             # Initialize progress tracking
@@ -412,24 +430,12 @@ class Neo4jBackupService:
             if target_api_url and target_api_key:
                 try:
                     import httpx
-                    import asyncio
-                    
-                    async def unlock_api():
-                        try:
-                            async with httpx.AsyncClient(timeout=10.0) as client:
-                                await client.post(
-                                    f"{target_api_url}/database/unlock",
-                                    headers={"X-Admin-Key": target_api_key}
-                                )
-                                print(f"✅ Unlocked target API: {target_api_url}")
-                        except Exception as e:
-                            print(f"Warning: Failed to unlock target API: {e}")
-                    
-                    # Run async unlock in sync context
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(unlock_api())
-                    loop.close()
+                    with httpx.Client(timeout=10.0) as client:
+                        client.post(
+                            f"{target_api_url}/database/unlock",
+                            headers={"X-Admin-Key": target_api_key},
+                        )
+                    print(f"✅ Unlocked target API: {target_api_url}")
                 except Exception as e:
                     print(f"Warning: Failed to unlock target API: {e}")
     

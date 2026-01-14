@@ -11,10 +11,11 @@ These endpoints operate on the locally configured database via `api.settings`.
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Optional
 import shutil
 import tempfile
+import os
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
@@ -39,6 +40,48 @@ def _backups_dir() -> Path:
     base = Path("/app/backups")
     base.mkdir(parents=True, exist_ok=True)
     return base
+
+
+def _validate_backup_relpath(filename: str) -> str:
+    """Validate a user-provided relative backup path.
+
+    Args:
+        filename: User-provided path segment.
+
+    Returns:
+        str: Normalized relative path using forward slashes.
+
+    Raises:
+        HTTPException: When the provided filename is unsafe.
+    """
+
+    rel = PurePosixPath(str(filename or "").replace("\\", "/"))
+    if not str(rel) or rel.is_absolute() or ".." in rel.parts:
+        raise HTTPException(status_code=400, detail="Invalid backup filename")
+    return str(rel)
+
+
+def _validate_backup_prefix(prefix: str) -> str:
+    """Validate a user-provided backup prefix filter.
+
+    Args:
+        prefix: User-provided prefix.
+
+    Returns:
+        str: Normalized prefix using forward slashes.
+
+    Raises:
+        HTTPException: When the provided prefix is unsafe.
+    """
+
+    raw = str(prefix or "").replace("\\", "/").strip()
+    if not raw:
+        return ""
+
+    rel = PurePosixPath(raw)
+    if rel.is_absolute() or ".." in rel.parts:
+        raise HTTPException(status_code=400, detail="Invalid backup prefix")
+    return str(rel)
 
 
 @router.post("/create")
@@ -90,18 +133,19 @@ async def legacy_create_backup(
     }
 
 
-@router.post("/restore/{filename}")
+@router.post("/restore/{filename:path}")
 async def legacy_restore_backup(
     filename: str,
     _: str = Depends(verify_restore_key),
 ) -> Dict[str, Any]:
     """Restore the locally configured database from a stored backup file."""
 
-    source = _backups_dir() / filename
+    rel = _validate_backup_relpath(filename)
+    source = _backups_dir() / rel
     if not source.exists():
         raise HTTPException(status_code=404, detail=f"Backup not found: {filename}")
 
-    suffix = ".gz" if filename.endswith(".gz") else ""
+    suffix = ".gz" if rel.endswith(".gz") else ""
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp:
         temp_path = Path(temp.name)
         shutil.copyfileobj(source.open("rb"), temp)
@@ -150,10 +194,23 @@ async def legacy_restore_backup(
 @router.get("/list")
 async def list_backups(
     _: str = Depends(verify_admin_key),
+    limit: Optional[int] = Query(None, ge=1, le=10000, description="Max files to return"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    prefix: Optional[str] = Query(None, description="Optional filename prefix filter"),
 ) -> Dict[str, Any]:
-    """List available backup files."""
+    """List available backup files.
+
+    Args:
+        limit: Optional maximum number of files to return. When omitted, all files are returned.
+        offset: Pagination offset (0-based).
+        prefix: Optional filename prefix filter.
+
+    Returns:
+        Dict[str, Any]: Response with backup file list and pagination metadata.
+    """
 
     backups_dir = _backups_dir()
+    safe_prefix = _validate_backup_prefix(prefix) if prefix else ""
     files = []
 
     backup_extensions = (
@@ -166,19 +223,61 @@ async def list_backups(
         ".db",
         ".db.gz",
     )
-    for path in sorted(backups_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-        if path.is_file() and not path.name.startswith(".") and path.name.endswith(backup_extensions):
-            stat = path.stat()
-            files.append({
-                "filename": path.name,
-                "size_mb": round(stat.st_size / (1024 * 1024), 4),
-                "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-            })
+    discovered = []
+    for root, _, names in os.walk(backups_dir):
+        for name in names:
+            if name.startswith("."):
+                continue
+            is_encrypted = name.endswith(".enc")
+            if is_encrypted:
+                if not name[:-4].endswith(backup_extensions):
+                    continue
+            else:
+                if not name.endswith(backup_extensions):
+                    continue
 
-    return {"files": files, "count": len(files)}
+            full = Path(root) / name
+            try:
+                stat_info = full.stat()
+            except OSError:
+                continue
+
+            rel = full.relative_to(backups_dir)
+            rel_str = str(rel).replace("\\", "/")
+            if safe_prefix and not rel_str.startswith(safe_prefix):
+                continue
+            discovered.append((stat_info.st_mtime, rel_str, stat_info))
+
+    discovered_sorted = sorted(discovered, key=lambda t: t[0], reverse=True)
+    total = len(discovered_sorted)
+
+    if limit is None:
+        limit = total
+
+    start = min(offset, total)
+    end = min(start + limit, total)
+
+    for mtime, rel_str, stat_info in discovered_sorted[start:end]:
+        files.append(
+            {
+                "filename": rel_str,
+                "size_mb": round(stat_info.st_size / (1024 * 1024), 4),
+                "created_at": datetime.fromtimestamp(stat_info.st_mtime).isoformat(),
+            }
+        )
+
+    return {
+        "files": files,
+        # Keep legacy meaning: count == total
+        "count": total,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "returned": len(files),
+    }
 
 
-@router.get("/download/{filename}")
+@router.get("/download/{filename:path}")
 async def download_backup(
     filename: str,
     _: str = Depends(verify_admin_key),
@@ -195,21 +294,23 @@ async def download_backup(
         HTTPException: If the file does not exist.
     """
 
-    path = _backups_dir() / filename
+    rel = _validate_backup_relpath(filename)
+    path = _backups_dir() / rel
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"Backup not found: {filename}")
 
     return FileResponse(path=path, filename=path.name)
 
 
-@router.delete("/delete/{filename}")
+@router.delete("/delete/{filename:path}")
 async def legacy_delete_backup(
     filename: str,
     _: str = Depends(verify_delete_key),
 ) -> Dict[str, Any]:
     """Delete a stored backup file."""
 
-    path = _backups_dir() / filename
+    rel = _validate_backup_relpath(filename)
+    path = _backups_dir() / rel
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"Backup not found: {filename}")
 

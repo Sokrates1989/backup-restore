@@ -69,6 +69,10 @@ async def schedule_to_dict(session, schedule: BackupSchedule) -> Dict[str, Any]:
     target = await session.get(BackupTarget, schedule.target_id)
     await session.refresh(schedule, attribute_names=["destinations"])
 
+    retention = dict(schedule.retention or {})
+    retention.pop("encrypt_password", None)
+    retention.pop("encrypt_password_encrypted", None)
+
     return {
         "id": schedule.id,
         "name": schedule.name,
@@ -78,7 +82,7 @@ async def schedule_to_dict(session, schedule: BackupSchedule) -> Dict[str, Any]:
         "interval_seconds": int(schedule.interval_seconds),
         "next_run_at": schedule.next_run_at.isoformat() if schedule.next_run_at else None,
         "last_run_at": schedule.last_run_at.isoformat() if schedule.last_run_at else None,
-        "retention": schedule.retention or {},
+        "retention": retention,
         "destination_ids": [d.id for d in schedule.destinations],
         "destinations": [
             {"id": d.id, "name": d.name, "destination_type": d.destination_type}

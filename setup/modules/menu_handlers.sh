@@ -537,7 +537,7 @@ handle_start_with_test_databases() {
     fi
     
     echo ""
-    echo "🐳 Starting all services with test databases..."
+    echo "🐳 Starting all services with test databases (watch mode)..."
 
     local timestamp
     timestamp=$(date +%Y%m%d_%H%M%S)
@@ -592,15 +592,7 @@ handle_start_with_test_databases() {
     local browser_pid=$!
 
     cd "$project_root" || return 1
-    if command -v script >/dev/null 2>&1; then
-        if script -q -c "true" /dev/null >/dev/null 2>&1; then
-            script -q -c "docker compose --env-file .env -f '$compose_file' -f '$runner_file' -f '$test_db_file' up --build" "$transcript_file"
-        else
-            script -q "$transcript_file" docker compose --env-file .env -f "$compose_file" -f "$runner_file" -f "$test_db_file" up --build
-        fi
-    else
-        docker compose --env-file .env -f "$compose_file" -f "$runner_file" -f "$test_db_file" up --build
-    fi
+    docker compose --env-file .env -f "$compose_file" -f "$runner_file" -f "$test_db_file" watch
 
     kill "$logs_pid" >/dev/null 2>&1 || true
     wait "$logs_pid" >/dev/null 2>&1 || true
@@ -638,47 +630,23 @@ handle_start_admin_uis() {
     fi
     
     echo ""
-    echo "🐳 Starting services with admin profile..."
-    docker compose --env-file .env -f "$compose_file" -f "$runner_file" --profile admin up --build &
+    echo "🐳 Starting services with admin profile (watch mode)..."
+
+    (
+        local max_wait=120
+        local wait_time=0
+        while [ $wait_time -lt $max_wait ]; do
+            if curl -s "http://localhost:$port/health" >/dev/null 2>&1; then
+                break
+            fi
+            sleep 2
+            wait_time=$((wait_time + 2))
+        done
+
+        open_browser_incognito "$port" "$compose_file" "admin"
+    ) &
     
-    # Store the compose process ID
-    local compose_pid=$!
-    
-    echo ""
-    echo "⏳ Waiting for services to be ready..."
-    
-    # Wait for API to be ready
-    local max_wait=120
-    local wait_time=0
-    while [ $wait_time -lt $max_wait ]; do
-        if curl -s "http://localhost:$port/health" >/dev/null 2>&1; then
-            echo "✅ API is ready!"
-            break
-        fi
-        echo -n "."
-        sleep 2
-        wait_time=$((wait_time + 2))
-    done
-    
-    if [ $wait_time -ge $max_wait ]; then
-        echo ""
-        echo "⚠️  API not ready after ${max_wait}s, opening browser anyway..."
-    fi
-    
-    echo ""
-    echo "🌐 Opening browser with admin UIs..."
-    
-    # Open browser now that services are ready
-    open_browser_incognito "$port" "$compose_file" "admin"
-    
-    echo ""
-    echo "✅ Services with admin UIs started!"
-    echo ""
-    echo "📋 Service status:"
-    docker compose --env-file .env -f "$compose_file" -f "$runner_file" --profile admin ps
-    
-    # Wait for the compose process to finish (when user presses Ctrl+C)
-    wait $compose_pid
+    docker compose --env-file .env -f "$compose_file" -f "$runner_file" --profile admin watch
 }
 
 handle_clean_test_data() {
@@ -744,8 +712,8 @@ handle_deploy_all_services() {
     fi
     
     echo ""
-    echo "🐳 Starting services..."
-    docker compose --env-file .env -f "$compose_file" -f "$runner_file" up --build
+    echo "🐳 Starting services (watch mode)..."
+    docker compose --env-file .env -f "$compose_file" -f "$runner_file" watch
     
     echo ""
     echo "✅ All services started!"

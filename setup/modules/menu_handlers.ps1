@@ -8,6 +8,39 @@ if (Test-Path $browserHelpersPath) {
     . $browserHelpersPath
 }
 
+function Remove-TestDatabaseData {
+    <#
+    .SYNOPSIS
+    Deletes local test database data directories.
+
+    .DESCRIPTION
+    This removes host-mounted test database data (Postgres/MySQL/Neo4j/SQLite) and pgAdmin state.
+    It is intentionally NOT executed automatically; it must be triggered explicitly from the menu.
+    #>
+
+    Write-Host "" 
+    Write-Host "[CLEAN] Clean test database data" -ForegroundColor Yellow
+    Write-Host "" 
+    Write-Host "This will delete the following directories:" -ForegroundColor Gray
+    Write-Host "  - .docker/test-*" -ForegroundColor Gray
+    Write-Host "  - .docker/pgadmin-data" -ForegroundColor Gray
+    Write-Host "" 
+
+    $confirm = Read-Host "Are you sure? (y/N)"
+    if ($confirm -notmatch "^[Yy]$") {
+        Write-Host "[CANCEL] Cleanup cancelled." -ForegroundColor Yellow
+        return
+    }
+
+    try {
+        Remove-Item -Path ".docker/test-*" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path ".docker/pgadmin-data" -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "[OK] Test database data cleaned. Next start will use fresh databases." -ForegroundColor Green
+    } catch {
+        Write-Host "[WARN] Cleanup encountered an error: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
 function Stop-IncognitoProfileProcesses {
     <#
     .SYNOPSIS
@@ -216,7 +249,7 @@ function Start-Backend {
     Show-RelevantPagesDelayed -ComposeFile $ComposeFile -TimeoutSeconds 120
     
     Write-Host ""
-    docker compose --env-file .env -f $ComposeFile up --build --no-cache
+    docker compose --env-file .env -f $ComposeFile up --build --no-cache --watch
 }
 
 function Start-DependencyManagement {
@@ -254,7 +287,7 @@ function Start-DependencyAndBackend {
     Show-RelevantPagesDelayed -ComposeFile $ComposeFile -TimeoutSeconds 120
     
     Write-Host ""
-    docker compose --env-file .env -f $ComposeFile up --build
+    docker compose --env-file .env -f $ComposeFile up --build --watch
 }
 
 function Invoke-EnvironmentDiagnostics {
@@ -342,7 +375,7 @@ function Start-BackendNoCache {
     
     Write-Host ""
     docker compose --env-file .env -f $ComposeFile build --no-cache
-    docker compose --env-file .env -f $ComposeFile up
+    docker compose --env-file .env -f $ComposeFile up --watch
 }
 
 function Build-ProductionImage {
@@ -419,7 +452,7 @@ function Deploy-AllServices {
     if ($Detached) {
         docker compose --env-file .env -f $ComposeFile -f $runnerFile up -d --build
     } else {
-        docker compose --env-file .env -f $ComposeFile -f $runnerFile up --build
+        docker compose --env-file .env -f $ComposeFile -f $runnerFile up --build --watch
         return
     }
 
@@ -677,13 +710,8 @@ function Start-WithTestDatabases {
     Write-Host "[OK] Previous stack stopped (if any)" -ForegroundColor Green
 
     Write-Host ""
-    Write-Host "[CLEAN] Cleaning up old test database data..." -ForegroundColor Cyan
-    
-    # Remove test database data to ensure fresh setup
-    Remove-Item -Path ".docker/test-*" -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -Path ".docker/pgadmin-data" -Recurse -Force -ErrorAction SilentlyContinue
-    
-    Write-Host "[OK] Old test data removed" -ForegroundColor Green
+    Write-Host "[INFO] Keeping existing test database data (no automatic cleanup)." -ForegroundColor Gray
+    Write-Host "       Use the explicit 'Clean test database data' menu option if you want a fresh start." -ForegroundColor Gray
     Write-Host ""
     Write-Host "[DOCKER] Starting all services with test databases..." -ForegroundColor Cyan
     
@@ -764,7 +792,7 @@ function Start-WithTestDatabases {
     } -ArgumentList $projectRoot, $composeLogFile, $composeArgsBase
 
     try {
-        & docker compose @composeArgsBase up --build
+        & docker compose @composeArgsBase up --build --watch
     } finally {
         try { Stop-Job -Job $logJob -Force -ErrorAction SilentlyContinue } catch { }
         try { Remove-Job -Job $logJob -Force -ErrorAction SilentlyContinue } catch { }
@@ -863,63 +891,15 @@ function Start-WithAdminUIs {
         return
     }
 
-    Write-Host ""
-    Write-Host "[DOCKER] Starting services with admin profile..." -ForegroundColor Cyan
-    $composeJob = Start-Job -ScriptBlock {
-        param($envFile, $composeFile, $runnerFile)
-        docker compose --env-file $envFile -f $composeFile -f $runnerFile --profile admin up --build
-    } -ArgumentList ".env", $ComposeFile, $runnerFile
+    # IMPORTANT: Start the browser opener BEFORE docker compose.
+    # In watch mode, docker compose blocks the script.
+    if (Get-Command Show-RelevantPagesDelayed -ErrorAction SilentlyContinue) {
+        Show-RelevantPagesDelayed -ComposeFile $ComposeFile -TimeoutSeconds 120 -Port $Port
+    }
 
     Write-Host ""
-    Write-Host "[WAIT] Waiting for services to be ready..." -ForegroundColor Cyan
-    
-    # Wait for API to be ready
-    $maxWait = 120
-    $waitTime = 0
-    $apiReady = $false
-    
-    while ($waitTime -lt $maxWait) {
-        try {
-            $response = Invoke-WebRequest -Uri "http://localhost:$Port/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
-            if ($response.StatusCode -eq 200) {
-                Write-Host "`n[OK] API is ready!" -ForegroundColor Green
-                $apiReady = $true
-                break
-            }
-        } catch {
-            # API not ready yet
-        }
-        
-        Write-Host -NoNewline "."
-        Start-Sleep -Seconds 2
-        $waitTime += 2
-    }
-    
-    if (-not $apiReady) {
-        Write-Host "`n[WARNING]  API not ready after $maxWait seconds, opening browser anyway..." -ForegroundColor Yellow
-    }
-    
-    Write-Host ""
-    Write-Host "[WEB] Opening browser with admin UIs..." -ForegroundColor Cyan
-    
-    # Open browser now that services are ready
-    Open-BrowserInIncognito -Port $Port -ComposeFile $ComposeFile -Mode "admin"
-
-    Write-Host ""
-    Write-Host "[OK] Services with admin UIs started!" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "[LIST] Service status:" -ForegroundColor Gray
-    docker compose --env-file .env -f $ComposeFile -f $runnerFile --profile admin ps
-    
-    Write-Host ""
-    Write-Host "Press Ctrl+C to stop all services..." -ForegroundColor Yellow
-    
-    # Wait for the compose job to finish (when user presses Ctrl+C)
-    try {
-        Wait-Job -Job $composeJob | Out-Null
-    } finally {
-        Remove-Job -Job $composeJob -Force -ErrorAction SilentlyContinue
-    }
+    Write-Host "[DOCKER] Starting services with admin profile (watch enabled)..." -ForegroundColor Cyan
+    docker compose --env-file .env -f $ComposeFile -f $runnerFile --profile admin up --build --watch
 }
 
 function Show-MainMenu {
@@ -946,6 +926,7 @@ function Show-MainMenu {
 
     $MENU_TEST_DBS = $menuNext; $menuNext++
     $MENU_TEST_DBS_ADMIN = $menuNext; $menuNext++
+    $MENU_CLEAN_TEST_DATA = $menuNext; $menuNext++
 
     $MENU_SETUP = $menuNext; $menuNext++
 
@@ -976,6 +957,7 @@ function Show-MainMenu {
     Write-Host "Testing (all DB types + admin UIs):" -ForegroundColor Yellow
     Write-Host "  $MENU_TEST_DBS) Start with test databases" -ForegroundColor Gray
     Write-Host "  $MENU_TEST_DBS_ADMIN) Start with admin UIs only" -ForegroundColor Gray
+    Write-Host "  $MENU_CLEAN_TEST_DATA) Clean test database data" -ForegroundColor Gray
     Write-Host "" 
     Write-Host "Setup:" -ForegroundColor Yellow
     Write-Host "  $MENU_SETUP) Re-run setup wizard" -ForegroundColor Gray
@@ -1040,6 +1022,10 @@ function Show-MainMenu {
         "$MENU_TEST_DBS_ADMIN" {
             Start-WithAdminUIs -Port $Port -ComposeFile $ComposeFile
             $summary = "Admin UIs started"
+        }
+        "$MENU_CLEAN_TEST_DATA" {
+            Remove-TestDatabaseData
+            $summary = "Test database data cleaned"
         }
         "$MENU_SETUP" {
             $result = Invoke-SetupWizard

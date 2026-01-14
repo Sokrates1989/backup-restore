@@ -9,6 +9,10 @@ RUN apk add --no-cache gettext
 # Copy website files
 COPY website/ /usr/share/nginx/html/
 
+# Default cache settings for static assets (can be overridden via docker-compose env).
+ENV ASSET_CACHE_CONTROL="public, immutable"
+ENV ASSET_EXPIRES="7d"
+
 # Copy nginx configuration template
 COPY docker/nginx/default.conf.template /etc/nginx/templates/default.conf.template
 

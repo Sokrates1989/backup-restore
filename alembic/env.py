@@ -16,6 +16,7 @@ from models.sql.backup_automation import (
     BackupRun,
     BackupSchedule,
     BackupTarget,
+    AuditEvent,
     backup_schedule_destinations,
 )
 
@@ -26,6 +27,7 @@ _models = (
     BackupDestination,
     BackupSchedule,
     BackupRun,
+    AuditEvent,
     backup_schedule_destinations,
 )
 

@@ -13,6 +13,269 @@ async function loadBackupSchedules() {
     } catch (error) {
         showStatus(`Failed to load backup schedules: ${error.message}`, 'error');
     }
+
+}
+
+/**
+ * Map a legacy on_success/on_warning/on_failure config to a minimum severity.
+ *
+ * @param {Object} legacy Legacy channel config.
+ * @returns {string} Minimum severity (info|warning|error).
+ */
+function legacyNotifyFlagsToMinSeverity(legacy) {
+    if (!legacy || typeof legacy !== 'object') return 'error';
+    if (legacy.on_success) return 'info';
+    if (legacy.on_warning) return 'warning';
+    if (legacy.on_failure) return 'error';
+    return 'error';
+}
+
+/**
+ * Normalize Telegram recipients from either the new recipients list or the legacy chat_id fields.
+ *
+ * @param {Object} telegramConfig Telegram notification config.
+ * @returns {Array} Array of recipients in the form { chat_id, min_severity }.
+ */
+function normalizeTelegramRecipients(telegramConfig) {
+    if (!telegramConfig || typeof telegramConfig !== 'object') return [];
+
+    const recipients = Array.isArray(telegramConfig.recipients) ? telegramConfig.recipients : [];
+    const normalized = recipients
+        .map(r => ({
+            chat_id: trimValue(r?.chat_id || ''),
+            min_severity: trimValue(r?.min_severity || 'error')
+        }))
+        .filter(r => r.chat_id);
+
+    if (normalized.length > 0) return normalized;
+
+    const legacyChatId = trimValue(telegramConfig.chat_id || '');
+    if (!legacyChatId) return [];
+
+    return [{ chat_id: legacyChatId, min_severity: legacyNotifyFlagsToMinSeverity(telegramConfig) }];
+}
+
+/**
+ * Normalize Email recipients from either the new recipients list or the legacy to fields.
+ *
+ * @param {Object} emailConfig Email notification config.
+ * @returns {Array} Array of recipients in the form { to, min_severity }.
+ */
+function normalizeEmailRecipients(emailConfig) {
+    if (!emailConfig || typeof emailConfig !== 'object') return [];
+
+    const recipients = Array.isArray(emailConfig.recipients) ? emailConfig.recipients : [];
+    const normalized = recipients
+        .map(r => ({
+            to: trimValue(r?.to || ''),
+            min_severity: trimValue(r?.min_severity || 'error')
+        }))
+        .filter(r => r.to);
+
+    if (normalized.length > 0) return normalized;
+
+    const legacyTo = trimValue(emailConfig.to || '');
+    if (!legacyTo) return [];
+
+    return [{ to: legacyTo, min_severity: legacyNotifyFlagsToMinSeverity(emailConfig) }];
+}
+
+/**
+ * Create a select element for minimum severity.
+ *
+ * @param {string} selected Selected severity.
+ * @returns {HTMLSelectElement} Select element.
+ */
+function createMinSeveritySelect(selected) {
+    const select = document.createElement('select');
+    select.className = 'notification-min-severity';
+
+    const options = [
+        { value: 'info', label: 'Info' },
+        { value: 'warning', label: 'Warning' },
+        { value: 'error', label: 'Error' }
+    ];
+
+    options.forEach(opt => {
+        const option = document.createElement('option');
+        option.value = opt.value;
+        option.textContent = opt.label;
+        if (opt.value === selected) option.selected = true;
+        select.appendChild(option);
+    });
+
+    return select;
+}
+
+/**
+ * Create a recipient row with an input, severity selector, and remove button.
+ *
+ * @param {Object} params Row parameters.
+ * @param {string} params.kind telegram|email.
+ * @param {string} params.value Recipient value (chat_id or to).
+ * @param {string} params.minSeverity Minimum severity.
+ * @returns {HTMLDivElement} Row element.
+ */
+function createNotificationRecipientRow({ kind, value, minSeverity }) {
+    const row = document.createElement('div');
+    row.className = 'notification-recipient-row';
+    row.dataset.recipientKind = kind;
+
+    const input = document.createElement('input');
+    input.type = kind === 'email' ? 'email' : 'text';
+    input.placeholder = kind === 'email' ? 'admin@example.com' : 'e.g., -1001234567890';
+    input.value = value || '';
+    input.className = kind === 'email' ? 'notification-email-to' : 'notification-telegram-chat-id';
+
+    const select = createMinSeveritySelect(minSeverity || 'error');
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'btn btn-danger btn-sm';
+    removeBtn.textContent = 'Remove';
+    removeBtn.addEventListener('click', () => {
+        row.remove();
+    });
+
+    row.appendChild(input);
+    row.appendChild(select);
+    row.appendChild(removeBtn);
+
+    return row;
+}
+
+/**
+ * Ensure at least one visible recipient row exists for a kind when notifications are enabled.
+ *
+ * @param {string} kind telegram|email.
+ * @returns {void}
+ */
+function ensureAtLeastOneRecipientRow(kind) {
+    const containerId = kind === 'email'
+        ? 'backup-schedule-email-recipients'
+        : 'backup-schedule-telegram-recipients';
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const hasRow = container.querySelector('[data-recipient-kind]') !== null;
+    if (hasRow) return;
+
+    container.appendChild(createNotificationRecipientRow({ kind, value: '', minSeverity: 'error' }));
+}
+
+/**
+ * Replace the current Telegram recipients UI with the given list.
+ *
+ * @param {Array} recipients Array of recipients.
+ * @returns {void}
+ */
+function setTelegramRecipients(recipients) {
+    const container = document.getElementById('backup-schedule-telegram-recipients');
+    if (!container) return;
+    container.innerHTML = '';
+    (recipients || []).forEach(r => {
+        container.appendChild(
+            createNotificationRecipientRow({
+                kind: 'telegram',
+                value: r.chat_id,
+                minSeverity: r.min_severity || 'error'
+            })
+        );
+    });
+}
+
+/**
+ * Replace the current Email recipients UI with the given list.
+ *
+ * @param {Array} recipients Array of recipients.
+ * @returns {void}
+ */
+function setEmailRecipients(recipients) {
+    const container = document.getElementById('backup-schedule-email-recipients');
+    if (!container) return;
+    container.innerHTML = '';
+    (recipients || []).forEach(r => {
+        container.appendChild(
+            createNotificationRecipientRow({
+                kind: 'email',
+                value: r.to,
+                minSeverity: r.min_severity || 'error'
+            })
+        );
+    });
+}
+
+/**
+ * Read Telegram recipients from the UI.
+ *
+ * @returns {Array} Array of recipients.
+ */
+function readTelegramRecipientsFromUI() {
+    const container = document.getElementById('backup-schedule-telegram-recipients');
+    if (!container) return [];
+
+    return [...container.querySelectorAll('[data-recipient-kind="telegram"]')]
+        .map(row => {
+            const chatId = trimValue(row.querySelector('.notification-telegram-chat-id')?.value || '');
+            const minSeverity = trimValue(row.querySelector('.notification-min-severity')?.value || 'error');
+            return { chat_id: chatId, min_severity: minSeverity || 'error' };
+        })
+        .filter(r => r.chat_id);
+}
+
+/**
+ * Read Email recipients from the UI.
+ *
+ * @returns {Array} Array of recipients.
+ */
+function readEmailRecipientsFromUI() {
+    const container = document.getElementById('backup-schedule-email-recipients');
+    if (!container) return [];
+
+    return [...container.querySelectorAll('[data-recipient-kind="email"]')]
+        .map(row => {
+            const to = trimValue(row.querySelector('.notification-email-to')?.value || '');
+            const minSeverity = trimValue(row.querySelector('.notification-min-severity')?.value || 'error');
+            return { to, min_severity: minSeverity || 'error' };
+        })
+        .filter(r => r.to);
+}
+
+function updateScheduleTimeOfDayVisibility() {
+    const intervalEl = document.getElementById('backup-schedule-interval');
+    const groupEl = document.getElementById('backup-schedule-daily-time-group');
+    const inputEl = document.getElementById('backup-schedule-daily-time');
+    const hintEl = document.getElementById('backup-schedule-daily-time-hint');
+    if (!intervalEl || !groupEl) return;
+
+    const intervalSeconds = parseInt(intervalEl.value) || 86400;
+    const shouldShow = intervalSeconds >= 3600;
+    groupEl.classList.toggle('hidden', !shouldShow);
+
+    if (!shouldShow) return;
+
+    if (hintEl) {
+        hintEl.textContent = intervalSeconds === 86400
+            ? 'Anchor time for the schedule. For Daily, default: 03:30.'
+            : 'Optional anchor time for Hourly/6h/12h/Weekly/Monthly schedules. Example: 12h + 03:30 -> 03:30 & 15:30.';
+    }
+
+    if (intervalSeconds === 86400 && inputEl && !trimValue(inputEl.value)) {
+        inputEl.value = '03:30';
+    }
+}
+
+async function runEnabledSchedulesNow() {
+    if (!confirm('Run all enabled schedules now?')) return;
+
+    try {
+        const result = await apiCall('/automation/schedules/run-enabled-now', 'POST', { max_schedules: 1000 });
+        const count = result && (result.count || result.executed) ? (result.count || result.executed) : 0;
+        showStatus(`Triggered ${count} schedule(s)`, 'success');
+        await loadBackupSchedules();
+    } catch (error) {
+        showStatus(`Failed to run schedules: ${error.message}`, 'error');
+    }
 }
 
 function formatInterval(seconds) {
@@ -49,17 +312,25 @@ function renderBackupSchedules() {
                              retention.max_count ? `${retention.max_count} backups` :
                              retention.max_days ? `${retention.max_days} days` :
                              retention.max_size_mb ? `${retention.max_size_mb} MB` : 'Default';
-        const hasNotifications = schedule.retention?.notifications?.telegram?.enabled || 
-                                 schedule.retention?.notifications?.email?.enabled;
+        const hasNotifications = Boolean(
+            schedule.retention?.notifications?.telegram?.enabled ||
+            schedule.retention?.notifications?.email?.enabled ||
+            schedule.retention?.notifications?.telegram?.chat_id ||
+            schedule.retention?.notifications?.email?.to ||
+            (Array.isArray(schedule.retention?.notifications?.telegram?.recipients)
+                && schedule.retention.notifications.telegram.recipients.length > 0) ||
+            (Array.isArray(schedule.retention?.notifications?.email?.recipients)
+                && schedule.retention.notifications.email.recipients.length > 0)
+        );
         
         return `
             <div class="item">
                 <div class="item-header">
                     <h3>${schedule.name}</h3>
                     <div class="item-actions">
-                        <button class="btn btn-sm btn-success" onclick="runScheduleNow('${schedule.id}')">Run Now</button>
-                        <button class="btn btn-sm btn-secondary" onclick="editBackupSchedule('${schedule.id}')">Edit</button>
-                        <button class="btn btn-sm btn-danger" onclick="deleteBackupSchedule('${schedule.id}')">Delete</button>
+                        <button class="btn btn-sm btn-success" data-action="schedule-run-now" data-id="${schedule.id}">Run Now</button>
+                        <button class="btn btn-sm btn-secondary" data-action="schedule-edit" data-id="${schedule.id}">Edit</button>
+                        <button class="btn btn-sm btn-danger" data-action="schedule-delete" data-id="${schedule.id}">Delete</button>
                     </div>
                 </div>
                 <div class="item-details">
@@ -81,9 +352,14 @@ function renderBackupSchedules() {
 function showBackupScheduleForm(schedule = null) {
     const form = document.getElementById('backup-schedule-form');
     const title = document.getElementById('backup-schedule-form-title');
+    const tabRoot = document.getElementById('backup-schedules-tab');
     
     // Update select options
     updateBackupScheduleSelects();
+
+    if (tabRoot && tabRoot.firstElementChild !== form) {
+        tabRoot.insertBefore(form, tabRoot.firstElementChild);
+    }
     
     if (schedule) {
         title.textContent = 'Edit Backup Schedule';
@@ -101,6 +377,16 @@ function showBackupScheduleForm(schedule = null) {
         
         // Retention settings
         const retention = schedule.retention || {};
+
+        const dailyTimeEl = document.getElementById('backup-schedule-daily-time');
+        if (dailyTimeEl) {
+            if (retention.run_at_time) {
+                dailyTimeEl.value = retention.run_at_time;
+            } else {
+                dailyTimeEl.value = (schedule.interval_seconds === 86400) ? '03:30' : '';
+            }
+        }
+
         if (retention.smart) {
             document.getElementById('backup-schedule-retention-type').value = 'smart';
             const smartDailyEl = document.getElementById('backup-schedule-smart-daily');
@@ -132,26 +418,41 @@ function showBackupScheduleForm(schedule = null) {
         const notifications = retention.notifications || {};
         const telegram = notifications.telegram || {};
         const email = notifications.email || {};
-        
-        document.getElementById('backup-schedule-notify-telegram').checked = telegram.enabled || false;
-        document.getElementById('backup-schedule-telegram-chat-id').value = telegram.chat_id || '';
-        document.getElementById('backup-schedule-telegram-on-success').checked = telegram.on_success !== false;
-        document.getElementById('backup-schedule-telegram-on-failure').checked = telegram.on_failure !== false;
-        document.getElementById('backup-schedule-telegram-on-warning').checked = telegram.on_warning || false;
+
+        const telegramRecipients = normalizeTelegramRecipients(telegram);
+        const emailRecipients = normalizeEmailRecipients(email);
+
+        document.getElementById('backup-schedule-notify-telegram').checked = Boolean(
+            telegram.enabled || telegramRecipients.length > 0
+        );
+        setTelegramRecipients(telegramRecipients);
         updateTelegramVisibility();
-        
-        document.getElementById('backup-schedule-notify-email').checked = email.enabled || false;
-        document.getElementById('backup-schedule-email-to').value = email.to || '';
-        document.getElementById('backup-schedule-email-on-success').checked = email.on_success || false;
-        document.getElementById('backup-schedule-email-on-failure').checked = email.on_failure !== false;
-        document.getElementById('backup-schedule-email-on-warning').checked = email.on_warning !== false;
+        const telegramAttachEl = document.getElementById('backup-schedule-telegram-attach');
+        if (telegramAttachEl) {
+            telegramAttachEl.checked = Boolean(telegram.attach_backup);
+        }
+        if (document.getElementById('backup-schedule-notify-telegram').checked) {
+            ensureAtLeastOneRecipientRow('telegram');
+        }
+
+        document.getElementById('backup-schedule-notify-email').checked = Boolean(
+            email.enabled || emailRecipients.length > 0
+        );
+        setEmailRecipients(emailRecipients);
         updateEmailVisibility();
+        const emailAttachEl = document.getElementById('backup-schedule-email-attach');
+        if (emailAttachEl) {
+            emailAttachEl.checked = Boolean(email.attach_backup);
+        }
+        if (document.getElementById('backup-schedule-notify-email').checked) {
+            ensureAtLeastOneRecipientRow('email');
+        }
     } else {
         title.textContent = 'Add Backup Schedule';
         document.getElementById('backup-schedule-id').value = '';
         document.getElementById('backup-schedule-name').value = '';
         document.getElementById('backup-schedule-database').value = '';
-        document.getElementById('backup-schedule-interval').value = '86400';
+        document.getElementById('backup-schedule-interval').value = 86400;
         document.getElementById('backup-schedule-enabled').checked = true;
         
         // Reset destination checkboxes
@@ -164,6 +465,11 @@ function showBackupScheduleForm(schedule = null) {
         document.getElementById('backup-schedule-retention-count').value = 7;
         document.getElementById('backup-schedule-retention-days').value = 30;
         document.getElementById('backup-schedule-retention-size').value = 1000;
+
+        const dailyTimeEl = document.getElementById('backup-schedule-daily-time');
+        if (dailyTimeEl) {
+            dailyTimeEl.value = '';
+        }
         const smartDailyEl = document.getElementById('backup-schedule-smart-daily');
         const smartWeeklyEl = document.getElementById('backup-schedule-smart-weekly');
         const smartMonthlyEl = document.getElementById('backup-schedule-smart-monthly');
@@ -181,19 +487,23 @@ function showBackupScheduleForm(schedule = null) {
         
         // Reset notifications
         document.getElementById('backup-schedule-notify-telegram').checked = false;
-        document.getElementById('backup-schedule-telegram-chat-id').value = '';
-        document.getElementById('backup-schedule-telegram-on-success').checked = true;
-        document.getElementById('backup-schedule-telegram-on-failure').checked = true;
-        document.getElementById('backup-schedule-telegram-on-warning').checked = false;
+        setTelegramRecipients([]);
         updateTelegramVisibility();
+        const telegramAttachEl = document.getElementById('backup-schedule-telegram-attach');
+        if (telegramAttachEl) {
+            telegramAttachEl.checked = false;
+        }
         
         document.getElementById('backup-schedule-notify-email').checked = false;
-        document.getElementById('backup-schedule-email-to').value = '';
-        document.getElementById('backup-schedule-email-on-success').checked = false;
-        document.getElementById('backup-schedule-email-on-failure').checked = true;
-        document.getElementById('backup-schedule-email-on-warning').checked = true;
+        setEmailRecipients([]);
         updateEmailVisibility();
+        const emailAttachEl = document.getElementById('backup-schedule-email-attach');
+        if (emailAttachEl) {
+            emailAttachEl.checked = false;
+        }
     }
+
+    updateScheduleTimeOfDayVisibility();
     
     form.classList.remove('hidden');
 }
@@ -224,19 +534,23 @@ function updateBackupScheduleSelects() {
     }
 
     const hasLocal = locations.some(l => l && (l.id === 'local' || l.destination_type === 'local'));
-    const localWarning = hasLocal && window.APP_IS_DEV ? `
+    const localWarning = hasLocal ? `
         <div class="warning-box">
             <strong>⚠️ Testing Only</strong>
             Local storage should only be used for testing and development.
-            For production, use SFTP or Google Drive.
+            For production, use remote storage locations.
         </div>
     ` : '';
 
-    destinationsContainer.innerHTML = localWarning + locations.map(location => {
+    destinationsContainer.innerHTML = locations.map(location => {
         const typeLabel = location.destination_type === 'local' ? '(Local)' : 
                          location.destination_type === 'sftp' ? '(SFTP)' : 
                          location.destination_type === 'google_drive' ? '(Google Drive)' : '';
-        return `<label><input type="checkbox" value="${location.id}"> ${location.name} ${typeLabel}</label>`;
+        const optionHtml = `<label><input type="checkbox" value="${location.id}"> ${location.name} ${typeLabel}</label>`;
+        if (location.destination_type === 'local' || location.id === 'local') {
+            return `${localWarning}${optionHtml}`;
+        }
+        return optionHtml;
     }).join('');
 }
 
@@ -254,16 +568,28 @@ function updateRetentionTypeVisibility() {
 function updateEncryptionVisibility() {
     const enabled = document.getElementById('backup-schedule-encrypt').checked;
     document.getElementById('backup-schedule-encrypt-options').classList.toggle('hidden', !enabled);
+    if (!enabled) {
+        const pwdEl = document.getElementById('backup-schedule-encrypt-password');
+        if (pwdEl) {
+            pwdEl.value = '';
+        }
+    }
 }
 
 function updateTelegramVisibility() {
     const enabled = document.getElementById('backup-schedule-notify-telegram').checked;
     document.getElementById('backup-schedule-telegram-options').classList.toggle('hidden', !enabled);
+    if (enabled) {
+        ensureAtLeastOneRecipientRow('telegram');
+    }
 }
 
 function updateEmailVisibility() {
     const enabled = document.getElementById('backup-schedule-notify-email').checked;
     document.getElementById('backup-schedule-email-options').classList.toggle('hidden', !enabled);
+    if (enabled) {
+        ensureAtLeastOneRecipientRow('email');
+    }
 }
 
 async function saveBackupSchedule() {
@@ -297,6 +623,13 @@ async function saveBackupSchedule() {
     // Build retention object
     const retentionType = document.getElementById('backup-schedule-retention-type').value;
     const retention = {};
+
+    const runAtTime = trimValue(document.getElementById('backup-schedule-daily-time')?.value);
+    if (intervalSeconds === 86400) {
+        retention.run_at_time = runAtTime || '03:30';
+    } else if (runAtTime) {
+        retention.run_at_time = runAtTime;
+    }
     
     if (retentionType === 'count') {
         retention.max_count = parseInt(document.getElementById('backup-schedule-retention-count').value) || 7;
@@ -326,23 +659,23 @@ async function saveBackupSchedule() {
     retention.notifications = {};
     
     if (document.getElementById('backup-schedule-notify-telegram').checked) {
-        retention.notifications.telegram = {
-            enabled: true,
-            chat_id: trimValue(document.getElementById('backup-schedule-telegram-chat-id').value),
-            on_success: document.getElementById('backup-schedule-telegram-on-success').checked,
-            on_failure: document.getElementById('backup-schedule-telegram-on-failure').checked,
-            on_warning: document.getElementById('backup-schedule-telegram-on-warning').checked,
-        };
+        const recipients = readTelegramRecipientsFromUI();
+        if (recipients.length === 0) {
+            showStatus('Please add at least one Telegram chat ID', 'error');
+            return;
+        }
+        const attachBackup = document.getElementById('backup-schedule-telegram-attach')?.checked || false;
+        retention.notifications.telegram = { enabled: true, recipients, attach_backup: attachBackup };
     }
     
     if (document.getElementById('backup-schedule-notify-email').checked) {
-        retention.notifications.email = {
-            enabled: true,
-            to: trimValue(document.getElementById('backup-schedule-email-to').value),
-            on_success: document.getElementById('backup-schedule-email-on-success').checked,
-            on_failure: document.getElementById('backup-schedule-email-on-failure').checked,
-            on_warning: document.getElementById('backup-schedule-email-on-warning').checked,
-        };
+        const recipients = readEmailRecipientsFromUI();
+        if (recipients.length === 0) {
+            showStatus('Please add at least one email recipient', 'error');
+            return;
+        }
+        const attachBackup = document.getElementById('backup-schedule-email-attach')?.checked || false;
+        retention.notifications.email = { enabled: true, recipients, attach_backup: attachBackup };
     }
 
     const payload = {
@@ -401,26 +734,25 @@ async function runScheduleNow(scheduleId) {
 function initBackupSchedulesTab() {
     // Backup schedule form
     document.getElementById('add-backup-schedule-btn').addEventListener('click', () => showBackupScheduleForm());
+    document.getElementById('run-enabled-schedules-btn')?.addEventListener('click', runEnabledSchedulesNow);
     document.getElementById('save-backup-schedule-btn').addEventListener('click', saveBackupSchedule);
     document.getElementById('cancel-backup-schedule-btn').addEventListener('click', hideBackupScheduleForm);
-    
-    // Run now button
-    const runNowBtn = document.getElementById('run-backup-schedule-now-btn');
-    if (runNowBtn) {
-        runNowBtn.addEventListener('click', async () => {
-            const id = document.getElementById('backup-schedule-id').value;
-            if (id) {
-                await runScheduleNow(id);
-            } else {
-                showStatus('Please save the schedule first before running', 'error');
-            }
-        });
+
+    const closeBtn = document.getElementById('backup-schedule-form-close-btn');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', hideBackupScheduleForm);
     }
     
     // Retention type change
     const retentionTypeEl = document.getElementById('backup-schedule-retention-type');
     if (retentionTypeEl) {
         retentionTypeEl.addEventListener('change', updateRetentionTypeVisibility);
+    }
+
+    const intervalEl = document.getElementById('backup-schedule-interval');
+    if (intervalEl) {
+        intervalEl.addEventListener('change', updateScheduleTimeOfDayVisibility);
+        updateScheduleTimeOfDayVisibility();
     }
     
     // Encryption toggle
@@ -439,6 +771,43 @@ function initBackupSchedulesTab() {
     const emailEl = document.getElementById('backup-schedule-notify-email');
     if (emailEl) {
         emailEl.addEventListener('change', updateEmailVisibility);
+    }
+
+    const addTelegramRecipientBtn = document.getElementById('backup-schedule-add-telegram-recipient');
+    if (addTelegramRecipientBtn) {
+        addTelegramRecipientBtn.addEventListener('click', () => {
+            const container = document.getElementById('backup-schedule-telegram-recipients');
+            if (!container) return;
+            container.appendChild(createNotificationRecipientRow({ kind: 'telegram', value: '', minSeverity: 'error' }));
+        });
+    }
+
+    const addEmailRecipientBtn = document.getElementById('backup-schedule-add-email-recipient');
+    if (addEmailRecipientBtn) {
+        addEmailRecipientBtn.addEventListener('click', () => {
+            const container = document.getElementById('backup-schedule-email-recipients');
+            if (!container) return;
+            container.appendChild(createNotificationRecipientRow({ kind: 'email', value: '', minSeverity: 'error' }));
+        });
+    }
+
+    const list = document.getElementById('backup-schedules-list');
+    if (list) {
+        list.addEventListener('click', (e) => {
+            const btn = e.target.closest('button[data-action]');
+            if (!btn) return;
+            const action = btn.getAttribute('data-action');
+            const id = btn.getAttribute('data-id');
+            if (!id) return;
+
+            if (action === 'schedule-run-now') {
+                runScheduleNow(id);
+            } else if (action === 'schedule-edit') {
+                editBackupSchedule(id);
+            } else if (action === 'schedule-delete') {
+                deleteBackupSchedule(id);
+            }
+        });
     }
 }
 

@@ -9,7 +9,7 @@ This module provides the BackupExecutionService class for:
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Optional
 import uuid
 import tempfile
@@ -20,13 +20,22 @@ from fastapi.concurrency import run_in_threadpool
 from backend.database.sql_handler import SQLHandler
 from backend.services.automation.config_crypto import decrypt_secrets
 from backend.services.automation.repository import AutomationRepository
-from backend.services.automation.storage.google_drive import GoogleDriveConfig, GoogleDriveStorage
-from backend.services.automation.storage.sftp import SFTPConfig, SFTPStorage
+from backend.services.automation.retention import BackupObject
+from backend.services.automation.storage.factory import build_storage_provider
 from backend.services.automation.storage.local import LocalConfig, LocalStorage
 from backend.services.automation.target_service import _normalize_local_test_db_address
+from backend.services.automation.backup_file_crypto import BackupEncryptionError, decrypt_to_temporary_file, is_encrypted_backup_file
+from backend.services.automation.restore_validation import (
+    allowed_backup_name_extensions_for_db_type,
+    is_backup_name_compatible_with_db_type,
+    validate_backup_compatibility,
+)
 from backend.services.neo4j.backup_service import Neo4jBackupService
 from backend.services.sql.backup_service import BackupService
-from models.sql.backup_automation import BackupDestination, BackupRun, BackupTarget
+from models.sql.backup_automation import AuditEvent, BackupDestination, BackupRun, BackupTarget
+from api.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class BackupExecutionService:
@@ -64,6 +73,15 @@ class BackupExecutionService:
         """
         run_id = str(uuid.uuid4())
         started_at = datetime.now(timezone.utc)
+        audit_event_id = str(uuid.uuid4())
+        audit_event_created = False
+
+        logger.info(
+            "Starting manual backup (target_id=%s, destinations=%s, use_local_storage=%s)",
+            target_id,
+            destination_ids,
+            use_local_storage,
+        )
 
         async with self.handler.AsyncSessionLocal() as session:
             target = await session.get(BackupTarget, target_id)
@@ -81,13 +99,48 @@ class BackupExecutionService:
                         raise ValueError(f"Destination not found: {dest_id}")
                     destinations.append(dest)
 
+            audit_destination_id: Optional[str] = None
+            audit_destination_name: Optional[str] = None
+            if use_local_storage:
+                audit_destination_id = "local"
+                audit_destination_name = "Local Storage"
+            elif len(destinations) == 1:
+                audit_destination_id = destinations[0].id
+                audit_destination_name = destinations[0].name
+            elif len(destinations) > 1:
+                audit_destination_name = "Multiple"
+
+            try:
+                session.add(
+                    AuditEvent(
+                        id=audit_event_id,
+                        operation="backup",
+                        trigger="manual",
+                        status="started",
+                        started_at=started_at,
+                        target_id=target.id,
+                        target_name=target.name,
+                        destination_id=audit_destination_id,
+                        destination_name=audit_destination_name,
+                        run_id=run_id,
+                        details={},
+                    )
+                )
+                await session.commit()
+                audit_event_created = True
+            except Exception:
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass
+
             # Create run record
             run = BackupRun(
                 id=run_id,
                 schedule_id=None,  # No schedule for immediate backups
                 status="started",
                 started_at=started_at,
-                details={"type": "immediate", "target_id": target_id},
+                details={"type": "immediate", "target_id": target_id, "target_name": target.name},
             )
             session.add(run)
             await session.commit()
@@ -97,16 +150,18 @@ class BackupExecutionService:
         try:
             # Create backup file
             filename, temp_path = await self._create_backup_file(target)
-            backup_filename = f"manual-{target.name}-{filename}"
+            subfolder = self._sanitize_name(target.name)
+            backup_filename = f"manual-{subfolder}-{filename}"
 
             uploads: List[Dict[str, Any]] = []
 
             if use_local_storage:
                 provider = LocalStorage(LocalConfig(base_path="/app/backups"))
+                dest_filename = f"{subfolder}/{backup_filename}"
                 uploaded = await run_in_threadpool(
                     provider.upload_backup,
                     local_path=temp_path,
-                    dest_name=backup_filename,
+                    dest_name=dest_filename,
                 )
                 uploads.append(
                     {
@@ -123,7 +178,6 @@ class BackupExecutionService:
                     provider = self._build_provider(dest)
 
                     # Use subfolder per database (remote destinations)
-                    subfolder = self._sanitize_name(target.name)
                     dest_filename = f"{subfolder}/{backup_filename}"
 
                     uploaded = await run_in_threadpool(
@@ -150,8 +204,36 @@ class BackupExecutionService:
                     run.status = "success"
                     run.finished_at = finished_at
                     run.backup_filename = backup_filename
-                    run.details = {"type": "immediate", "uploads": uploads}
+                    run.details = {
+                        "type": "immediate",
+                        "target_id": target_id,
+                        "target_name": target.name,
+                        "uploads": uploads,
+                    }
                 await session.commit()
+
+            if audit_event_created:
+                async with self.handler.AsyncSessionLocal() as session:
+                    try:
+                        evt = await session.get(AuditEvent, audit_event_id)
+                        if evt:
+                            evt.status = "success"
+                            evt.finished_at = finished_at
+                            evt.backup_name = backup_filename
+                            evt.details = {"uploads": uploads}
+                        await session.commit()
+                    except Exception:
+                        try:
+                            await session.rollback()
+                        except Exception:
+                            pass
+
+            logger.info(
+                "Manual backup completed successfully (target_id=%s, destinations=%s, use_local_storage=%s)",
+                target_id,
+                destination_ids,
+                use_local_storage,
+            )
 
             return {
                 "run_id": run_id,
@@ -161,6 +243,7 @@ class BackupExecutionService:
             }
 
         except Exception as exc:
+            logger.exception("Manual backup failed (target_id=%s)", target_id)
             finished_at = datetime.now(timezone.utc)
             async with self.handler.AsyncSessionLocal() as session:
                 run = await session.get(BackupRun, run_id)
@@ -168,7 +251,28 @@ class BackupExecutionService:
                     run.status = "failed"
                     run.finished_at = finished_at
                     run.error_message = str(exc)
+                    if isinstance(run.details, dict):
+                        run.details = {
+                            **run.details,
+                            "target_id": run.details.get("target_id") or target_id,
+                            "target_name": run.details.get("target_name") or getattr(target, "name", None),
+                        }
                 await session.commit()
+
+            if audit_event_created:
+                async with self.handler.AsyncSessionLocal() as session:
+                    try:
+                        evt = await session.get(AuditEvent, audit_event_id)
+                        if evt:
+                            evt.status = "failed"
+                            evt.finished_at = finished_at
+                            evt.error_message = str(exc)
+                        await session.commit()
+                    except Exception:
+                        try:
+                            await session.rollback()
+                        except Exception:
+                            pass
             raise ValueError(f"Backup failed: {exc}")
         finally:
             if temp_path and temp_path.exists():
@@ -183,6 +287,7 @@ class BackupExecutionService:
         target_id: str,
         destination_id: Optional[str],
         backup_id: str,
+        encryption_password: Optional[str] = None,
         use_local_storage: bool = False,
     ) -> Dict[str, Any]:
         """Restore a database from a backup file.
@@ -192,15 +297,31 @@ class BackupExecutionService:
             destination_id: ID of the destination where the backup is stored.
                 Required unless use_local_storage=True.
             backup_id: ID or name of the backup file to restore.
+            encryption_password: Password used to decrypt encrypted backups.
             use_local_storage: If True, restore from default local storage (/app/backups) and
                 ignore destination_id.
 
         Returns:
             Dict with status, message, and details.
 
+            When the backup is accepted but may be risky (e.g. MySQL vs MariaDB SQL
+            dumps), compatibility warnings may be included under details.warnings.
+
         Raises:
             ValueError: If target, destination, or backup not found.
         """
+        started_at = datetime.now(timezone.utc)
+        audit_event_id = str(uuid.uuid4())
+        audit_event_created = False
+
+        logger.info(
+            "Starting manual restore (target_id=%s, destination_id=%s, backup_id=%s, use_local_storage=%s)",
+            target_id,
+            destination_id,
+            backup_id,
+            use_local_storage,
+        )
+
         async with self.handler.AsyncSessionLocal() as session:
             target = await session.get(BackupTarget, target_id)
             if not target:
@@ -215,13 +336,46 @@ class BackupExecutionService:
                 if not dest:
                     raise ValueError(f"Destination not found: {destination_id}")
 
+            try:
+                session.add(
+                    AuditEvent(
+                        id=audit_event_id,
+                        operation="restore",
+                        trigger="manual",
+                        status="started",
+                        started_at=started_at,
+                        target_id=target.id,
+                        target_name=target.name,
+                        destination_id=("local" if use_local_storage else getattr(dest, "id", None)),
+                        destination_name=("Local Storage" if use_local_storage else getattr(dest, "name", None)),
+                        backup_id=str(backup_id),
+                        backup_name=str(backup_id),
+                        details={},
+                    )
+                )
+                await session.commit()
+                audit_event_created = True
+            except Exception:
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass
+
         temp_path: Optional[Path] = None
+        downloaded_path: Optional[Path] = None
+        decrypted_path: Optional[Path] = None
+        restore_warnings: List[str] = []
 
         try:
             if use_local_storage:
                 provider = LocalStorage(LocalConfig(base_path="/app/backups"))
+                bid = str(backup_id or "").replace("\\", "/")
+                rel = PurePosixPath(bid)
+                if not bid or rel.is_absolute() or ".." in rel.parts:
+                    raise ValueError("Invalid backup_id")
             else:
                 provider = self._build_provider(dest)
+                self._validate_destination_backup_id(dest, backup_id)
 
             suffix = Path(str(backup_id)).suffix or ".backup"
             fd, tmp_name = tempfile.mkstemp(suffix=suffix)
@@ -229,14 +383,65 @@ class BackupExecutionService:
             temp_path = Path(tmp_name)
 
             # Download backup to temp file
-            temp_path = await run_in_threadpool(
+            downloaded_path = await run_in_threadpool(
                 provider.download_backup,
                 backup_id=backup_id,
                 dest_path=temp_path,
             )
 
+            restore_input_path = downloaded_path
+
+            if restore_input_path and is_encrypted_backup_file(restore_input_path):
+                password = str(encryption_password or "").strip()
+                if not password:
+                    raise ValueError("Selected backup is encrypted. Please provide encryption_password to restore it.")
+
+                try:
+                    decrypted_path = await run_in_threadpool(
+                        decrypt_to_temporary_file,
+                        encrypted_path=restore_input_path,
+                        password=password,
+                        suffix=".decrypted",
+                    )
+                except BackupEncryptionError as exc:
+                    raise ValueError(str(exc)) from exc
+
+                restore_input_path = decrypted_path
+
+            if use_local_storage or (dest and dest.destination_type != "google_drive"):
+                if not is_backup_name_compatible_with_db_type(db_type=target.db_type, backup_name=str(backup_id)):
+                    raise ValueError("Selected backup filename does not match the target database type")
+
+            compat = validate_backup_compatibility(target_db_type=target.db_type, backup_path=restore_input_path)
+            restore_warnings.extend(list(compat.warnings or []))
+
+            for w in restore_warnings:
+                logger.warning(
+                    "Restore compatibility warning (target_id=%s, backup_id=%s): %s",
+                    target_id,
+                    backup_id,
+                    w,
+                )
+
             # Restore the backup
-            await self._restore_backup_file(target, temp_path)
+            await self._restore_backup_file(target, restore_input_path)
+
+            finished_at = datetime.now(timezone.utc)
+            if audit_event_created:
+                async with self.handler.AsyncSessionLocal() as session:
+                    try:
+                        evt = await session.get(AuditEvent, audit_event_id)
+                        if evt:
+                            evt.status = "success"
+                            evt.finished_at = finished_at
+                            if restore_warnings:
+                                evt.details = {"warnings": restore_warnings}
+                        await session.commit()
+                    except Exception:
+                        try:
+                            await session.rollback()
+                        except Exception:
+                            pass
 
             return {
                 "status": "success",
@@ -245,10 +450,34 @@ class BackupExecutionService:
                     "target_id": target_id,
                     "destination_id": destination_id if not use_local_storage else "local",
                     "backup_id": backup_id,
+                    "warnings": restore_warnings,
                 },
             }
 
         except Exception as exc:
+            logger.exception(
+                "Manual restore failed (target_id=%s, destination_id=%s, backup_id=%s)",
+                target_id,
+                destination_id,
+                backup_id,
+            )
+            finished_at = datetime.now(timezone.utc)
+            if audit_event_created:
+                async with self.handler.AsyncSessionLocal() as session:
+                    try:
+                        evt = await session.get(AuditEvent, audit_event_id)
+                        if evt:
+                            evt.status = "failed"
+                            evt.finished_at = finished_at
+                            evt.error_message = str(exc)
+                            if restore_warnings:
+                                evt.details = {"warnings": restore_warnings}
+                        await session.commit()
+                    except Exception:
+                        try:
+                            await session.rollback()
+                        except Exception:
+                            pass
             raise ValueError(f"Restore failed: {exc}")
         finally:
             if temp_path and temp_path.exists():
@@ -281,10 +510,12 @@ class BackupExecutionService:
                 raise ValueError(f"Destination not found: {destination_id}")
 
             target_name = None
+            target_db_type: Optional[str] = None
             if target_id:
                 target = await session.get(BackupTarget, target_id)
                 if target:
                     target_name = self._sanitize_name(target.name)
+                    target_db_type = target.db_type
 
         try:
             provider = self._build_provider(dest)
@@ -292,6 +523,15 @@ class BackupExecutionService:
             # List backups, optionally filtered by target subfolder
             prefix = f"{target_name}/" if target_name else ""
             backups = await run_in_threadpool(provider.list_backups, prefix=prefix)
+
+            if target_db_type:
+                allowed = tuple(s.lower() for s in allowed_backup_name_extensions_for_db_type(target_db_type))
+                if allowed:
+                    backups = [
+                        b
+                        for b in backups
+                        if any(str(getattr(b, "name", "")).lower().endswith(suf) for suf in allowed)
+                    ]
 
             return [
                 {
@@ -305,6 +545,184 @@ class BackupExecutionService:
 
         except Exception as exc:
             raise ValueError(f"Failed to list backups: {exc}")
+
+    async def download_backup_from_destination(
+        self,
+        *,
+        destination_id: str,
+        backup_id: str,
+        filename: Optional[str] = None,
+    ) -> Path:
+        """Download a backup from a destination to a temporary file.
+
+        Args:
+            destination_id: ID of the destination where the backup is stored.
+            backup_id: Provider-specific identifier of the backup.
+            filename: Optional user-friendly name (used to preserve extension).
+
+        Returns:
+            Path: Path to the downloaded temporary file.
+
+        Raises:
+            ValueError: If destination not found or download fails.
+        """
+
+        async with self.handler.AsyncSessionLocal() as session:
+            dest = await session.get(BackupDestination, destination_id)
+            if not dest:
+                raise ValueError(f"Destination not found: {destination_id}")
+
+        self._validate_destination_backup_id(dest, backup_id)
+
+        provider = self._build_provider(dest)
+        suffix_source = filename or backup_id
+        suffix = Path(str(suffix_source)).suffix or ".backup"
+        fd, tmp_name = tempfile.mkstemp(suffix=suffix)
+        os.close(fd)
+        temp_path = Path(tmp_name)
+
+        try:
+            await run_in_threadpool(provider.download_backup, backup_id=backup_id, dest_path=temp_path)
+            return temp_path
+        except Exception as exc:
+            try:
+                if temp_path.exists():
+                    temp_path.unlink()
+            except Exception:
+                pass
+            raise ValueError(f"Failed to download backup: {exc}")
+
+    async def delete_backup_from_destination(
+        self,
+        *,
+        destination_id: str,
+        backup_id: str,
+        name: Optional[str] = None,
+    ) -> None:
+        """Delete a backup file from a destination.
+
+        Args:
+            destination_id: ID of the destination where the backup is stored.
+            backup_id: Provider-specific identifier of the backup.
+            name: Optional display name for logs/metadata.
+
+        Raises:
+            ValueError: If destination not found or delete fails.
+        """
+
+        started_at = datetime.now(timezone.utc)
+        audit_event_id = str(uuid.uuid4())
+        audit_event_created = False
+        target_name: Optional[str] = None
+        display_name = str(name or "")
+        if "/" in display_name:
+            target_name = display_name.split("/", 1)[0] or None
+
+        async with self.handler.AsyncSessionLocal() as session:
+            dest = await session.get(BackupDestination, destination_id)
+            if not dest:
+                raise ValueError(f"Destination not found: {destination_id}")
+
+            try:
+                session.add(
+                    AuditEvent(
+                        id=audit_event_id,
+                        operation="delete_backup",
+                        trigger="manual",
+                        status="started",
+                        started_at=started_at,
+                        target_name=target_name,
+                        destination_id=dest.id,
+                        destination_name=dest.name,
+                        backup_id=str(backup_id),
+                        backup_name=str(name or backup_id),
+                        details={},
+                    )
+                )
+                await session.commit()
+                audit_event_created = True
+            except Exception:
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass
+
+        self._validate_destination_backup_id(dest, backup_id)
+        provider = self._build_provider(dest)
+
+        obj = BackupObject(
+            id=str(backup_id),
+            name=str(name or backup_id),
+            created_at=datetime.now(timezone.utc),
+            size=None,
+        )
+
+        try:
+            await run_in_threadpool(provider.delete_backups, [obj])
+            finished_at = datetime.now(timezone.utc)
+            if audit_event_created:
+                async with self.handler.AsyncSessionLocal() as session:
+                    try:
+                        evt = await session.get(AuditEvent, audit_event_id)
+                        if evt:
+                            evt.status = "success"
+                            evt.finished_at = finished_at
+                        await session.commit()
+                    except Exception:
+                        try:
+                            await session.rollback()
+                        except Exception:
+                            pass
+        except Exception as exc:
+            finished_at = datetime.now(timezone.utc)
+            if audit_event_created:
+                async with self.handler.AsyncSessionLocal() as session:
+                    try:
+                        evt = await session.get(AuditEvent, audit_event_id)
+                        if evt:
+                            evt.status = "failed"
+                            evt.finished_at = finished_at
+                            evt.error_message = str(exc)
+                        await session.commit()
+                    except Exception:
+                        try:
+                            await session.rollback()
+                        except Exception:
+                            pass
+            raise ValueError(f"Failed to delete backup: {exc}")
+
+    def _validate_destination_backup_id(self, destination: BackupDestination, backup_id: str) -> None:
+        """Validate a destination backup id to reduce accidental misuse.
+
+        This API is protected by admin/delete keys, but we still validate obvious
+        path traversal and out-of-base deletions for destinations that expose
+        filesystem-like identifiers.
+
+        Args:
+            destination: Destination model.
+            backup_id: Provider-specific identifier.
+
+        Raises:
+            ValueError: When backup_id is invalid for the destination.
+        """
+
+        bid = str(backup_id or "").replace("\\", "/")
+        if not bid:
+            raise ValueError("backup_id is required")
+
+        if destination.destination_type == "local":
+            rel = PurePosixPath(bid)
+            if rel.is_absolute() or ".." in rel.parts:
+                raise ValueError("Invalid backup_id")
+            return
+
+        if destination.destination_type == "sftp":
+            cfg = destination.config or {}
+            base_path = str(cfg.get("path", cfg.get("base_path", "/backups")))
+            base_norm = base_path.rstrip("/")
+            if not bid.startswith(f"{base_norm}/"):
+                raise ValueError("Invalid backup_id")
+            return
 
     def _sanitize_name(self, name: str) -> str:
         """Sanitize a name for use as a folder/file name.
@@ -411,11 +829,11 @@ class BackupExecutionService:
 
             service = Neo4jBackupService()
             await run_in_threadpool(
-                service.restore_from_file,
+                service.restore_backup,
+                backup_file=backup_path,
                 neo4j_url=neo4j_url,
                 db_user=db_user,
                 db_password=db_password,
-                backup_path=backup_path,
             )
             return
 
@@ -435,14 +853,14 @@ class BackupExecutionService:
 
             service = BackupService()
             await run_in_threadpool(
-                service.restore_from_file,
+                service.restore_backup,
+                backup_file=backup_path,
                 db_type=db_type,
                 db_host=raw_host,
                 db_port=raw_port,
                 db_name=str(cfg.get("database", cfg.get("db_name", ""))),
                 db_user=str(cfg.get("user", cfg.get("db_user", ""))),
                 db_password=str(secrets.get("password", secrets.get("db_password", ""))),
-                backup_path=backup_path,
             )
             return
 
@@ -460,32 +878,4 @@ class BackupExecutionService:
         Raises:
             ValueError: When destination type is unsupported.
         """
-        secrets = decrypt_secrets(destination.config_encrypted)
-        cfg = destination.config or {}
-
-        if destination.destination_type == "local":
-            local_cfg = LocalConfig(
-                base_path=str(cfg.get("path", "/app/backups")),
-            )
-            return LocalStorage(local_cfg)
-
-        if destination.destination_type == "sftp":
-            sftp_cfg = SFTPConfig(
-                host=str(cfg.get("host", "")),
-                port=int(cfg.get("port", 22)),
-                username=str(cfg.get("username", "")),
-                base_path=str(cfg.get("path", "/backups")),
-                password=secrets.get("password"),
-                private_key=secrets.get("private_key"),
-                private_key_passphrase=secrets.get("private_key_passphrase"),
-            )
-            return SFTPStorage(sftp_cfg)
-
-        if destination.destination_type == "google_drive":
-            g_cfg = GoogleDriveConfig(
-                service_account_json=str(secrets.get("service_account_json", "")),
-                folder_id=str(cfg.get("folder_id", "")),
-            )
-            return GoogleDriveStorage(g_cfg)
-
-        raise ValueError(f"Unsupported destination type: {destination.destination_type}")
+        return build_storage_provider(destination)

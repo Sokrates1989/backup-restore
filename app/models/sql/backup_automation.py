@@ -187,3 +187,59 @@ class BackupRun(Base):
     error_message = Column(Text, nullable=True)
 
     schedule = relationship("BackupSchedule", back_populates="runs")
+
+
+class AuditEvent(Base):
+    """Audit event record for important operations.
+
+    This table is intended to provide a unified, filterable history stream
+    for actions such as backups, restores, deletions, and configuration
+    changes.
+
+    Attributes:
+        id (str): Primary key UUID.
+        operation (str): Operation type (e.g. backup|restore|delete_backup).
+        trigger (str): Trigger type (manual|scheduled|system).
+        status (str): started|success|failed.
+        started_at (datetime): Event start timestamp.
+        finished_at (datetime): Event finish timestamp.
+        target_id (str): Optional target id.
+        target_name (str): Optional target display name.
+        destination_id (str): Optional destination id.
+        destination_name (str): Optional destination display name.
+        schedule_id (str): Optional schedule id.
+        schedule_name (str): Optional schedule name.
+        backup_id (str): Optional provider-specific backup identifier.
+        backup_name (str): Optional backup filename/path.
+        run_id (str): Optional BackupRun id.
+        details (dict): Free-form details.
+        error_message (str): Error summary when failed.
+    """
+
+    __tablename__ = "audit_events"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    operation = Column(String(64), nullable=False, index=True)
+    trigger = Column(String(32), nullable=False, index=True)
+    status = Column(String(32), nullable=False, default="success", index=True)
+
+    started_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+
+    target_id = Column(String, nullable=True, index=True)
+    target_name = Column(String(255), nullable=True)
+
+    destination_id = Column(String, nullable=True, index=True)
+    destination_name = Column(String(255), nullable=True)
+
+    schedule_id = Column(String, nullable=True, index=True)
+    schedule_name = Column(String(255), nullable=True)
+
+    backup_id = Column(String(1024), nullable=True)
+    backup_name = Column(String(1024), nullable=True)
+
+    run_id = Column(String, nullable=True, index=True)
+
+    details = Column(JSON, nullable=False, default=dict)
+    error_message = Column(Text, nullable=True)

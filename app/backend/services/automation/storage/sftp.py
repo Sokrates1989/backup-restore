@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import io
+import posixpath
+import stat
 from pathlib import Path
 from typing import List, Optional
 
@@ -55,23 +57,24 @@ class SFTPStorage(StorageProvider):
         """
 
         with self._connect() as sftp:
-            self._ensure_dir(sftp, self._config.base_path)
-            items = sftp.listdir_attr(self._config.base_path)
+            base_path = self._config.base_path
+            self._ensure_dir(sftp, base_path)
 
             backups: List[BackupObject] = []
-            for item in items:
-                if not prefix or item.filename.startswith(prefix):
-                    created = datetime.fromtimestamp(item.st_mtime, tz=timezone.utc)
-                    remote_path = f"{self._config.base_path.rstrip('/')}/{item.filename}"
-                    backups.append(
-                        BackupObject(
-                            id=remote_path,
-                            name=item.filename,
-                            created_at=created,
-                            size=item.st_size,
-                        )
+            for remote_path, rel_name, attr in self._walk_dir(sftp, base_path):
+                if prefix and not rel_name.startswith(prefix):
+                    continue
+                created = datetime.fromtimestamp(attr.st_mtime, tz=timezone.utc)
+                backups.append(
+                    BackupObject(
+                        id=remote_path,
+                        name=rel_name,
+                        created_at=created,
+                        size=attr.st_size,
                     )
+                )
 
+            backups.sort(key=lambda b: b.created_at, reverse=True)
             return backups
 
     def upload_backup(self, *, local_path: Path, dest_name: str) -> BackupObject:
@@ -86,9 +89,21 @@ class SFTPStorage(StorageProvider):
         """
 
         with self._connect() as sftp:
-            self._ensure_dir(sftp, self._config.base_path)
-            remote_path = f"{self._config.base_path.rstrip('/')}/{dest_name}"
-            sftp.put(str(local_path), remote_path)
+            base_path = self._config.base_path
+            self._ensure_dir(sftp, base_path)
+
+            remote_path = f"{base_path.rstrip('/')}/{dest_name}"
+            remote_dir = posixpath.dirname(remote_path)
+            if remote_dir:
+                self._ensure_dir(sftp, remote_dir)
+
+            try:
+                sftp.put(str(local_path), remote_path)
+            except PermissionError as exc:
+                raise PermissionError(
+                    f"Permission denied uploading to '{remote_path}'. "
+                    f"Check remote folder permissions/ownership for '{remote_dir or base_path}'."
+                ) from exc
 
             attr = sftp.stat(remote_path)
             created = datetime.fromtimestamp(attr.st_mtime, tz=timezone.utc)
@@ -98,6 +113,39 @@ class SFTPStorage(StorageProvider):
                 created_at=created,
                 size=attr.st_size,
             )
+
+    def _walk_dir(self, sftp: paramiko.SFTPClient, base_path: str):
+        """Yield files under base_path recursively.
+
+        Args:
+            sftp: Connected SFTP client.
+            base_path: Remote base path.
+
+        Yields:
+            Tuple[str, str, Any]: (remote_path, rel_name, attr)
+        """
+
+        base_norm = base_path.rstrip("/")
+        stack = [base_norm]
+
+        while stack:
+            current = stack.pop()
+            try:
+                items = sftp.listdir_attr(current)
+            except FileNotFoundError:
+                continue
+
+            for item in items:
+                remote_path = f"{current.rstrip('/')}/{item.filename}"
+                if stat.S_ISDIR(item.st_mode):
+                    stack.append(remote_path)
+                    continue
+
+                rel_name = remote_path
+                if remote_path.startswith(base_norm + "/"):
+                    rel_name = remote_path[len(base_norm) + 1 :]
+
+                yield remote_path, rel_name, item
 
     def download_backup(self, *, backup_id: str, dest_path: Path) -> Path:
         """Download a backup from SFTP.

@@ -17,16 +17,26 @@ import os
 import sys
 import time
 from datetime import datetime
+from typing import Any, List, Tuple
 
 import httpx
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
+from api.logging_config import configure_logging, get_logger
+
+try:
+    configure_logging(
+        log_dir=os.environ.get("LOG_DIR", "/app/logs"),
+        log_level=os.environ.get("LOG_LEVEL", "INFO"),
+        debug=os.environ.get("DEBUG", "").strip().lower() in ("1", "true", "yes"),
+        log_filename=os.environ.get("LOG_FILENAME", "backup-restore-runner.log"),
+    )
+except Exception:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+logger = get_logger(__name__)
 
 
 def get_env_or_file(env_name: str, file_env_name: str, default: str = "") -> str:
@@ -98,11 +108,66 @@ async def run_due_direct(max_schedules: int = 10) -> dict:
     return await service.run_due(max_schedules=max_schedules)
 
 
+def extract_run_due_summary(result: Any) -> Tuple[int, List[str]]:
+    """Extract executed count and errors from a run-due result.
+
+    The runner supports two shapes:
+
+    - Legacy runner shape: {"executed": int, "errors": [str, ...]}
+    - Current backend shape: {"count": int, "results": [{"status": "success"|"failed", ...}]}
+
+    Args:
+        result: Parsed JSON response (API mode) or returned dict (direct mode).
+
+    Returns:
+        Tuple[int, List[str]]: (executed_count, errors)
+    """
+
+    if not isinstance(result, dict):
+        return 0, [f"Unexpected run-due result type: {type(result).__name__}"]
+
+    executed_raw = result.get("executed", None)
+    if executed_raw is None:
+        executed_raw = result.get("count", 0)
+
+    try:
+        executed = int(executed_raw or 0)
+    except (TypeError, ValueError):
+        executed = 0
+
+    errors: List[str] = []
+
+    legacy_errors = result.get("errors", None)
+    if isinstance(legacy_errors, list):
+        for err in legacy_errors:
+            if err is None:
+                continue
+            errors.append(str(err))
+
+    results = result.get("results", None)
+    if isinstance(results, list):
+        for item in results:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("status", "")).lower() != "failed":
+                continue
+            schedule_id = item.get("schedule_id")
+            error_text = item.get("error") or item.get("message") or "Unknown error"
+            if schedule_id is not None:
+                errors.append(f"schedule_id={schedule_id}: {error_text}")
+            else:
+                errors.append(str(error_text))
+
+    return executed, errors
+
+
 async def run_cycle(
     mode: str,
     api_url: str = "",
     api_key: str = "",
     max_schedules: int = 10,
+    drain_mode: bool = False,
+    drain_max_batches: int = 20,
 ) -> None:
     """Run one backup cycle.
 
@@ -111,30 +176,59 @@ async def run_cycle(
         api_url: API URL for API mode.
         api_key: API key for API mode.
         max_schedules: Maximum schedules per cycle.
+        drain_mode: When True, keep running batches in a single cycle until fewer than
+            max_schedules were executed (or a safety limit is reached).
+        drain_max_batches: Safety limit for how many batches may be executed in a single
+            cycle when drain_mode is enabled.
     """
 
     try:
         logger.info("Starting backup cycle...")
 
-        if mode == "api":
-            result = await run_due_via_api(api_url, api_key, max_schedules)
-        else:
-            result = await run_due_direct(max_schedules)
+        total_executed = 0
+        all_errors: List[str] = []
 
-        executed = result.get("executed", 0)
-        errors = result.get("errors", [])
+        batches = 0
+        while True:
+            batches += 1
+            if batches > max(1, drain_max_batches):
+                logger.warning(
+                    "Drain mode reached max batches (%s). Stopping to avoid infinite backlog loop.",
+                    drain_max_batches,
+                )
+                break
 
-        if executed > 0:
-            logger.info(f"Executed {executed} schedule(s)")
+            if mode == "api":
+                result = await run_due_via_api(api_url, api_key, max_schedules)
+            else:
+                result = await run_due_direct(max_schedules)
+
+            executed, errors = extract_run_due_summary(result)
+            total_executed += executed
+            all_errors.extend(errors)
+
+            if not drain_mode:
+                break
+
+            # When we execute a full batch, there may still be more due schedules.
+            # Keep draining until we don't fill the batch (or hit a safety limit).
+            if executed < max_schedules:
+                break
+
+        if total_executed > 0:
+            if drain_mode and batches > 1:
+                logger.info("Executed %s schedule(s) across %s batch(es)", total_executed, batches)
+            else:
+                logger.info("Executed %s schedule(s)", total_executed)
         else:
             logger.debug("No schedules due")
 
-        if errors:
-            for err in errors:
-                logger.error(f"Schedule error: {err}")
+        if all_errors:
+            for err in all_errors:
+                logger.error("Schedule error: %s", err)
 
     except Exception as e:
-        logger.error(f"Backup cycle failed: {e}")
+        logger.error("Backup cycle failed: %s", e)
 
 
 async def main_loop(
@@ -143,6 +237,8 @@ async def main_loop(
     api_url: str = "",
     api_key: str = "",
     max_schedules: int = 10,
+    drain_mode: bool = False,
+    drain_max_batches: int = 20,
 ) -> None:
     """Main runner loop.
 
@@ -152,6 +248,10 @@ async def main_loop(
         api_url: API URL for API mode.
         api_key: API key for API mode.
         max_schedules: Maximum schedules per cycle.
+        drain_mode: When True, keep running batches in a single cycle until fewer than
+            max_schedules were executed (or a safety limit is reached).
+        drain_max_batches: Safety limit for how many batches may be executed in a single
+            cycle when drain_mode is enabled.
     """
 
     async def wait_for_api_ready(timeout_seconds: int = 120) -> None:
@@ -178,7 +278,13 @@ async def main_loop(
 
                 await asyncio.sleep(1)
 
-    logger.info(f"Backup runner started (mode={mode}, interval={interval}s)")
+    logger.info(
+        "Backup runner started (mode=%s, interval=%ss, max_schedules=%s, drain_mode=%s)",
+        mode,
+        interval,
+        max_schedules,
+        drain_mode,
+    )
 
     if mode == "api":
         logger.info("Waiting for API to become ready...")
@@ -186,7 +292,14 @@ async def main_loop(
         logger.info("API is ready")
 
     while True:
-        await run_cycle(mode, api_url, api_key, max_schedules)
+        await run_cycle(
+            mode,
+            api_url,
+            api_key,
+            max_schedules,
+            drain_mode=drain_mode,
+            drain_max_batches=drain_max_batches,
+        )
         await asyncio.sleep(interval)
 
 
@@ -223,6 +336,18 @@ def main():
         help="Maximum schedules per cycle (default: 10)",
     )
     parser.add_argument(
+        "--drain",
+        action="store_true",
+        default=os.environ.get("RUNNER_DRAIN_MODE", "").strip().lower() in ("1", "true", "yes"),
+        help="When enabled, run multiple batches per cycle to drain past-due schedules",
+    )
+    parser.add_argument(
+        "--drain-max-batches",
+        type=int,
+        default=int(os.environ.get("RUNNER_DRAIN_MAX_BATCHES", "20")),
+        help="Safety limit for drain batches per cycle (default: 20)",
+    )
+    parser.add_argument(
         "--once",
         action="store_true",
         help="Run once and exit (for testing)",
@@ -235,7 +360,16 @@ def main():
         sys.exit(1)
 
     if args.once:
-        asyncio.run(run_cycle(args.mode, args.api_url, args.api_key, args.max_schedules))
+        asyncio.run(
+            run_cycle(
+                args.mode,
+                args.api_url,
+                args.api_key,
+                args.max_schedules,
+                drain_mode=args.drain,
+                drain_max_batches=args.drain_max_batches,
+            )
+        )
     else:
         asyncio.run(
             main_loop(
@@ -244,6 +378,8 @@ def main():
                 args.api_url,
                 args.api_key,
                 args.max_schedules,
+                drain_mode=args.drain,
+                drain_max_batches=args.drain_max_batches,
             )
         )
 

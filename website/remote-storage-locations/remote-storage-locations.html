@@ -13,7 +13,10 @@
 
     <!-- Add/Edit Remote Storage Location Form -->
     <div id="remote-storage-location-form" class="card hidden">
-        <h2 id="remote-storage-location-form-title">Add Remote Storage Location</h2>
+        <div class="form-header">
+            <h2 id="remote-storage-location-form-title">Add Remote Storage Location</h2>
+            <button type="button" id="remote-storage-location-form-close-btn" class="modal-close" aria-label="Close">×</button>
+        </div>
         <input type="hidden" id="remote-storage-location-id">
         <div class="form-group">
             <label for="remote-storage-location-name">Name</label>
@@ -29,20 +32,20 @@
         
         <!-- Local Config -->
         <div id="remote-storage-local-config" class="remote-storage-config hidden">
+            <div class="form-group">
+                <label for="remote-storage-local-path">Directory Path</label>
+                <input type="text" id="remote-storage-local-path" placeholder="/app/backups">
+            </div>
             <div class="warning-box">
                 <strong>⚠️ Testing Only</strong>
                 Local storage should only be used for testing and development. 
                 It stores backups on the server filesystem, which:
-                <ul style="margin: 0.5rem 0 0 1rem; padding: 0;">
+                <ul class="list-indented">
                     <li>Bloats server storage over time</li>
                     <li>Is less secure than remote storage</li>
                     <li>Does not provide off-site disaster recovery</li>
                 </ul>
-                For production, use SFTP or Google Drive.
-            </div>
-            <div class="form-group">
-                <label for="remote-storage-local-path">Directory Path</label>
-                <input type="text" id="remote-storage-local-path" placeholder="/app/backups">
+                For production, use remote storage locations.
             </div>
         </div>
 
@@ -51,7 +54,7 @@
             <div class="warning-box">
                 <strong>🧭 SFTP Setup (Ubuntu 22.04 example)</strong>
                 <p>Server-side checklist:</p>
-                <ul style="margin: 0.5rem 0 0 1rem; padding: 0;">
+                <ul class="list-indented">
                     <li>Install SSH server: <code>sudo apt update && sudo apt install -y openssh-server</code></li>
                     <li>Ensure port 22 is reachable: <code>sudo ufw allow 22/tcp</code> (or open your firewall/security group)</li>
                     <li>Create a user: <code>sudo adduser backup</code></li>
@@ -60,9 +63,9 @@
                 </ul>
                 <p class="hint">For production, consider SSH key auth and disabling passwords.</p>
 
-                <details class="hint" style="margin-top: 0.75rem;">
+                <details class="hint mt-075">
                     <summary><strong>🔐 SSH key auth + disable passwords (recommended)</strong></summary>
-                    <div style="margin-top: 0.5rem;">
+                    <div class="mt-05">
                         <p><strong>1) Create a key pair (client machine)</strong></p>
                         <p><code>ssh-keygen -t ed25519 -a 100 -f ~/.ssh/backup_id_ed25519</code></p>
 
@@ -70,7 +73,7 @@
                         <p>Either via:</p>
                         <p><code>ssh-copy-id -i ~/.ssh/backup_id_ed25519.pub backup@your-server</code></p>
                         <p>Or manually:</p>
-                        <ul style="margin: 0.5rem 0 0 1rem; padding: 0;">
+                        <ul class="list-indented">
                             <li>Create folder: <code>sudo -u backup mkdir -p /home/backup/.ssh</code></li>
                             <li>Append key: <code>sudo sh -c 'cat backup_id_ed25519.pub >> /home/backup/.ssh/authorized_keys'</code></li>
                             <li>Fix perms: <code>sudo chown -R backup:backup /home/backup/.ssh && sudo chmod 700 /home/backup/.ssh && sudo chmod 600 /home/backup/.ssh/authorized_keys</code></li>
@@ -78,7 +81,7 @@
 
                         <p><strong>3) Enable key auth in SSH and (optionally) disable passwords</strong></p>
                         <p>Edit: <code>sudo nano /etc/ssh/sshd_config</code></p>
-                        <ul style="margin: 0.5rem 0 0 1rem; padding: 0;">
+                        <ul class="list-indented">
                             <li>Ensure: <code>PubkeyAuthentication yes</code></li>
                             <li>Optional hardening: <code>PasswordAuthentication no</code></li>
                             <li>Optional hardening: <code>KbdInteractiveAuthentication no</code></li>
@@ -129,13 +132,18 @@
             <div class="warning-box">
                 <strong>🧭 Google Drive Setup (Service Account)</strong>
                 <p>Steps:</p>
-                <ul style="margin: 0.5rem 0 0 1rem; padding: 0;">
+                <ul class="list-indented">
                     <li>Create a Google Cloud project and enable <strong>Google Drive API</strong></li>
                     <li>Create a <strong>Service Account</strong> and generate a <strong>JSON key</strong></li>
                     <li>Create a folder in Google Drive and <strong>share it</strong> with the service account email</li>
                     <li>Copy the folder id from the URL and paste it below</li>
                     <li>Paste the JSON key below (stored encrypted in the database)</li>
                 </ul>
+                <p class="hint">
+                    Folder URL example:<br/>
+                    <code>https://drive.google.com/drive/folders/&lt;FOLDER_ID&gt;?usp=sharing</code><br/>
+                    Only the <code>&lt;FOLDER_ID&gt;</code> part is needed.
+                </p>
                 <p class="hint">This is a server-managed integration. OAuth user-login flow is not implemented yet.</p>
             </div>
             <div class="form-group">
@@ -145,6 +153,8 @@
             <div class="form-group">
                 <label for="remote-storage-gdrive-credentials">Service Account JSON</label>
                 <textarea id="remote-storage-gdrive-credentials" rows="4" placeholder='{"type": "service_account", ...}'></textarea>
+                <p class="hint">You can paste the JSON or upload the downloaded <code>.json</code> key file.</p>
+                <input type="file" id="remote-storage-gdrive-credentials-file" accept="application/json" />
             </div>
         </div>
 

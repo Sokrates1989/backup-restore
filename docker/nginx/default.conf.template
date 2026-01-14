@@ -5,9 +5,16 @@ upstream api {
     server $API_HOST:$API_PORT;
 }
 
+map $request_method $log_head_requests {
+    default 1;
+    HEAD 0;
+}
+
 server {
     listen 80;
     server_name _;
+
+    access_log /var/log/nginx/access.log main if=$log_head_requests;
 
     # Serve static files
     root /usr/share/nginx/html;
@@ -113,8 +120,8 @@ server {
 
     # Cache static assets
     location ~* \.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        expires 7d;
-        add_header Cache-Control "public, immutable";
+        expires $ASSET_EXPIRES;
+        add_header Cache-Control "$ASSET_CACHE_CONTROL";
     }
 
     # Disable caching for HTML and JSON
