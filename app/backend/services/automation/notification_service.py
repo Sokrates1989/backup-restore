@@ -32,6 +32,9 @@ from backend.services.automation.notification_utils import (
 
 logger = logging.getLogger(__name__)
 
+TELEGRAM_DEFAULT_ATTACHMENT_MB = 50
+EMAIL_DEFAULT_ATTACHMENT_MB = 10
+
 
 def _build_smtp_ssl_context(*, allow_insecure: bool, ca_cert_file: str) -> ssl.SSLContext:
     """Build an SSL context for SMTP connections.
@@ -97,6 +100,92 @@ def _format_size_mb(size_bytes: Optional[int]) -> Optional[str]:
 
     size_mb = size_bytes / (1024 * 1024)
     return f"{size_mb:.2f} MB"
+
+
+def _coerce_positive_float(value: Any) -> Optional[float]:
+    """Coerce a value to a positive float.
+
+    Args:
+        value: Raw value.
+
+    Returns:
+        Optional[float]: Positive float or None when invalid.
+    """
+
+    if value is None:
+        return None
+
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    if parsed <= 0:
+        return None
+
+    return parsed
+
+
+def _resolve_attachment_limit_bytes(channel_config: Dict[str, Any], *, default_mb: float) -> Optional[int]:
+    """Resolve an attachment limit from notification config.
+
+    Args:
+        channel_config: Notification channel configuration.
+        default_mb: Default attachment size in MB.
+
+    Returns:
+        Optional[int]: Attachment size limit in bytes.
+    """
+
+    raw_limit = channel_config.get("attach_max_mb") if isinstance(channel_config, dict) else None
+    limit_mb = _coerce_positive_float(raw_limit)
+    if limit_mb is None:
+        limit_mb = float(default_mb)
+    return int(limit_mb * 1024 * 1024)
+
+
+def _should_attach_backup(
+    *,
+    attach_backup: bool,
+    status: str,
+    attachment_path: Optional[Path],
+    size_bytes: Optional[int],
+    limit_bytes: Optional[int],
+) -> tuple[bool, Optional[str]]:
+    """Decide whether a backup attachment should be sent.
+
+    Args:
+        attach_backup: Whether attachments are enabled.
+        status: Backup status.
+        attachment_path: Path to the local attachment.
+        size_bytes: Attachment size in bytes.
+        limit_bytes: Max size allowed in bytes.
+
+    Returns:
+        tuple[bool, Optional[str]]: (should_attach, skip_reason).
+    """
+
+    if not attach_backup:
+        return False, None
+
+    if status != "success":
+        return False, "Attachments are only sent for successful backups"
+
+    if attachment_path is None:
+        return False, "Attachment file path not available"
+
+    if limit_bytes is None:
+        return True, None
+
+    if size_bytes is None:
+        return False, "Attachment size unavailable"
+
+    if size_bytes > limit_bytes:
+        size_label = _format_size_mb(size_bytes) or f"{size_bytes} bytes"
+        limit_label = _format_size_mb(limit_bytes) or f"{limit_bytes} bytes"
+        return False, f"Attachment size {size_label} exceeds limit {limit_label}"
+
+    return True, None
 
 
 def _collect_upload_locations(uploads: Optional[List[Dict[str, Any]]]) -> List[str]:
@@ -318,12 +407,29 @@ class NotificationService:
         telegram_config = notifications_config.get("telegram", {})
         if isinstance(telegram_config, dict) and telegram_config.get("enabled"):
             attach_backup = bool(telegram_config.get("attach_backup"))
+            telegram_limit_bytes = _resolve_attachment_limit_bytes(
+                telegram_config,
+                default_mb=TELEGRAM_DEFAULT_ATTACHMENT_MB,
+            )
+            should_attach, attach_skip_reason = _should_attach_backup(
+                attach_backup=attach_backup,
+                status=status,
+                attachment_path=attachment_path,
+                size_bytes=size_bytes,
+                limit_bytes=telegram_limit_bytes,
+            )
+            if attach_backup and attach_skip_reason:
+                logger.info(
+                    "Telegram attachment skipped schedule=%s status=%s reason=%s",
+                    schedule_name,
+                    status,
+                    attach_skip_reason,
+                )
             if isinstance(telegram_config.get("recipients"), list):
                 telegram_recipients = extract_telegram_recipients(telegram_config)
                 for recipient in telegram_recipients:
                     if not should_notify_for_min_severity(status=status, min_severity=recipient.get("min_severity")):
                         continue
-                    should_attach = bool(attach_backup and status == "success" and attachment_path)
                     logger.info(
                         "Sending Telegram notification schedule=%s status=%s chat_id=%s",
                         schedule_name,
@@ -346,11 +452,17 @@ class NotificationService:
                             recipient.get("chat_id"),
                             response.get("error"),
                         )
-                    results["telegram"].append({"chat_id": recipient.get("chat_id"), **response})
+                    results["telegram"].append(
+                        {
+                            "chat_id": recipient.get("chat_id"),
+                            "attachment_sent": should_attach,
+                            "attachment_skipped_reason": attach_skip_reason,
+                            **response,
+                        }
+                    )
             else:
                 if self._should_notify_legacy(telegram_config, status):
                     chat_id = str(telegram_config.get("chat_id") or "").strip()
-                    should_attach = bool(attach_backup and status == "success" and attachment_path)
                     logger.info(
                         "Sending Telegram notification schedule=%s status=%s chat_id=%s",
                         schedule_name,
@@ -373,19 +485,43 @@ class NotificationService:
                             chat_id,
                             response.get("error"),
                         )
-                    results["telegram"].append({"chat_id": chat_id, **response})
+                    results["telegram"].append(
+                        {
+                            "chat_id": chat_id,
+                            "attachment_sent": should_attach,
+                            "attachment_skipped_reason": attach_skip_reason,
+                            **response,
+                        }
+                    )
 
         # Send email notifications
         email_config = notifications_config.get("email", {})
         if isinstance(email_config, dict) and email_config.get("enabled"):
             plain_message = message.replace("<b>", "").replace("</b>", "")
             attach_backup = bool(email_config.get("attach_backup"))
+            email_limit_bytes = _resolve_attachment_limit_bytes(
+                email_config,
+                default_mb=EMAIL_DEFAULT_ATTACHMENT_MB,
+            )
+            should_attach, attach_skip_reason = _should_attach_backup(
+                attach_backup=attach_backup,
+                status=status,
+                attachment_path=attachment_path,
+                size_bytes=size_bytes,
+                limit_bytes=email_limit_bytes,
+            )
+            if attach_backup and attach_skip_reason:
+                logger.info(
+                    "Email attachment skipped schedule=%s status=%s reason=%s",
+                    schedule_name,
+                    status,
+                    attach_skip_reason,
+                )
             if isinstance(email_config.get("recipients"), list):
                 email_recipients = extract_email_recipients(email_config)
                 for recipient in email_recipients:
                     if not should_notify_for_min_severity(status=status, min_severity=recipient.get("min_severity")):
                         continue
-                    should_attach = bool(attach_backup and status == "success" and attachment_path)
                     logger.info(
                         "Sending email notification schedule=%s status=%s to=%s",
                         schedule_name,
@@ -406,11 +542,17 @@ class NotificationService:
                             recipient.get("to"),
                             response.get("error"),
                         )
-                    results["email"].append({"to": recipient.get("to"), **response})
+                    results["email"].append(
+                        {
+                            "to": recipient.get("to"),
+                            "attachment_sent": should_attach,
+                            "attachment_skipped_reason": attach_skip_reason,
+                            **response,
+                        }
+                    )
             else:
                 if self._should_notify_legacy(email_config, status):
                     to_addr = str(email_config.get("to") or "").strip()
-                    should_attach = bool(attach_backup and status == "success" and attachment_path)
                     logger.info(
                         "Sending email notification schedule=%s status=%s to=%s",
                         schedule_name,
@@ -431,7 +573,14 @@ class NotificationService:
                             to_addr,
                             response.get("error"),
                         )
-                    results["email"].append({"to": to_addr, **response})
+                    results["email"].append(
+                        {
+                            "to": to_addr,
+                            "attachment_sent": should_attach,
+                            "attachment_skipped_reason": attach_skip_reason,
+                            **response,
+                        }
+                    )
 
         results["sent"] = any(
             item.get("success")

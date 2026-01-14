@@ -81,6 +81,21 @@ function normalizeEmailRecipients(emailConfig) {
 }
 
 /**
+ * Parse a notification attachment size limit in MB.
+ *
+ * @param {string|number|null|undefined} value Raw input value.
+ * @param {number} fallback Default fallback value.
+ * @returns {number} Parsed limit in MB.
+ */
+function parseNotificationAttachmentLimit(value, fallback) {
+    const parsed = parseFloat(String(value ?? '').trim());
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return fallback;
+    }
+    return parsed;
+}
+
+/**
  * Create a select element for minimum severity.
  *
  * @param {string} selected Selected severity.
@@ -296,6 +311,27 @@ function getDestinationNames(destinationIds) {
     }).join(', ');
 }
 
+/**
+ * Format attachment settings summary for schedule notifications.
+ *
+ * @param {Object} notifications Notification configuration.
+ * @returns {string} Summary string for attachments.
+ */
+function formatAttachmentSummary(notifications) {
+    const telegram = notifications?.telegram || {};
+    const email = notifications?.email || {};
+
+    const telegramEnabled = Boolean(telegram.attach_backup);
+    const telegramLimit = parseNotificationAttachmentLimit(telegram.attach_max_mb, 50);
+    const emailEnabled = Boolean(email.attach_backup);
+    const emailLimit = parseNotificationAttachmentLimit(email.attach_max_mb, 10);
+
+    const telegramSummary = telegramEnabled ? `Yes (max ${telegramLimit} MB)` : 'No';
+    const emailSummary = emailEnabled ? `Yes (max ${emailLimit} MB)` : 'No';
+
+    return `Telegram: ${telegramSummary}, Email: ${emailSummary}`;
+}
+
 function renderBackupSchedules() {
     const container = document.getElementById('backup-schedules-list');
     
@@ -308,6 +344,7 @@ function renderBackupSchedules() {
         const database = databases.find(d => d.id === schedule.target_id);
         const destinationNames = getDestinationNames(schedule.destination_ids);
         const retention = schedule.retention || {};
+        const notifications = schedule.retention?.notifications || {};
         const retentionText = retention.smart ? `Smart (d/w/m/y=${retention.smart.daily || 0}/${retention.smart.weekly || 0}/${retention.smart.monthly || 0}/${retention.smart.yearly || 0})` :
                              retention.max_count ? `${retention.max_count} backups` :
                              retention.max_days ? `${retention.max_days} days` :
@@ -322,6 +359,7 @@ function renderBackupSchedules() {
             (Array.isArray(schedule.retention?.notifications?.email?.recipients)
                 && schedule.retention.notifications.email.recipients.length > 0)
         );
+        const attachmentSummary = formatAttachmentSummary(notifications);
         
         return `
             <div class="item">
@@ -340,6 +378,7 @@ function renderBackupSchedules() {
                     <p><strong>Retention:</strong> ${retentionText}</p>
                     <p><strong>Encryption:</strong> ${schedule.retention?.encrypt ? 'Yes' : 'No'}</p>
                     <p><strong>Notifications:</strong> ${hasNotifications ? 'Enabled' : 'Disabled'}</p>
+                    <p><strong>Attachments:</strong> ${attachmentSummary}</p>
                     <p><strong>Status:</strong> <span class="status ${schedule.enabled ? 'active' : 'inactive'}">${schedule.enabled ? 'Active' : 'Inactive'}</span></p>
                     <p><strong>Next Run:</strong> ${schedule.next_run_at ? new Date(schedule.next_run_at).toLocaleString() : 'Not scheduled'}</p>
                     <p><strong>Last Run:</strong> ${schedule.last_run_at ? new Date(schedule.last_run_at).toLocaleString() : 'Never'}</p>
@@ -431,6 +470,10 @@ function showBackupScheduleForm(schedule = null) {
         if (telegramAttachEl) {
             telegramAttachEl.checked = Boolean(telegram.attach_backup);
         }
+        const telegramAttachMaxEl = document.getElementById('backup-schedule-telegram-attach-max');
+        if (telegramAttachMaxEl) {
+            telegramAttachMaxEl.value = parseNotificationAttachmentLimit(telegram.attach_max_mb, 50);
+        }
         if (document.getElementById('backup-schedule-notify-telegram').checked) {
             ensureAtLeastOneRecipientRow('telegram');
         }
@@ -443,6 +486,10 @@ function showBackupScheduleForm(schedule = null) {
         const emailAttachEl = document.getElementById('backup-schedule-email-attach');
         if (emailAttachEl) {
             emailAttachEl.checked = Boolean(email.attach_backup);
+        }
+        const emailAttachMaxEl = document.getElementById('backup-schedule-email-attach-max');
+        if (emailAttachMaxEl) {
+            emailAttachMaxEl.value = parseNotificationAttachmentLimit(email.attach_max_mb, 10);
         }
         if (document.getElementById('backup-schedule-notify-email').checked) {
             ensureAtLeastOneRecipientRow('email');
@@ -493,6 +540,10 @@ function showBackupScheduleForm(schedule = null) {
         if (telegramAttachEl) {
             telegramAttachEl.checked = false;
         }
+        const telegramAttachMaxEl = document.getElementById('backup-schedule-telegram-attach-max');
+        if (telegramAttachMaxEl) {
+            telegramAttachMaxEl.value = 50;
+        }
         
         document.getElementById('backup-schedule-notify-email').checked = false;
         setEmailRecipients([]);
@@ -500,6 +551,10 @@ function showBackupScheduleForm(schedule = null) {
         const emailAttachEl = document.getElementById('backup-schedule-email-attach');
         if (emailAttachEl) {
             emailAttachEl.checked = false;
+        }
+        const emailAttachMaxEl = document.getElementById('backup-schedule-email-attach-max');
+        if (emailAttachMaxEl) {
+            emailAttachMaxEl.value = 10;
         }
     }
 
@@ -665,7 +720,16 @@ async function saveBackupSchedule() {
             return;
         }
         const attachBackup = document.getElementById('backup-schedule-telegram-attach')?.checked || false;
-        retention.notifications.telegram = { enabled: true, recipients, attach_backup: attachBackup };
+        const attachMax = parseNotificationAttachmentLimit(
+            document.getElementById('backup-schedule-telegram-attach-max')?.value,
+            50
+        );
+        retention.notifications.telegram = {
+            enabled: true,
+            recipients,
+            attach_backup: attachBackup,
+            attach_max_mb: attachMax,
+        };
     }
     
     if (document.getElementById('backup-schedule-notify-email').checked) {
@@ -675,7 +739,16 @@ async function saveBackupSchedule() {
             return;
         }
         const attachBackup = document.getElementById('backup-schedule-email-attach')?.checked || false;
-        retention.notifications.email = { enabled: true, recipients, attach_backup: attachBackup };
+        const attachMax = parseNotificationAttachmentLimit(
+            document.getElementById('backup-schedule-email-attach-max')?.value,
+            10
+        );
+        retention.notifications.email = {
+            enabled: true,
+            recipients,
+            attach_backup: attachBackup,
+            attach_max_mb: attachMax,
+        };
     }
 
     const payload = {

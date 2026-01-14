@@ -161,6 +161,11 @@
                     <input type="checkbox" id="backup-schedule-telegram-attach">
                     <label for="backup-schedule-telegram-attach">Attach backup file to Telegram (may be large)</label>
                 </div>
+                <div class="form-group">
+                    <label for="backup-schedule-telegram-attach-max">Telegram attachment max size (MB)</label>
+                    <input type="number" id="backup-schedule-telegram-attach-max" min="1" step="1" value="50">
+                    <p class="hint">Defaults to Telegram's 50 MB limit unless overridden.</p>
+                </div>
             </div>
 
             <div class="form-group inline-checkbox">
@@ -177,6 +182,11 @@
                 <div class="form-group inline-checkbox">
                     <input type="checkbox" id="backup-schedule-email-attach">
                     <label for="backup-schedule-email-attach">Attach backup file to Email (may be large)</label>
+                </div>
+                <div class="form-group">
+                    <label for="backup-schedule-email-attach-max">Email attachment max size (MB)</label>
+                    <input type="number" id="backup-schedule-email-attach-max" min="1" step="1" value="10">
+                    <p class="hint">Defaults to 10 MB unless overridden.</p>
                 </div>
             </div>
         </div>
