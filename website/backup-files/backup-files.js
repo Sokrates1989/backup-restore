@@ -877,7 +877,7 @@ function renderBackupFiles() {
         `;
     };
 
-    if (sortValue !== 'db_name') {
+    if (sortValue !== 'db_name' && sortValue !== 'destination') {
         container.innerHTML = visibleBackups.map(backup => {
             const typeLabel = backup.type === 'local' ? 'Local File' : 'Remote Storage';
             const downloadFilename = backup.filename;
@@ -919,16 +919,24 @@ function renderBackupFiles() {
         return;
     }
 
+    const groupLabel = sortValue === 'destination' ? 'Destination' : 'Database';
+    const groupKeyForBackup = (backup) => {
+        if (sortValue === 'destination') {
+            return backup.source || 'Unknown';
+        }
+        return backup.db_name || 'Unknown';
+    };
+
     const groups = new Map();
     visibleBackups.forEach(b => {
-        const key = b.db_name || 'Unknown';
+        const key = groupKeyForBackup(b);
         if (!groups.has(key)) groups.set(key, []);
         groups.get(key).push(b);
     });
 
     const totalGroups = new Map();
     sortedBackups.forEach(b => {
-        const key = b.db_name || 'Unknown';
+        const key = groupKeyForBackup(b);
         totalGroups.set(key, (totalGroups.get(key) || 0) + 1);
     });
 
@@ -979,7 +987,7 @@ function renderBackupFiles() {
 
         const totalInGroup = totalGroups.get(groupName) || items.length;
         return `
-            <div class="group-heading">Database: ${groupName} (${items.length}/${totalInGroup})</div>
+            <div class="group-heading">${groupLabel}: ${groupName} (${items.length}/${totalInGroup})</div>
             ${rendered}
         `;
     }).join('') + renderPaginationFooter();
