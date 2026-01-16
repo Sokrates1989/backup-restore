@@ -13,8 +13,18 @@ COPY website/ /usr/share/nginx/html/
 ENV ASSET_CACHE_CONTROL="public, immutable"
 ENV ASSET_EXPIRES="7d"
 
+# Keycloak configuration defaults (can be overridden via docker-compose env)
+ENV KEYCLOAK_ENABLED=false
+ENV KEYCLOAK_URL=http://localhost:9090
+ENV KEYCLOAK_REALM=backup-restore
+ENV KEYCLOAK_CLIENT_ID=backup-restore-frontend
+
 # Copy nginx configuration template
 COPY docker/nginx/default.conf.template /etc/nginx/templates/default.conf.template
+
+# Copy entrypoint script for generating keycloak config
+COPY docker/nginx/generate-keycloak-config.sh /docker-entrypoint.d/00-generate-keycloak-config.sh
+RUN chmod +x /docker-entrypoint.d/00-generate-keycloak-config.sh
 
 # Create version file (will be overwritten during build if IMAGE_TAG is set)
 ARG IMAGE_TAG=dev

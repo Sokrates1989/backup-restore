@@ -327,6 +327,13 @@ const tabs = document.querySelectorAll('.tab');
 // API Functions
 async function apiCall(endpoint, method = 'GET', body = null) {
     const suppressLogoutStatus = endpoint === '/automation/targets' && method === 'GET' && body === null;
+    
+    // Use Keycloak authentication if enabled
+    if (typeof isKeycloakEnabled === 'function' && isKeycloakEnabled()) {
+        return await keycloakApiCall(endpoint, method, body);
+    }
+
+    // Fall back to API key authentication
     const options = {
         method,
         headers: {
@@ -633,6 +640,13 @@ async function switchTab(tabName) {
 
 // Event Handlers
 async function handleLogin() {
+    // Check if Keycloak is enabled and use Keycloak login
+    if (typeof isKeycloakEnabled === 'function' && isKeycloakEnabled()) {
+        await keycloakLogin();
+        return;
+    }
+
+    // Fall back to API key authentication
     const token = adminTokenInput.value.trim();
     if (!token) {
         loginError.textContent = 'Please enter an API key';
@@ -661,7 +675,22 @@ async function handleLogin() {
     }
 }
 
-function handleLogout(showStatusMessage = true, statusType = 'success', statusText = 'Logged out') {
+async function handleLogout(showStatusMessage = true, statusType = 'success', statusText = 'Logged out') {
+    // Clear API key token
+    adminToken = '';
+    sessionStorage.removeItem('backup_admin_token');
+    localStorage.removeItem('backup_admin_token');
+
+    // If Keycloak is enabled, perform Keycloak logout
+    if (typeof isKeycloakEnabled === 'function' && isKeycloakEnabled()) {
+        try {
+            await keycloakLogout();
+            return; // Keycloak will redirect
+        } catch (error) {
+            console.error('Keycloak logout failed:', error);
+        }
+    }
+
     showLogin();
     if (showStatusMessage) {
         showStatus(statusText, statusType, false);
@@ -734,13 +763,52 @@ async function updateScheduleSelects() {
 window.updateScheduleSelects = updateScheduleSelects;
 
 // Initialize app
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     loadAndDisplayAppVersion();
 
     window.addEventListener('appVersionLoaded', () => {
         startDevLiveReload();
     });
 
+    // Try to initialize Keycloak first
+    let keycloakAuthenticated = false;
+    if (typeof initKeycloak === 'function') {
+        try {
+            keycloakAuthenticated = await initKeycloak();
+            if (keycloakAuthenticated) {
+                console.log('[App] Keycloak authentication successful');
+                const user = getKeycloakUser();
+                if (user) {
+                    console.log('[App] Logged in as:', user.username, 'Roles:', user.roles);
+                }
+                showMain();
+                await switchTab('databases');
+                showStatus(`Welcome, ${user?.name || user?.username || 'User'}!`);
+                return;
+            }
+        } catch (error) {
+            console.error('[App] Keycloak initialization failed:', error);
+        }
+    }
+
+    // If Keycloak is enabled but not authenticated, show login (Keycloak will handle it)
+    if (typeof isKeycloakEnabled === 'function' && isKeycloakEnabled()) {
+        // Update login section for Keycloak
+        const loginLabel = document.querySelector('#login-section label[for="admin-token"]');
+        const loginInput = document.getElementById('admin-token');
+        const loginTitle = document.querySelector('#login-section h2');
+        
+        if (loginTitle) loginTitle.textContent = 'Single Sign-On';
+        if (loginLabel) loginLabel.textContent = 'Click the button below to login with your account';
+        if (loginInput) loginInput.style.display = 'none';
+        if (loginBtn) loginBtn.textContent = 'Login with Keycloak';
+        
+        logoutBtn.classList.add('hidden');
+        setupEventListeners();
+        return;
+    }
+
+    // Fall back to API key authentication
     // Check for saved token
     const savedSessionToken = sessionStorage.getItem('backup_admin_token');
     const savedLegacyToken = localStorage.getItem('backup_admin_token');
@@ -756,6 +824,13 @@ document.addEventListener('DOMContentLoaded', () => {
         logoutBtn.classList.add('hidden');
     }
     
+    setupEventListeners();
+});
+
+/**
+ * Set up event listeners for login, logout, and tab navigation.
+ */
+function setupEventListeners() {
     // Event listeners
     loginBtn.addEventListener('click', handleLogin);
     logoutBtn.addEventListener('click', handleLogout);
@@ -771,4 +846,4 @@ document.addEventListener('DOMContentLoaded', () => {
             handleLogin();
         }
     });
-});
+}

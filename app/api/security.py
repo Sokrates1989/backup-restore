@@ -1,5 +1,12 @@
 """
 Security utilities for API authentication.
+
+This module provides authentication via:
+1. API keys (X-Admin-Key, X-Restore-Key, X-Delete-Key headers)
+2. Keycloak JWT tokens (Authorization: Bearer <token> header)
+
+When Keycloak is enabled (KEYCLOAK_ENABLED=true), both authentication methods
+are supported. JWT tokens take precedence over API keys when both are provided.
 """
 from __future__ import annotations
 
@@ -9,14 +16,17 @@ from datetime import datetime, timezone
 import secrets
 from typing import Deque, Dict, Optional
 
-from fastapi import Request, Security, HTTPException, status
-from fastapi.security import APIKeyHeader
+from fastapi import Depends, Request, Security, HTTPException, status
+from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 from api.settings import settings
 
 # Define the API key headers
 admin_key_header = APIKeyHeader(name="X-Admin-Key", auto_error=False)
 restore_key_header = APIKeyHeader(name="X-Restore-Key", auto_error=False)
 delete_key_header = APIKeyHeader(name="X-Delete-Key", auto_error=False)
+
+# Bearer token for Keycloak JWT authentication
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 @dataclass(frozen=True)
@@ -151,26 +161,63 @@ def _enforce_operation_budget(*, request: Optional[Request], kind: str) -> None:
         _raise_rate_limited(retry_after_seconds=result.retry_after_seconds, scope=f"{kind} operations")
 
 
-async def verify_admin_key(request: Request, admin_key: str = Security(admin_key_header)) -> str:
+async def verify_admin_key(
+    request: Request,
+    admin_key: str = Security(admin_key_header),
+    bearer_token: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+) -> str:
     """
-    Verify the admin API key provided in the X-Admin-Key header.
+    Verify authentication via API key or Keycloak JWT token.
     
-    This is used for sensitive operations like backup/restore.
+    When Keycloak is enabled, accepts either:
+    - Bearer token in Authorization header (JWT from Keycloak)
+    - X-Admin-Key header (legacy API key authentication)
     
     Args:
+        request: The FastAPI request object
         admin_key: The admin API key from the request header
+        bearer_token: Bearer token credentials from Authorization header
         
     Returns:
-        The validated admin API key
+        The validated admin API key or "keycloak:<username>" for JWT auth
         
     Raises:
-        HTTPException: If the admin API key is missing or invalid
+        HTTPException: If authentication fails
     """
-    # Get admin API key from file or environment
+    # Try Keycloak JWT authentication first if enabled
+    if settings.KEYCLOAK_ENABLED and bearer_token:
+        try:
+            from api.keycloak_auth import get_keycloak_auth
+            keycloak = get_keycloak_auth()
+            if keycloak:
+                user = keycloak.validate_token(bearer_token.credentials)
+                # Check if user has admin or viewer role (read access)
+                if user.has_any_role(["admin", "operator", "viewer"]):
+                    return f"keycloak:{user.username}"
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Access denied. Required role: admin, operator, or viewer. Your roles: {', '.join(user.roles)}"
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Token validation failed: {str(e)}",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    
+    # Fall back to API key authentication
     configured_admin_key = settings.get_admin_api_key()
     
     # Check if ADMIN_API_KEY is configured
     if not configured_admin_key:
+        if settings.KEYCLOAK_ENABLED:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required. Please provide a Bearer token or X-Admin-Key header.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Admin API key not configured. Please set ADMIN_API_KEY or ADMIN_API_KEY_FILE."
@@ -179,6 +226,12 @@ async def verify_admin_key(request: Request, admin_key: str = Security(admin_key
     # Check if API key was provided
     if not admin_key:
         _enforce_auth_failure_budget(request=request, kind="admin")
+        if settings.KEYCLOAK_ENABLED:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required. Please provide a Bearer token or X-Admin-Key header.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing API key. This endpoint requires 'X-Admin-Key' header. Use the 'Authorize' button in Swagger UI to provide your admin key."
@@ -195,26 +248,63 @@ async def verify_admin_key(request: Request, admin_key: str = Security(admin_key
     return admin_key
 
 
-async def verify_restore_key(request: Request, restore_key: str = Security(restore_key_header)) -> str:
+async def verify_restore_key(
+    request: Request,
+    restore_key: str = Security(restore_key_header),
+    bearer_token: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+) -> str:
     """
-    Verify the restore API key provided in the X-Restore-Key header.
+    Verify authentication for restore operations via API key or Keycloak JWT token.
     
-    This is used for destructive restore operations that overwrite the database.
+    When Keycloak is enabled, users with 'admin' or 'operator' role can perform restores.
     
     Args:
+        request: The FastAPI request object
         restore_key: The restore API key from the request header
+        bearer_token: Bearer token credentials from Authorization header
         
     Returns:
-        The validated restore API key
+        The validated restore API key or "keycloak:<username>" for JWT auth
         
     Raises:
-        HTTPException: If the restore API key is missing or invalid
+        HTTPException: If authentication fails or user lacks restore permission
     """
-    # Get restore API key from file or environment
+    # Try Keycloak JWT authentication first if enabled
+    if settings.KEYCLOAK_ENABLED and bearer_token:
+        try:
+            from api.keycloak_auth import get_keycloak_auth
+            keycloak = get_keycloak_auth()
+            if keycloak:
+                user = keycloak.validate_token(bearer_token.credentials)
+                # Check if user has admin or operator role (restore access)
+                if user.has_any_role(["admin", "operator"]):
+                    if request.method.upper() == "POST" and "restore" in request.url.path:
+                        _enforce_operation_budget(request=request, kind="restore")
+                    return f"keycloak:{user.username}"
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Access denied. Restore operations require 'admin' or 'operator' role. Your roles: {', '.join(user.roles)}"
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Token validation failed: {str(e)}",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    
+    # Fall back to API key authentication
     configured_restore_key = settings.get_restore_api_key()
     
     # Check if BACKUP_RESTORE_API_KEY is configured
     if not configured_restore_key:
+        if settings.KEYCLOAK_ENABLED:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required for restore operations. Please provide a Bearer token or X-Restore-Key header.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Restore API key not configured. Please set BACKUP_RESTORE_API_KEY or BACKUP_RESTORE_API_KEY_FILE."
@@ -242,30 +332,68 @@ async def verify_restore_key(request: Request, restore_key: str = Security(resto
     return restore_key
 
 
-async def verify_delete_key(request: Request, delete_key: str = Security(delete_key_header)) -> str:
+async def verify_delete_key(
+    request: Request,
+    delete_key: str = Security(delete_key_header),
+    bearer_token: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+) -> str:
     """
-    Verify the delete API key provided in the X-Delete-Key header.
+    Verify authentication for delete operations via API key or Keycloak JWT token.
 
-    This is used for destructive delete operations.
+    When Keycloak is enabled, only users with 'admin' role can perform deletes.
 
-    In DEBUG mode, when BACKUP_DELETE_API_KEY is not configured, this falls back
-    to using the configured admin key as delete key.
+    In DEBUG mode with API key auth, when BACKUP_DELETE_API_KEY is not configured,
+    this falls back to using the configured admin key as delete key.
 
     Args:
+        request: The FastAPI request object
         delete_key: The delete API key from the request header
+        bearer_token: Bearer token credentials from Authorization header
 
     Returns:
-        The validated delete API key
+        The validated delete API key or "keycloak:<username>" for JWT auth
 
     Raises:
-        HTTPException: If the delete API key is missing or invalid
+        HTTPException: If authentication fails or user lacks delete permission
     """
+    # Try Keycloak JWT authentication first if enabled
+    if settings.KEYCLOAK_ENABLED and bearer_token:
+        try:
+            from api.keycloak_auth import get_keycloak_auth
+            keycloak = get_keycloak_auth()
+            if keycloak:
+                user = keycloak.validate_token(bearer_token.credentials)
+                # Only admin role can perform deletes
+                if user.has_role("admin"):
+                    if request.method.upper() == "DELETE":
+                        _enforce_operation_budget(request=request, kind="delete")
+                    return f"keycloak:{user.username}"
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Access denied. Delete operations require 'admin' role. Your roles: {', '.join(user.roles)}"
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Token validation failed: {str(e)}",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    # Fall back to API key authentication
     configured_delete_key = settings.get_delete_api_key()
 
     if not configured_delete_key and settings.DEBUG:
         configured_delete_key = settings.get_admin_api_key()
 
     if not configured_delete_key:
+        if settings.KEYCLOAK_ENABLED:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required for delete operations. Please provide a Bearer token or X-Delete-Key header.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(

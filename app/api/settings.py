@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     # Do NOT enable this for production.
     ALLOW_INSECURE_MYSQL_SSL: bool = False
 
+    # Keycloak Authentication Settings
+    KEYCLOAK_ENABLED: bool = False  # Set to True to enable Keycloak authentication
+    KEYCLOAK_URL: str = "http://localhost:9090"  # Keycloak server URL (for issuer validation)
+    KEYCLOAK_INTERNAL_URL: str = ""  # Internal Keycloak URL (for JWKS fetching in Docker)
+    KEYCLOAK_REALM: str = "backup-restore"  # Keycloak realm name
+    KEYCLOAK_CLIENT_ID: str = "backup-restore-backend"  # Backend client ID
+    KEYCLOAK_CLIENT_SECRET: str = ""  # Backend client secret (optional)
+
     CONFIG_ENCRYPTION_KEY: str = ""  # Symmetric key for encrypting stored destination/target secrets
     CONFIG_ENCRYPTION_KEY_FILE: str = ""  # Path to file containing config encryption key
     
