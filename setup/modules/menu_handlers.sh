@@ -44,7 +44,15 @@ open_browser_incognito() {
         urls+=("http://localhost:8082/")  # Adminer
         urls+=("http://localhost:8085/")  # Adminer (SQLite)
         urls+=("http://localhost:8084")  # SQLite Web
-        urls+=("http://localhost:8090")  # SQLite Browser (GUI)
+        
+        # Check if we're on macOS ARM64 (no SQLite Browser GUI)
+        local sqlite_browser_note=""
+        if [[ "$(uname)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
+            sqlite_browser_note="  - SQLite Browser (GUI): not available on ARM64"
+        else
+            urls+=("http://localhost:8090")  # SQLite Browser (GUI) - Windows/Linux only
+            sqlite_browser_note="  - SQLite Browser (GUI): http://localhost:8090"
+        fi
         
         echo ""
         echo "🌐 Opening browser with all admin UIs:"
@@ -56,7 +64,7 @@ open_browser_incognito() {
         echo "  - Adminer: http://localhost:8082"
         echo "  - Adminer (SQLite): http://localhost:8085"
         echo "  - SQLite Web: http://localhost:8084"
-        echo "  - SQLite Browser (GUI): http://localhost:8090"
+        echo "$sqlite_browser_note"
     fi
 
     # Add admin UIs if in admin mode
@@ -519,11 +527,21 @@ handle_start_with_test_databases() {
     echo "  - Adminer: http://localhost:8082"
     echo "  - Adminer (SQLite): http://localhost:8085"
     echo "  - SQLite Web: http://localhost:8084"
-    echo "  - SQLite Browser (GUI): http://localhost:8090"
+    if [[ "$(uname)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
+        echo "  - SQLite Browser (GUI): not available on ARM64"
+    else
+        echo "  - SQLite Browser (GUI): http://localhost:8090"
+    fi
     echo "========================================"
     echo ""
     
+    # Detect OS and choose appropriate test databases compose file
     local test_db_file="local-deployment/docker-compose.test-databases.yml"
+    if [[ "$(uname)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
+        test_db_file="local-deployment/docker-compose.test-databases.mac.yml"
+        echo "🍎 Detected macOS ARM64, using ARM64-compatible test databases"
+    fi
+    
     local runner_file="local-deployment/docker-compose.runner.yml"
     
     if [ ! -f "$test_db_file" ]; then
@@ -592,7 +610,7 @@ handle_start_with_test_databases() {
     local browser_pid=$!
 
     cd "$project_root" || return 1
-    docker compose --env-file .env -f "$compose_file" -f "$runner_file" -f "$test_db_file" watch
+    docker compose --env-file .env -f "$compose_file" -f "$runner_file" -f "$test_db_file" up --build --watch
 
     kill "$logs_pid" >/dev/null 2>&1 || true
     wait "$logs_pid" >/dev/null 2>&1 || true
@@ -646,7 +664,7 @@ handle_start_admin_uis() {
         open_browser_incognito "$port" "$compose_file" "admin"
     ) &
     
-    docker compose --env-file .env -f "$compose_file" -f "$runner_file" --profile admin watch
+    docker compose --env-file .env -f "$compose_file" -f "$runner_file" --profile admin up --build --watch
 }
 
 handle_clean_test_data() {
@@ -713,7 +731,7 @@ handle_deploy_all_services() {
     
     echo ""
     echo "🐳 Starting services (watch mode)..."
-    docker compose --env-file .env -f "$compose_file" -f "$runner_file" watch
+    docker compose --env-file .env -f "$compose_file" -f "$runner_file" up --build --watch
     
     echo ""
     echo "✅ All services started!"
