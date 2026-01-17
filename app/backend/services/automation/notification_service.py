@@ -258,7 +258,7 @@ class NotificationService:
         
         Reads configuration from environment variables:
         - TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN_FILE
-        - SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM
+        - SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_PASSWORD_FILE, SMTP_FROM
         """
         self.telegram_token = self._get_telegram_token()
         self.smtp_config = self._get_smtp_config()
@@ -280,7 +280,7 @@ class NotificationService:
         return os.getenv("TELEGRAM_BOT_TOKEN", "").strip() or None
 
     def _get_smtp_config(self) -> Optional[Dict[str, Any]]:
-        """Get SMTP configuration from environment.
+        """Get SMTP configuration from environment or secret file.
         
         Returns:
             Optional[Dict[str, Any]]: SMTP config or None if not configured.
@@ -296,11 +296,19 @@ class NotificationService:
         allow_insecure_certs = os.getenv("SMTP_ALLOW_INSECURE_CERTS", "false").lower() in ("true", "1", "yes")
         ca_cert_file = os.getenv("SMTP_CA_CERT_FILE", "").strip()
 
+        password = os.getenv("SMTP_PASSWORD", "").strip()
+        password_file = os.getenv("SMTP_PASSWORD_FILE", "").strip()
+        if password_file:
+            try:
+                password = Path(password_file).read_text().strip()
+            except Exception:
+                logger.exception("Failed to read SMTP_PASSWORD_FILE=%s", password_file)
+
         return {
             "host": host,
             "port": port,
             "user": os.getenv("SMTP_USER", "").strip(),
-            "password": os.getenv("SMTP_PASSWORD", "").strip(),
+            "password": password,
             "from_addr": os.getenv("SMTP_FROM", "").strip(),
             "use_tls": os.getenv("SMTP_USE_TLS", "true").lower() in ("true", "1", "yes"),
             "use_ssl": use_ssl,

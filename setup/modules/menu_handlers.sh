@@ -311,17 +311,6 @@ handle_build_production_image() {
     fi
 }
 
-handle_build_web_image() {
-    echo "🏗️  Building web UI Docker image (nginx)..."
-    echo ""
-    if [ -f "build-image/docker-compose.build.yml" ]; then
-        docker compose -f build-image/docker-compose.build.yml run --rm -e BUILD_TARGET=web build-image
-    else
-        echo "❌ build-image/docker-compose.build.yml not found"
-        echo "⚠️  Please ensure the build-image directory exists"
-    fi
-}
-
 handle_cicd_setup() {
     echo "🚀 CI/CD Pipeline einrichten..."
     echo ""
@@ -781,7 +770,6 @@ show_main_menu() {
         local MENU_MAINT_DB_REINSTALL=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
 
         local MENU_BUILD_IMAGE=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
-        local MENU_BUILD_WEB_IMAGE=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
 
         local MENU_RUN_BACKUP=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
         local MENU_LIST_BACKUPS=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
@@ -809,8 +797,7 @@ show_main_menu() {
         echo "  ${MENU_MAINT_DB_REINSTALL}) DB Re-Install (reset database volume)"
         echo ""
         echo "Build:"
-        echo "  ${MENU_BUILD_IMAGE}) Build Production Docker Image"
-        echo "  ${MENU_BUILD_WEB_IMAGE}) Build Website Docker Image (nginx)"
+        echo "  ${MENU_BUILD_IMAGE}) Build Production Docker Image (API + Web)"
         echo ""
         echo "Backup Automation:"
         echo "  ${MENU_RUN_BACKUP}) Run backup now (CLI)"
@@ -855,10 +842,6 @@ show_main_menu() {
           ${MENU_BUILD_IMAGE})
             handle_build_production_image
             summary_msg="Production Docker Image Build ausgeführt"
-            ;;
-          ${MENU_BUILD_WEB_IMAGE})
-            handle_build_web_image
-            summary_msg="Website Docker Image Build ausgeführt"
             ;;
           ${MENU_RUN_BACKUP})
             handle_run_backup_now "$port"
