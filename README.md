@@ -5,18 +5,19 @@ A standalone FastAPI service for backing up and restoring databases with configu
 ## 📚 Table of Contents
 
 1. [📖 Overview](#-overview)
-2. [📋 Prerequisites](#-prerequisites)
-3. [🚀 Quick Start](#-quick-start)
-4. [🔧 Dependency Management](#-dependency-management)
-5. [📁 Project Structure](#-project-structure)
-6. [⚙️ Configuration](#-configuration)
-7. [🧪 API Tests](#-api-tests)
-8. [🐳 Docker Commands](#-docker-commands)
-9. [🔄 Development Workflow](#-development-workflow)
-10. [🏗️ Docker Image Build & Deploy](#-docker-image-build--deploy)
-11. [✨ Benefits](#-benefits)
-12. [📚 Additional Information](#-additional-information)
-13. [⚠️ Deprecated: Alternative Installation Methods](#-deprecated-alternative-installation-methods)
+2. [🔐 Security & Authentication](#-security--authentication)
+3. [📋 Prerequisites](#-prerequisites)
+4. [🚀 Quick Start](#-quick-start)
+5. [🔧 Dependency Management](#-dependency-management)
+6. [📁 Project Structure](#-project-structure)
+7. [⚙️ Configuration](#-configuration)
+8. [🧪 API Tests](#-api-tests)
+9. [🐳 Docker Commands](#-docker-commands)
+10. [🔄 Development Workflow](#-development-workflow)
+11. [🏗️ Docker Image Build & Deploy](#-docker-image-build--deploy)
+12. [✨ Benefits](#-benefits)
+13. [📚 Additional Information](#-additional-information)
+14. [⚠️ Deprecated: Alternative Installation Methods](#-deprecated-alternative-installation-methods)
 
 ## 📖 Overview
 
@@ -30,6 +31,19 @@ This service provides centralized database backup and restore functionality with
 - ✅ **Background processing** - Non-blocking restore operations
 - ✅ **Progress tracking** - Monitor restore status in real-time
 - ✅ **Docker-ready** - Containerized deployment
+
+## 🔐 Security & Authentication
+
+This is a **privileged admin service**. The API is currently protected by shared secrets (e.g., `X-Admin-Key`, `X-Delete-Key`, `X-Restore-Key`). Because these operations can overwrite or destroy data, treat access as high risk.
+
+**Recommended deployment patterns:**
+- **Internal/admin-only:** keep the API on a private network or behind VPN/IP allowlists, and keep the API keys as a second factor for destructive endpoints.
+- **Reverse proxy auth (low effort):** use Basic Auth, IP allowlists, or OIDC forward-auth at the proxy layer. The API should only be reachable through the proxy.
+- **Full OIDC (multi-user):** implement JWT validation in the API and use OAuth2 PKCE in the UI. This enables per-user identity, RBAC, MFA, audit logs, and token revocation.
+
+**Keycloak** is the best self-hosted option when you need full OIDC + role-based access. It adds MFA, group/role management, and auditability, but requires operating Keycloak + its database and keeping it patched. If this tool remains internal, you likely *do not* need a full Keycloak setup; if it becomes multi-user or internet-facing, Keycloak is recommended.
+
+For a deeper comparison, see `security-compare-auth.md`.
 
 ## 📋 Prerequisites
 
@@ -386,6 +400,7 @@ See `docs/DATABASE.md` for detailed database configuration and usage.
 - **Docker Setup**: `docs/DOCKER_SETUP.md` - Complete Docker setup guide ⭐
 - **How to Add Endpoint**: `docs/HOW_TO_ADD_ENDPOINT.md` - Step-by-step guide ⭐
 - **Database Credentials**: `docs/DATABASE_CREDENTIALS.md` - Security & credential management ⭐
+- **Security & Auth Options**: `security-compare-auth.md` - Authentication strategies and Keycloak guidance ⭐
 - **Project Structure**: `docs/PROJECT_STRUCTURE.md` - Structure explanation
 - **Quick Start**: `docs/QUICK_START.md` - Get started quickly
 - **Database Guide**: `docs/DATABASE.md` - Database configuration and usage
