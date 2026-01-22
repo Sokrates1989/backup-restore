@@ -171,12 +171,20 @@ function Open-Url {
 
         # macOS
         if ($IsMacOS) {
+            $profileBase = if ($env:TMPDIR) { $env:TMPDIR } else { "/tmp" }
+            $chromeProfile = Join-Path $profileBase "chrome_incog_profile_backup-restore"
+            $edgeProfile = Join-Path $profileBase "edge_incog_profile_backup-restore"
+            $chromeArgs = @("--incognito", "--user-data-dir=$chromeProfile", "--no-first-run", "--no-default-browser-check", "--disable-default-apps")
+            $edgeArgs = @("-inprivate", "--user-data-dir=$edgeProfile", "--no-first-run", "--no-default-browser-check", "--disable-default-apps")
+            New-Item -ItemType Directory -Path $chromeProfile -Force | Out-Null
+            New-Item -ItemType Directory -Path $edgeProfile -Force | Out-Null
+
             if (Test-Path "/Applications/Google Chrome.app") {
-                & open -na "Google Chrome" --args --incognito $Url 2>$null
+                & open -na "Google Chrome" --args @($chromeArgs + $Url) 2>$null
                 return
             }
             if (Test-Path "/Applications/Microsoft Edge.app") {
-                & open -na "Microsoft Edge" --args -inprivate $Url 2>$null
+                & open -na "Microsoft Edge" --args @($edgeArgs + $Url) 2>$null
                 return
             }
             if (Test-Path "/Applications/Firefox.app") {

@@ -18,6 +18,31 @@ let backupFilesVisibleLimit = BACKUP_FILES_PAGE_SIZE;
 let backupFilesPagingState = null;
 
 /**
+ * Fetch with Keycloak bearer authentication.
+ *
+ * @param {string} url Request URL.
+ * @param {RequestInit} options Fetch options.
+ * @returns {Promise<Response>} Fetch response.
+ */
+async function fetchWithKeycloakAuth(url, options = {}) {
+    if (typeof getKeycloakToken !== 'function') {
+        throw new Error('Keycloak authentication is required but not available.');
+    }
+
+    const token = await getKeycloakToken();
+    if (!token) {
+        throw new Error('Not authenticated');
+    }
+
+    const headers = {
+        ...(options.headers || {}),
+        Authorization: `Bearer ${token}`
+    };
+
+    return fetch(url, { ...options, headers });
+}
+
+/**
  * Get the currently selected backup files sort mode.
  *
  * @returns {string} Sort mode key.
@@ -699,11 +724,7 @@ async function downloadBackupDelegated(type, destinationId, backupId, fallbackFi
         }
 
         const url = `/automation/destinations/${destinationId}/backups/download?backup_id=${encodeURIComponent(backupId)}&filename=${encodeURIComponent(fallbackFilename || '')}`;
-        const response = await fetch(url, {
-            headers: {
-                'X-Admin-Key': adminToken
-            }
-        });
+        const response = await fetchWithKeycloakAuth(url);
 
         if (!response.ok) {
             const data = await response.json().catch(() => ({}));
@@ -1172,7 +1193,7 @@ async function restoreBackupFromModal() {
     }
 
     try {
-        if (typeof apiRestoreCall !== 'function') {
+        if (typeof keycloakApiRestoreCall !== 'function') {
             throw new Error('Restore helper not available');
         }
 
@@ -1198,7 +1219,7 @@ async function restoreBackupFromModal() {
             payload.encryption_password = encryptionPassword;
         }
 
-        await apiRestoreCall('/automation/restore-now', payload);
+        await keycloakApiRestoreCall('/automation/restore-now', payload);
         setBackupDetailsStatus('Restore completed successfully!', 'success', false);
         await loadBackupFiles();
         hideBackupDetailsModal();
@@ -1232,11 +1253,7 @@ function hideBackupDetailsModal() {
 
 async function downloadBackup(filename) {
     try {
-        const response = await fetch(`/backup/download/${encodeURI(filename)}`, {
-            headers: {
-                'X-Admin-Key': adminToken
-            }
-        });
+        const response = await fetchWithKeycloakAuth(`/backup/download/${encodeURI(filename)}`);
         
         if (!response.ok) {
             throw new Error(`Download failed: ${response.statusText}`);
@@ -1276,7 +1293,7 @@ async function deleteBackup(backupId, type, destinationId, remoteBackupId, remot
             setBackupDetailsStatus('Deleting backup...', 'info', false);
         }
         if (type === 'remote') {
-            if (typeof apiDeleteCall !== 'function') {
+            if (typeof keycloakApiDeleteCall !== 'function') {
                 throw new Error('Delete helper not available');
             }
             if (!destinationId || !remoteBackupId) {
@@ -1284,15 +1301,15 @@ async function deleteBackup(backupId, type, destinationId, remoteBackupId, remot
             }
 
             const endpoint = `/automation/destinations/${destinationId}/backups/delete?backup_id=${encodeURIComponent(remoteBackupId)}&name=${encodeURIComponent(remoteName || '')}`;
-            await apiDeleteCall(endpoint);
+            await keycloakApiDeleteCall(endpoint);
         } else {
             const file = backupFiles.find(f => (f.filename || '') === backupId);
             const filename = file ? file.filename : backupId;
 
-            if (typeof apiDeleteCall !== 'function') {
+            if (typeof keycloakApiDeleteCall !== 'function') {
                 throw new Error('Delete helper not available');
             }
-            await apiDeleteCall(`/backup/delete/${encodeURI(filename)}`);
+            await keycloakApiDeleteCall(`/backup/delete/${encodeURI(filename)}`);
         }
         
         if (preferModal) {

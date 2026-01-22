@@ -1,0 +1,158 @@
+# Test Databases for Backup/Restore Testing - macOS ARM64 Compatible
+#
+# This file provides macOS ARM64-compatible alternatives for images that lack ARM64 support.
+# Use with: docker compose -f docker-compose.postgres.yml -f docker-compose.test-databases-macos.yml up
+#
+# Admin UIs:
+# - pgAdmin (for test PostgreSQL): http://localhost:5050
+# - phpMyAdmin (for test MySQL): http://localhost:8080 (via arm64v8 image)
+# - Neo4j Browser (for test Neo4j): http://localhost:7475
+# - Adminer (universal): http://localhost:8082
+#
+# Test Database Ports:
+# - PostgreSQL: 5434
+# - MySQL: 3306
+# - Neo4j Bolt: 7688, HTTP: 7475
+# - SQLite: file-based (no port)
+
+services:
+  app:
+    volumes:
+      - ../.docker/test-sqlite-data:/data
+
+  # =============================================================================
+  # TEST POSTGRESQL DATABASE
+  # =============================================================================
+  test-postgres:
+    image: postgres:16
+    platform: linux/arm64
+    environment:
+      POSTGRES_DB: ${TEST_POSTGRES_DB:-testdb}
+      POSTGRES_USER: ${TEST_POSTGRES_USER:-testuser}
+      POSTGRES_PASSWORD: ${TEST_POSTGRES_PASSWORD:-testpass}
+    ports:
+      - "5434:5432"
+    volumes:
+      - ../.docker/test-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEST_POSTGRES_USER:-testuser} -d ${TEST_POSTGRES_DB:-testdb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # =============================================================================
+  # TEST MYSQL DATABASE (ARM64 compatible)
+  # =============================================================================
+  test-mysql:
+    image: arm64v8/mysql:8.0
+    platform: linux/arm64
+    environment:
+      MYSQL_ROOT_PASSWORD: ${TEST_MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_DATABASE: ${TEST_MYSQL_DB:-testdb}
+      MYSQL_USER: ${TEST_MYSQL_USER:-testuser}
+      MYSQL_PASSWORD: ${TEST_MYSQL_PASSWORD:-testpass}
+    ports:
+      - "3306:3306"
+    volumes:
+      - ../.docker/test-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${TEST_MYSQL_ROOT_PASSWORD:-rootpass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =============================================================================
+  # TEST NEO4J DATABASE (ARM64 supported in official image)
+  # =============================================================================
+  test-neo4j:
+    image: neo4j:5-community
+    platform: linux/arm64
+    environment:
+      NEO4J_AUTH: none
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_server_bolt_advertised__address: localhost:7688
+    ports:
+      - "7475:7474"  # HTTP Browser UI
+      - "7688:7687"  # Bolt protocol
+    volumes:
+      - ../.docker/test-neo4j-data:/data
+      - ../.docker/test-neo4j-logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # =============================================================================
+  # ADMIN UIs (ARM64 compatible)
+  # =============================================================================
+  
+  # pgAdmin for PostgreSQL (ARM64 supported)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    platform: linux/arm64
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@local.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_DISABLE_POSTFIX: "1"
+      PGADMIN_LISTEN_ADDRESS: 0.0.0.0
+      PGADMIN_LISTEN_PORT: 5050
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+      PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
+      PGADMIN_DB_PASSWORD_APP: ${DB_PASSWORD:-postgres}
+      PGADMIN_DB_PASSWORD_TEST: ${TEST_POSTGRES_PASSWORD:-testpass}
+    ports:
+      - "5050:5050"
+    volumes:
+      - ./scripts/pgadmin-servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+
+  # phpMyAdmin for MySQL (ARM64 compatible image)
+  phpmyadmin:
+    image: arm64v8/phpmyadmin:latest
+    platform: linux/arm64
+    environment:
+      PMA_HOST: test-mysql
+      PMA_PORT: 3306
+      PMA_USER: root
+      PMA_PASSWORD: ${TEST_MYSQL_ROOT_PASSWORD:-rootpass}
+      UPLOAD_LIMIT: 300M
+    ports:
+      - "8080:80"
+    depends_on:
+      test-mysql:
+        condition: service_healthy
+
+  # Adminer - Universal database admin (ARM64 supported)
+  adminer:
+    image: adminer:latest
+    platform: linux/arm64
+    environment:
+      ADMINER_DEFAULT_SERVER: test-postgres
+    ports:
+      - "8082:8080"
+    volumes:
+      - ../.docker/test-sqlite-data:/data
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-mysql:
+        condition: service_healthy
+
+  # =============================================================================
+  # SQLITE TEST ENVIRONMENT (ARM64 compatible)
+  # =============================================================================
+  # sqlite-web for basic SQLite management
+  sqlite-web:
+    image: coleifer/sqlite-web:latest
+    platform: linux/amd64  # This image works via Rosetta 2
+    ports:
+      - "8084:8080"
+    volumes:
+      - ../.docker/test-sqlite-data:/data
+    command: sqlite_web -H 0.0.0.0 /data/test.db

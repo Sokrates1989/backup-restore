@@ -20,7 +20,7 @@ class Neo4jConfig(BaseModel):
         False,
         description=(
             "When true, attempt to lock the target API during backup/restore "
-            "(requires target_api_url and target_api_key)."
+            "(requires target_api_url and target_api_token)."
         ),
     )
     target_api_url: Optional[str] = Field(
@@ -31,9 +31,9 @@ class Neo4jConfig(BaseModel):
             "use http://host.docker.internal:8081."
         ),
     )
-    target_api_key: Optional[str] = Field(
+    target_api_token: Optional[str] = Field(
         None,
-        description="Optional: API key for target API lock endpoint"
+        description="Optional: Bearer token for target API lock endpoint"
     )
 
 
@@ -64,7 +64,7 @@ class SQLConfig(BaseModel):
         False,
         description=(
             "When true, attempt to lock the target API during backup/restore "
-            "(requires target_api_url and target_api_key)."
+            "(requires target_api_url and target_api_token)."
         ),
     )
     target_api_url: Optional[str] = Field(
@@ -75,9 +75,9 @@ class SQLConfig(BaseModel):
             "use http://host.docker.internal:8081."
         ),
     )
-    target_api_key: Optional[str] = Field(
+    target_api_token: Optional[str] = Field(
         None,
-        description="Optional: API key for target API lock endpoint"
+        description="Optional: Bearer token for target API lock endpoint"
     )
 
 

@@ -122,7 +122,12 @@ jobs:
               DEBUG=false \
               DATABASE_URL="${{ secrets.PROD_DATABASE_URL }}" \
               REDIS_URL="${{ secrets.PROD_REDIS_URL }}" \
-              ADMIN_API_KEY="${{ secrets.PROD_ADMIN_API_KEY }}" \
+              KEYCLOAK_ENABLED=true \
+              KEYCLOAK_URL="${{ secrets.KEYCLOAK_URL }}" \
+              KEYCLOAK_INTERNAL_URL="${{ secrets.KEYCLOAK_INTERNAL_URL }}" \
+              KEYCLOAK_REALM="${{ secrets.KEYCLOAK_REALM }}" \
+              KEYCLOAK_CLIENT_ID="${{ secrets.KEYCLOAK_CLIENT_ID }}" \
+              KEYCLOAK_CLIENT_SECRET="${{ secrets.KEYCLOAK_CLIENT_SECRET }}" \
               WEBSITES_PORT=8000
           
           # Restart the app

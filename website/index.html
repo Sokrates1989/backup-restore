@@ -6,9 +6,8 @@
     <title>Backup Manager - Admin</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%232563eb'/%3E%3Ctext x='32' y='43' font-size='32' text-anchor='middle' fill='white' font-family='Arial'%3EB%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="styles.css">
-    <!-- Keycloak JS adapter - loaded from Keycloak server or CDN -->
+    <!-- Keycloak JS adapter - loaded dynamically in keycloak.js -->
     <script src="keycloak-config.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/keycloak-js@26.0.0/dist/keycloak.min.js"></script>
     <script src="keycloak.js"></script>
 </head>
 <body>
@@ -30,12 +29,9 @@
 
         <!-- Login Section -->
         <section id="login-section" class="card">
-            <h2>Authentication</h2>
-            <div class="form-group">
-                <label for="admin-token">Admin API Key</label>
-                <input type="password" id="admin-token" placeholder="Enter your admin API key">
-            </div>
-            <button id="login-btn" class="btn btn-primary">Login</button>
+            <h2>Single Sign-On</h2>
+            <p class="subtitle">Sign in with your Keycloak account to manage backups.</p>
+            <button id="login-btn" class="btn btn-primary">Login with Keycloak</button>
             <p id="login-error" class="error hidden"></p>
         </section>
 

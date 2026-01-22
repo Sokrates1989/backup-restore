@@ -343,10 +343,11 @@ async function deleteRemoteStorageLocation(id) {
     if (!confirm('Are you sure you want to delete this remote storage location?')) return;
     
     try {
-        if (typeof apiDeleteCall !== 'function') {
+        if (typeof keycloakApiDeleteCall !== 'function') {
             throw new Error('Delete helper not available');
         }
-        await apiDeleteCall(`/automation/destinations/${id}`);
+
+        await keycloakApiDeleteCall(`/automation/destinations/${id}`);
         showStatus('Remote storage location deleted');
         await loadRemoteStorageLocations();
         if (typeof updateScheduleSelects === 'function') {

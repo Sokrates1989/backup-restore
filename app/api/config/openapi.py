@@ -23,23 +23,11 @@ def setup_openapi(app: FastAPI) -> None:
         
         # Define security schemes that will appear in Swagger UI "Authorize" button
         openapi_schema["components"]["securitySchemes"] = {
-            "X-Admin-Key": {
-                "type": "apiKey",
-                "in": "header",
-                "name": "X-Admin-Key",
-                "description": "Admin API Key for backup operations (download backups)"
-            },
-            "X-Restore-Key": {
-                "type": "apiKey",
-                "in": "header",
-                "name": "X-Restore-Key",
-                "description": "Restore API Key for restore operations (overwrites database)"
-            },
-            "X-Delete-Key": {
-                "type": "apiKey",
-                "in": "header",
-                "name": "X-Delete-Key",
-                "description": "Delete API Key for destructive delete operations"
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": "Keycloak Bearer token for Backup Restore API"
             }
         }
         
@@ -48,12 +36,7 @@ def setup_openapi(app: FastAPI) -> None:
             if path.startswith("/backup/") or path.startswith("/automation/"):
                 for method, operation in path_item.items():
                     if method in ["get", "post", "delete", "put", "patch"]:
-                        if method == "delete":
-                            operation["security"] = [{"X-Delete-Key": []}]
-                        elif "restore" in path:
-                            operation["security"] = [{"X-Restore-Key": []}]
-                        else:
-                            operation["security"] = [{"X-Admin-Key": []}]
+                        operation["security"] = [{"BearerAuth": []}]
         
         app.openapi_schema = openapi_schema
         return app.openapi_schema

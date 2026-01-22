@@ -10,14 +10,6 @@ class Settings(BaseSettings):
     IMAGE_TAG: str = "local non docker"
     DEBUG: bool = False
     
-    # Security Settings - Tiered API Keys
-    ADMIN_API_KEY: str = ""  # Level 1: Read-only admin operations
-    ADMIN_API_KEY_FILE: str = ""  # Path to file containing admin API key
-    BACKUP_RESTORE_API_KEY: str = ""  # Level 2: Restore operations (destructive)
-    BACKUP_RESTORE_API_KEY_FILE: str = ""  # Path to file containing restore API key
-    BACKUP_DELETE_API_KEY: str = ""  # Level 3: Delete operations (destructive)
-    BACKUP_DELETE_API_KEY_FILE: str = ""  # Path to file containing delete API key
-
     # Local/dev safety toggles
     # When True, SQL backup/restore commands are allowed to disable MySQL TLS/SSL
     # verification to work around self-signed certificates in local deployments.
@@ -25,12 +17,12 @@ class Settings(BaseSettings):
     ALLOW_INSECURE_MYSQL_SSL: bool = False
 
     # Keycloak Authentication Settings
-    KEYCLOAK_ENABLED: bool = False  # Set to True to enable Keycloak authentication
+    KEYCLOAK_ENABLED: bool = True  # Set to True to enable Keycloak authentication
     KEYCLOAK_URL: str = "http://localhost:9090"  # Keycloak server URL (for issuer validation)
     KEYCLOAK_INTERNAL_URL: str = ""  # Internal Keycloak URL (for JWKS fetching in Docker)
     KEYCLOAK_REALM: str = "backup-restore"  # Keycloak realm name
     KEYCLOAK_CLIENT_ID: str = "backup-restore-backend"  # Backend client ID
-    KEYCLOAK_CLIENT_SECRET: str = ""  # Backend client secret (optional)
+    KEYCLOAK_CLIENT_SECRET: str = ""  # Backend client secret (required for service accounts)
 
     CONFIG_ENCRYPTION_KEY: str = ""  # Symmetric key for encrypting stored destination/target secrets
     CONFIG_ENCRYPTION_KEY_FILE: str = ""  # Path to file containing config encryption key
@@ -61,24 +53,6 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
     
-    def get_admin_api_key(self) -> str:
-        """Get admin API key from file or environment variable"""
-        if self.ADMIN_API_KEY_FILE and Path(self.ADMIN_API_KEY_FILE).exists():
-            return Path(self.ADMIN_API_KEY_FILE).read_text().strip()
-        return self.ADMIN_API_KEY
-    
-    def get_restore_api_key(self) -> str:
-        """Get restore API key from file or environment variable"""
-        if self.BACKUP_RESTORE_API_KEY_FILE and Path(self.BACKUP_RESTORE_API_KEY_FILE).exists():
-            return Path(self.BACKUP_RESTORE_API_KEY_FILE).read_text().strip()
-        return self.BACKUP_RESTORE_API_KEY
-    
-    def get_delete_api_key(self) -> str:
-        """Get delete API key from file or environment variable"""
-        if self.BACKUP_DELETE_API_KEY_FILE and Path(self.BACKUP_DELETE_API_KEY_FILE).exists():
-            return Path(self.BACKUP_DELETE_API_KEY_FILE).read_text().strip()
-        return self.BACKUP_DELETE_API_KEY
-
     def get_config_encryption_key(self) -> str:
         """Get config encryption key from file or environment variable."""
         if self.CONFIG_ENCRYPTION_KEY_FILE and Path(self.CONFIG_ENCRYPTION_KEY_FILE).exists():

@@ -9,7 +9,7 @@ This document compares authentication approaches for the Backup-Restore tool and
   - A static Admin UI (SPA) and an API.
 
 - **What you have today**
-  - API endpoints guarded by shared secrets (e.g. `X-Admin-Key`, `X-Delete-Key`, `X-Restore-Key`).
+  - API endpoints protected by Keycloak-issued JWT bearer tokens with role-based access control.
   - CSP/security headers are enabled and the UI avoids inline scripts/handlers.
 
 ## Threat model (what you should defend against)
@@ -35,9 +35,9 @@ This document compares authentication approaches for the Backup-Restore tool and
 ### ❌ What hosting separately does *not* automatically improve
 
 - **Auth boundary**
-  - The *real* boundary is the API. If the API is still reachable with a shared secret, the UI location doesn’t matter much.
+  - The *real* boundary is the API. If the API is reachable without strong authentication, the UI location doesn’t matter much.
 - **Secret exposure risk**
-  - If the UI still asks for a long-lived admin secret and stores it in browser storage, hosting separately doesn’t reduce the blast radius.
+  - If tokens are mishandled or stored insecurely in the browser, hosting separately doesn’t reduce the blast radius.
 
 ### Key decision: “Browser calls API directly” vs “Proxy calls API”
 
@@ -53,19 +53,18 @@ This document compares authentication approaches for the Backup-Restore tool and
 
 ## Options overview (recommended paths)
 
-### Option A: Keep API keys (current) + put everything behind a private network
+### Option A: Keycloak (current) + private network
 
 - **Use when**
-  - This is a personal/internal tool.
+  - This is an internal tool with a controlled set of users.
   - You can rely on VPN / private network / IP allowlists.
 
 - **Hardening checklist**
   - Keep API ports private (VPN, tailscale, security group allowlist).
-  - Rotate keys regularly.
-  - Prefer separate keys for read/backup/restore/delete (already supported).
+  - Rotate client secrets and enforce MFA.
   - Add rate limiting at the reverse proxy.
 
-### Option B: Reverse-proxy authentication (no app-level auth)
+### Option B: Reverse-proxy authentication (in front of Keycloak)
 
 - **Use when**
   - You want SSO/login *without changing the app much*.
@@ -78,7 +77,7 @@ This document compares authentication approaches for the Backup-Restore tool and
 - **Notes**
   - The API should ideally not be directly reachable from the internet, only via the proxy.
 
-### Option C: Full OIDC in the app (JWT verification in API)
+### Option C: Managed OIDC provider (still JWT verification in API)
 
 - **Use when**
   - You want proper user identities, roles, auditability, revocation, MFA.
@@ -86,7 +85,7 @@ This document compares authentication approaches for the Backup-Restore tool and
 - **Implementation shape**
   - UI uses OAuth2 Authorization Code + PKCE.
   - API validates JWT (issuer, audience, exp) via JWKS.
-  - Use roles/claims for authorization (admin, restore, delete).
+  - Use roles/claims for authorization (admin, operator, viewer).
 
 ## Provider comparison
 
@@ -127,11 +126,11 @@ This document compares authentication approaches for the Backup-Restore tool and
 If this stays an **admin-only tool**:
 
 1) Put UI+API behind a reverse proxy with **IP allowlisting + Basic Auth** or **OIDC forward-auth**.
-2) Keep the existing API keys as an additional “second factor” for the most dangerous operations (`restore`, `delete`).
+2) Keep Keycloak tokens short-lived and use MFA for privileged roles.
 
 If this becomes **multi-user / production**:
 
-1) Implement full OIDC in the API (JWT verification).
+1) Keep full OIDC in the API (JWT verification).
 2) Use Keycloak (self-host) or Cognito (managed) depending on whether you want **ops control** vs **managed convenience**.
 
 ## Notes on token storage (Admin UI)

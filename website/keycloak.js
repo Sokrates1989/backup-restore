@@ -5,7 +5,7 @@
  * It handles login, logout, token refresh, and API authentication.
  * 
  * Dependencies:
- * - Keycloak JS adapter (loaded from CDN or Keycloak server)
+ * - Keycloak JS adapter (loaded dynamically from Keycloak server or CDN)
  */
 
 // Keycloak configuration - will be set from environment or defaults
@@ -14,6 +14,55 @@ const KEYCLOAK_CONFIG = {
     realm: window.KEYCLOAK_REALM || 'backup-restore',
     clientId: window.KEYCLOAK_CLIENT_ID || 'backup-restore-frontend'
 };
+
+/**
+ * Load a script tag dynamically.
+ *
+ * @param {string} src - Script URL to load.
+ * @returns {Promise<void>} Resolves when the script loads.
+ */
+function loadScript(src) {
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.async = true;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+        document.head.appendChild(script);
+    });
+}
+
+/**
+ * Ensure the Keycloak JS adapter is loaded.
+ *
+ * @returns {Promise<boolean>} True if the adapter is loaded.
+ */
+async function loadKeycloakAdapter() {
+    if (typeof Keycloak !== 'undefined') {
+        return true;
+    }
+
+    const baseUrl = KEYCLOAK_CONFIG.url.replace(/\/$/, '');
+    const sources = [
+        '/keycloak-adapter.js',
+        `${baseUrl}/js/keycloak.js`,
+        `${baseUrl}/auth/js/keycloak.js`,
+        'https://cdn.jsdelivr.net/npm/keycloak-js@26.0.0/dist/keycloak.min.js'
+    ];
+
+    for (const src of sources) {
+        try {
+            await loadScript(src);
+            if (typeof Keycloak !== 'undefined') {
+                return true;
+            }
+        } catch (error) {
+            console.warn('[Keycloak] Adapter load failed:', error.message || error);
+        }
+    }
+
+    return false;
+}
 
 // Keycloak instance
 let keycloak = null;
@@ -43,11 +92,9 @@ async function initKeycloak() {
         return false;
     }
 
-    // Check if Keycloak JS adapter is loaded
-    if (typeof Keycloak === 'undefined') {
-        console.warn('[Keycloak] Keycloak JS adapter not loaded, falling back to API key auth');
-        keycloakEnabled = false;
-        return false;
+    const adapterLoaded = await loadKeycloakAdapter();
+    if (!adapterLoaded) {
+        throw new Error('Keycloak JS adapter is not loaded. Rebuild the web image to include /keycloak-adapter.js or allow CDN access.');
     }
 
     try {
@@ -95,8 +142,7 @@ async function initKeycloak() {
  */
 async function keycloakLogin() {
     if (!isKeycloakEnabled()) {
-        console.warn('[Keycloak] Cannot login - Keycloak not enabled');
-        return;
+        throw new Error('Keycloak is not enabled or not initialized.');
     }
 
     try {
@@ -116,8 +162,7 @@ async function keycloakLogin() {
  */
 async function keycloakLogout() {
     if (!isKeycloakEnabled()) {
-        console.warn('[Keycloak] Cannot logout - Keycloak not enabled');
-        return;
+        throw new Error('Keycloak is not enabled or not initialized.');
     }
 
     try {

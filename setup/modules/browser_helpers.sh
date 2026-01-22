@@ -82,11 +82,14 @@ open_url() {
         BROWSER_CLEANED=true
     fi
 
+    local chrome_args=("--incognito" "--user-data-dir=$chrome_profile" "--no-first-run" "--no-default-browser-check" "--disable-default-apps")
+    local edge_args=("-inprivate" "--user-data-dir=$edge_profile" "--no-first-run" "--no-default-browser-check" "--disable-default-apps")
+
     # macOS
     if command -v open >/dev/null 2>&1; then
         if [ -d "/Applications/Google Chrome.app" ]; then
             # Don't kill processes here - they're already cleaned once per session
-            open -na "Google Chrome" --args --incognito --user-data-dir="$chrome_profile" "$url" >/dev/null 2>&1 || true
+            open -na "Google Chrome" --args "${chrome_args[@]}" "$url" >/dev/null 2>&1 || true
             return 0
         fi
 
@@ -97,7 +100,7 @@ open_url() {
 
         if [ -d "/Applications/Microsoft Edge.app" ]; then
             # Don't kill processes here - they're already cleaned once per session
-            open -na "Microsoft Edge" --args -inprivate --user-data-dir="$edge_profile" "$url" >/dev/null 2>&1 || true
+            open -na "Microsoft Edge" --args "${edge_args[@]}" "$url" >/dev/null 2>&1 || true
             return 0
         fi
 
@@ -112,19 +115,19 @@ open_url() {
 
     # Linux
     if command -v google-chrome >/dev/null 2>&1; then
-        google-chrome --incognito --user-data-dir="$chrome_profile" "$url" >/dev/null 2>&1 &
+        google-chrome "${chrome_args[@]}" "$url" >/dev/null 2>&1 &
         return 0
     fi
     if command -v chromium >/dev/null 2>&1; then
-        chromium --incognito --user-data-dir="$chrome_profile" "$url" >/dev/null 2>&1 &
+        chromium "${chrome_args[@]}" "$url" >/dev/null 2>&1 &
         return 0
     fi
     if command -v chromium-browser >/dev/null 2>&1; then
-        chromium-browser --incognito --user-data-dir="$chrome_profile" "$url" >/dev/null 2>&1 &
+        chromium-browser "${chrome_args[@]}" "$url" >/dev/null 2>&1 &
         return 0
     fi
     if command -v microsoft-edge >/dev/null 2>&1; then
-        microsoft-edge -inprivate --user-data-dir="$edge_profile" "$url" >/dev/null 2>&1 &
+        microsoft-edge "${edge_args[@]}" "$url" >/dev/null 2>&1 &
         return 0
     fi
     if command -v firefox >/dev/null 2>&1; then

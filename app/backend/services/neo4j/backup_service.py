@@ -8,6 +8,10 @@ import gzip
 import json
 from neo4j import GraphDatabase
 from api.settings import settings
+from api.logging_config import get_logger
+
+
+logger = get_logger(__name__)
 
 
 class Neo4jBackupService:
@@ -37,7 +41,7 @@ class Neo4jBackupService:
             self.lock_file.write_text(json.dumps(lock_data))
             return True
         except Exception as e:
-            print(f"Warning: Failed to acquire lock: {e}")
+            logger.warning("Failed to acquire lock: %s", e)
             return True
 
     def _release_lock(self):
@@ -46,7 +50,7 @@ class Neo4jBackupService:
             if self.lock_file.exists():
                 self.lock_file.unlink()
         except Exception as e:
-            print(f"Warning: Failed to release lock: {e}")
+            logger.warning("Failed to release lock: %s", e)
 
     def _update_restore_progress(
         self, status: str, current: int = 0, total: int = 0,
@@ -64,7 +68,7 @@ class Neo4jBackupService:
             if warnings:
                 self.warnings_file.write_text(json.dumps(warnings, indent=2))
         except Exception as e:
-            print(f"Warning: Failed to update progress: {e}")
+            logger.warning("Failed to update progress: %s", e)
 
     def get_restore_status(self) -> Optional[Dict]:
         """Get current restore operation status."""
@@ -79,7 +83,7 @@ class Neo4jBackupService:
             status_data["lock_operation"] = lock_operation
             return status_data
         except Exception as e:
-            print(f"Warning: Failed to get restore status: {e}")
+            logger.warning("Failed to get restore status: %s", e)
             return None
 
     def check_operation_lock(self) -> Optional[str]:
@@ -94,8 +98,25 @@ class Neo4jBackupService:
                 return None
             return lock_data.get("operation")
         except Exception as e:
-            print(f"Warning: Failed to check lock: {e}")
+            logger.warning("Failed to check lock: %s", e)
             return None
+
+    def _build_bearer_headers(self, token: str) -> Dict[str, str]:
+        """Build Authorization headers for a bearer token.
+
+        Args:
+            token: Access token string.
+
+        Returns:
+            Dict[str, str]: Authorization headers.
+        """
+
+        normalized = (token or "").strip()
+        if not normalized:
+            return {}
+        if normalized.lower().startswith("bearer "):
+            return {"Authorization": normalized}
+        return {"Authorization": f"Bearer {normalized}"}
 
     def _looks_like_gzip(self, path: Path) -> bool:
         """Return True when the file appears to be gzip-compressed.
@@ -163,7 +184,7 @@ class Neo4jBackupService:
             
             with driver.session() as session:
                 # Export all nodes
-                print("📦 Exporting nodes...")
+                logger.info("Exporting nodes...")
                 result = session.run("MATCH (n) RETURN n")
                 for record in result:
                     node = record["n"]
@@ -176,7 +197,7 @@ class Neo4jBackupService:
                     cypher_statements.append(cypher)
                 
                 # Export all relationships
-                print("📦 Exporting relationships...")
+                logger.info("Exporting relationships...")
                 result = session.run("""
                     MATCH (a)-[r]->(b)
                     RETURN 
@@ -216,7 +237,7 @@ class Neo4jBackupService:
                 with open(temp_filepath, 'w', encoding='utf-8') as f:
                     f.write(content)
             
-            print(f"✅ Exported {len(cypher_statements)} statements to temporary file")
+            logger.info("Exported %s statements to temporary file", len(cypher_statements))
             return filename, temp_filepath
             
         except Exception as e:
@@ -270,7 +291,7 @@ class Neo4jBackupService:
         db_user: str,
         db_password: str,
         target_api_url: str = None,
-        target_api_key: str = None
+        target_api_token: str = None
     ):
         """
         Restore Neo4j database from backup file.
@@ -283,7 +304,7 @@ class Neo4jBackupService:
             db_user: Database username
             db_password: Database password
             target_api_url: Optional URL of target API to unlock after restore
-            target_api_key: Optional API key for target API unlock endpoint
+            target_api_token: Optional bearer token for target API unlock endpoint
             
         Returns:
             List of warnings encountered during restore
@@ -336,7 +357,7 @@ class Neo4jBackupService:
             
             with driver.session() as session:
                 # Clear existing data
-                print("🗑️  Clearing existing data...")
+                logger.info("Clearing existing data...")
                 self._update_restore_progress(
                     status="in_progress",
                     message="Clearing existing database data..."
@@ -344,7 +365,7 @@ class Neo4jBackupService:
                 session.run("MATCH (n) DETACH DELETE n")
                 
                 # Execute each Cypher statement
-                print("📥 Restoring data...")
+                logger.info("Restoring data...")
                 # Backups generated by create_backup_to_temp contain exactly
                 # one Cypher statement per line (ending with ';'). Splitting
                 # on lines avoids breaking statements that contain ';' inside
@@ -375,7 +396,7 @@ class Neo4jBackupService:
                         try:
                             session.run(statement)
                             if (i + 1) % 100 == 0:
-                                print(f"   Executed {i + 1}/{total} statements...")
+                                logger.debug("Executed %s/%s statements...", i + 1, total)
                                 self._update_restore_progress(
                                     status="in_progress",
                                     current=i + 1,
@@ -385,7 +406,7 @@ class Neo4jBackupService:
                                 )
                         except Exception as e:
                             warn_msg = f"Failed to execute statement {i + 1}/{total}: {e}"
-                            print(f"   Warning: {warn_msg}")
+                            logger.warning("Restore warning: %s", warn_msg)
                             
                             # Collect a limited number of warning details
                             if len(warnings) < max_warnings_to_collect:
@@ -395,7 +416,7 @@ class Neo4jBackupService:
                                 warnings.append(f"{warn_msg} | Cypher: {snippet}")
                             # Continue with other statements
                 
-                print(f"✅ Executed {total} statements")
+                logger.info("Executed %s statements", total)
             
             driver.close()
             
@@ -424,20 +445,20 @@ class Neo4jBackupService:
                 try:
                     backup_file.unlink()
                 except Exception as e:
-                    print(f"Warning: Failed to clean up temp file: {e}")
+                    logger.warning("Failed to clean up temp file: %s", e)
             
             # Unlock target API if it was provided
-            if target_api_url and target_api_key:
+            if target_api_url and target_api_token:
                 try:
                     import httpx
                     with httpx.Client(timeout=10.0) as client:
                         client.post(
                             f"{target_api_url}/database/unlock",
-                            headers={"X-Admin-Key": target_api_key},
+                            headers=self._build_bearer_headers(target_api_token),
                         )
-                    print(f"✅ Unlocked target API: {target_api_url}")
+                    logger.info("Unlocked target API: %s", target_api_url)
                 except Exception as e:
-                    print(f"Warning: Failed to unlock target API: {e}")
+                    logger.warning("Failed to unlock target API: %s", e)
     
     def get_database_stats(self, neo4j_url: str, db_user: str, db_password: str) -> dict:
         """Get current database statistics for a specific Neo4j instance.

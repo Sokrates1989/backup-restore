@@ -6,13 +6,10 @@
  */
 
 // State
-let adminToken = '';
 let databases = [];
 let remoteStorageLocations = [];
 let backupSchedules = [];
 let backupFiles = [];
-
-const EPHEMERAL_KEY_TTL_MS = 15 * 60 * 1000;
 
 const DEV_LIVE_RELOAD_POLL_MS = 1200;
 let _devLiveReloadInterval = null;
@@ -22,7 +19,6 @@ let _devLiveReloadLastSignatures = new Map();
 // DOM Elements
 const loginSection = document.getElementById('login-section');
 const mainSection = document.getElementById('main-section');
-const adminTokenInput = document.getElementById('admin-token');
 const loginBtn = document.getElementById('login-btn');
 const loginError = document.getElementById('login-error');
 const logoutBtn = document.getElementById('logout-btn');
@@ -172,99 +168,6 @@ function updateDevLiveReloadForTab(tabName) {
 }
 
 /**
- * Read a JSON value from sessionStorage.
- *
- * @param {string} key
- * @returns {any|null}
- */
-function _getEphemeralCache(key) {
-    const raw = sessionStorage.getItem(key);
-    if (!raw) return null;
-    try {
-        return JSON.parse(raw);
-    } catch {
-        return null;
-    }
-}
-
-/**
- * Store a JSON value in sessionStorage.
- *
- * @param {string} key
- * @param {any} value
- */
-function _setEphemeralCache(key, value) {
-    sessionStorage.setItem(key, JSON.stringify(value));
-}
-
-/**
- * Get a cached secret if it exists and is not expired.
- *
- * @param {string} keyName
- * @returns {string}
- */
-function getEphemeralSecret(keyName) {
-    const entry = _getEphemeralCache(keyName);
-    if (!entry) return '';
-    const expiresAt = Number(entry.expiresAt || 0);
-    if (!expiresAt || Date.now() > expiresAt) {
-        sessionStorage.removeItem(keyName);
-        return '';
-    }
-    return trimValue(entry.value);
-}
-
-/**
- * Cache a secret in sessionStorage for a limited time.
- *
- * @param {string} keyName
- * @param {string} value
- * @param {number} ttlMs
- */
-function setEphemeralSecret(keyName, value, ttlMs = EPHEMERAL_KEY_TTL_MS) {
-    const v = trimValue(value);
-    if (!v) {
-        sessionStorage.removeItem(keyName);
-        return;
-    }
-    _setEphemeralCache(keyName, { value: v, expiresAt: Date.now() + ttlMs });
-}
-
-/**
- * Prompt the user for the delete key once and cache it for 15 minutes.
- *
- * @returns {Promise<string>}
- */
-async function getDeleteKey() {
-    const cached = getEphemeralSecret('backup_delete_key');
-    if (cached) return cached;
-
-    const entered = trimValue(prompt('Enter Delete API Key (X-Delete-Key). It will be cached for 15 minutes:') || '');
-    if (!entered) return '';
-    setEphemeralSecret('backup_delete_key', entered);
-    return entered;
-}
-
-window.getDeleteKey = getDeleteKey;
-
-/**
- * Prompt the user for the restore key once and cache it for 15 minutes.
- *
- * @returns {Promise<string>}
- */
-async function getRestoreKey() {
-    const cached = getEphemeralSecret('backup_restore_key');
-    if (cached) return cached;
-
-    const entered = trimValue(prompt('Enter Restore API Key (X-Restore-Key). It will be cached for 15 minutes:') || '');
-    if (!entered) return '';
-    setEphemeralSecret('backup_restore_key', entered);
-    return entered;
-}
-
-window.getRestoreKey = getRestoreKey;
-
-/**
  * Hide global status messages.
  *
  * @param {boolean} force When true, also hides error/warning banners.
@@ -325,118 +228,21 @@ async function loadAndDisplayAppVersion() {
 const tabs = document.querySelectorAll('.tab');
 
 // API Functions
+/**
+ * Execute an authenticated API call via Keycloak.
+ *
+ * @param {string} endpoint API endpoint.
+ * @param {string} method HTTP method.
+ * @param {Object|null} body Optional request body.
+ * @returns {Promise<Object>} Parsed JSON response.
+ */
 async function apiCall(endpoint, method = 'GET', body = null) {
-    const suppressLogoutStatus = endpoint === '/automation/targets' && method === 'GET' && body === null;
-    
-    // Use Keycloak authentication if enabled
-    if (typeof isKeycloakEnabled === 'function' && isKeycloakEnabled()) {
-        return await keycloakApiCall(endpoint, method, body);
+    if (typeof keycloakApiCall !== 'function') {
+        throw new Error('Keycloak authentication is required but not available.');
     }
 
-    // Fall back to API key authentication
-    const options = {
-        method,
-        headers: {
-            'X-Admin-Key': adminToken,
-            'Content-Type': 'application/json'
-        }
-    };
-
-    if (body) {
-        options.body = JSON.stringify(body);
-    }
-
-    const response = await fetch(endpoint, options);
-    
-    if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        const detail = data.detail || '';
-
-        const looksLikeDeleteKeyError =
-            typeof detail === 'string' &&
-            (detail.toLowerCase().includes('x-delete-key') || detail.toLowerCase().includes('delete api key'));
-
-        if ((response.status === 401 || response.status === 403) && !looksLikeDeleteKeyError) {
-            handleLogout(!suppressLogoutStatus, 'error', 'Session expired or invalid token');
-            throw new Error('Session expired or invalid token');
-        }
-
-        throw new Error(detail || `HTTP ${response.status}`);
-    }
-
-    return await response.json();
+    return await keycloakApiCall(endpoint, method, body);
 }
-
-async function apiDeleteCall(endpoint) {
-    const deleteKey = await getDeleteKey();
-    if (!deleteKey) {
-        throw new Error('Delete API key required');
-    }
-
-    const response = await fetch(endpoint, {
-        method: 'DELETE',
-        headers: {
-            'X-Admin-Key': adminToken,
-            'X-Delete-Key': deleteKey,
-            'Content-Type': 'application/json'
-        }
-    });
-
-    if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        const detail = data.detail || `HTTP ${response.status}`;
-        const detailLower = String(detail || '').toLowerCase();
-        const looksLikeDeleteKeyError =
-            (response.status === 401 || response.status === 403) &&
-            (detailLower.includes('x-delete-key') || detailLower.includes('delete api key'));
-
-        if (looksLikeDeleteKeyError) {
-            sessionStorage.removeItem('backup_delete_key');
-        }
-
-        throw new Error(detail);
-    }
-
-    return await response.json().catch(() => ({}));
-}
-
-window.apiDeleteCall = apiDeleteCall;
-
-async function apiRestoreCall(endpoint, body) {
-    const restoreKey = await getRestoreKey();
-    if (!restoreKey) {
-        throw new Error('Restore API key required');
-    }
-
-    const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-            'X-Admin-Key': adminToken,
-            'X-Restore-Key': restoreKey,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(body || {})
-    });
-
-    if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        const detail = data.detail || `HTTP ${response.status}`;
-        const detailLower = String(detail || '').toLowerCase();
-        const looksLikeRestoreKeyError =
-            (response.status === 401 || response.status === 403) &&
-            (detailLower.includes('x-restore-key') || detailLower.includes('restore api key'));
-
-        if (looksLikeRestoreKeyError) {
-            sessionStorage.removeItem('backup_restore_key');
-        }
-
-        throw new Error(detail);
-    }
-
-    return await response.json().catch(() => ({}));
-}
-
-window.apiRestoreCall = apiRestoreCall;
 
 // UI Functions
 function setStatusMessage(el, message, type, persist) {
@@ -476,18 +282,23 @@ function showStatus(message, type = 'success', persist = null) {
     setStatusMessage(statusMessageBottom, message, type, shouldPersist);
 }
 
+/**
+ * Show the login section and hide main content.
+ *
+ * @returns {void}
+ */
 function showLogin() {
     loginSection.classList.remove('hidden');
     mainSection.classList.add('hidden');
-    adminToken = '';
-    localStorage.removeItem('backup_admin_token');
-    sessionStorage.removeItem('backup_admin_token');
-    sessionStorage.removeItem('backup_delete_key');
-    sessionStorage.removeItem('backup_restore_key');
     // Hide logout button when logged out
     logoutBtn.classList.add('hidden');
 }
 
+/**
+ * Show the main application section.
+ *
+ * @returns {void}
+ */
 function showMain() {
     loginSection.classList.add('hidden');
     mainSection.classList.remove('hidden');
@@ -639,61 +450,48 @@ async function switchTab(tabName) {
 }
 
 // Event Handlers
+/**
+ * Trigger the Keycloak login flow.
+ *
+ * @returns {Promise<void>}
+ */
 async function handleLogin() {
-    // Check if Keycloak is enabled and use Keycloak login
-    if (typeof isKeycloakEnabled === 'function' && isKeycloakEnabled()) {
-        await keycloakLogin();
-        return;
-    }
+    loginError.classList.add('hidden');
 
-    // Fall back to API key authentication
-    const token = adminTokenInput.value.trim();
-    if (!token) {
-        loginError.textContent = 'Please enter an API key';
+    if (typeof keycloakLogin !== 'function') {
+        loginError.textContent = 'Keycloak is not available. Check configuration.';
         loginError.classList.remove('hidden');
         return;
     }
 
-    adminToken = token;
-    loginError.classList.add('hidden');
-
-    // Test login by calling API
     try {
-        await apiCall('/automation/targets');
-        sessionStorage.setItem('backup_admin_token', token);
-        localStorage.removeItem('backup_admin_token');
-        showMain();
-        showStatus('Login successful');
-        
-        // Load initial tab (databases)
-        await switchTab('databases');
-        
+        await keycloakLogin();
     } catch (error) {
-        adminToken = '';
-        loginError.textContent = error.message === 'Session expired or invalid token' ? 'Incorrect API key' : error.message;
+        loginError.textContent = `Login failed: ${error.message || error}`;
         loginError.classList.remove('hidden');
     }
 }
 
+/**
+ * Trigger logout and reset the UI.
+ *
+ * @param {boolean} showStatusMessage Whether to show a status banner.
+ * @param {string} statusType Status type for the banner.
+ * @param {string} statusText Status text for the banner.
+ * @returns {Promise<void>}
+ */
 async function handleLogout(showStatusMessage = true, statusType = 'success', statusText = 'Logged out') {
-    // Clear API key token
-    adminToken = '';
-    sessionStorage.removeItem('backup_admin_token');
-    localStorage.removeItem('backup_admin_token');
-
-    // If Keycloak is enabled, perform Keycloak logout
-    if (typeof isKeycloakEnabled === 'function' && isKeycloakEnabled()) {
+    if (typeof isKeycloakEnabled === 'function' && isKeycloakEnabled() && typeof keycloakLogout === 'function') {
         try {
             await keycloakLogout();
-            return; // Keycloak will redirect
         } catch (error) {
-            console.error('Keycloak logout failed:', error);
+            showStatus(`Logout failed: ${error.message || error}`, 'error', true);
         }
     }
 
     showLogin();
     if (showStatusMessage) {
-        showStatus(statusText, statusType, false);
+        showStatus(statusText, statusType);
     }
 }
 
@@ -770,65 +568,41 @@ document.addEventListener('DOMContentLoaded', async () => {
         startDevLiveReload();
     });
 
-    // Try to initialize Keycloak first
     let keycloakAuthenticated = false;
-    if (typeof initKeycloak === 'function') {
-        try {
-            keycloakAuthenticated = await initKeycloak();
-            if (keycloakAuthenticated) {
-                console.log('[App] Keycloak authentication successful');
-                const user = getKeycloakUser();
-                if (user) {
-                    console.log('[App] Logged in as:', user.username, 'Roles:', user.roles);
-                }
-                showMain();
-                await switchTab('databases');
-                showStatus(`Welcome, ${user?.name || user?.username || 'User'}!`);
-                return;
-            }
-        } catch (error) {
-            console.error('[App] Keycloak initialization failed:', error);
-        }
-    }
-
-    // If Keycloak is enabled but not authenticated, show login (Keycloak will handle it)
-    if (typeof isKeycloakEnabled === 'function' && isKeycloakEnabled()) {
-        // Update login section for Keycloak
-        const loginLabel = document.querySelector('#login-section label[for="admin-token"]');
-        const loginInput = document.getElementById('admin-token');
-        const loginTitle = document.querySelector('#login-section h2');
-        
-        if (loginTitle) loginTitle.textContent = 'Single Sign-On';
-        if (loginLabel) loginLabel.textContent = 'Click the button below to login with your account';
-        if (loginInput) loginInput.style.display = 'none';
-        if (loginBtn) loginBtn.textContent = 'Login with Keycloak';
-        
-        logoutBtn.classList.add('hidden');
+    if (typeof initKeycloak !== 'function') {
+        showLogin();
+        showStatus('Keycloak authentication is required but not loaded.', 'error', true);
         setupEventListeners();
         return;
     }
 
-    // Fall back to API key authentication
-    // Check for saved token
-    const savedSessionToken = sessionStorage.getItem('backup_admin_token');
-    const savedLegacyToken = localStorage.getItem('backup_admin_token');
-    const savedToken = savedSessionToken || savedLegacyToken;
-    if (savedToken) {
-        adminToken = savedToken;
-        sessionStorage.setItem('backup_admin_token', savedToken);
-        localStorage.removeItem('backup_admin_token');
-        showMain();
-        switchTab('databases');
-    } else {
-        // Hide logout button if not logged in
-        logoutBtn.classList.add('hidden');
+    try {
+        keycloakAuthenticated = await initKeycloak();
+        if (keycloakAuthenticated) {
+            console.log('[App] Keycloak authentication successful');
+            const user = getKeycloakUser();
+            if (user) {
+                console.log('[App] Logged in as:', user.username, 'Roles:', user.roles);
+            }
+            showMain();
+            await switchTab('databases');
+            showStatus(`Welcome, ${user?.name || user?.username || 'User'}!`);
+            setupEventListeners();
+            return;
+        }
+    } catch (error) {
+        console.error('[App] Keycloak initialization failed:', error);
+        showStatus(`Keycloak initialization failed: ${error.message || error}`, 'error', true);
     }
-    
+
+    showLogin();
     setupEventListeners();
 });
 
 /**
  * Set up event listeners for login, logout, and tab navigation.
+ *
+ * @returns {void}
  */
 function setupEventListeners() {
     // Event listeners
@@ -840,10 +614,4 @@ function setupEventListeners() {
         tab.addEventListener('click', () => switchTab(tab.dataset.tab));
     });
     
-    // Enter key on login
-    adminTokenInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            handleLogin();
-        }
-    });
 }

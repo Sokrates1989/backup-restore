@@ -13,6 +13,10 @@ import sqlite3
 
 import psycopg2
 from api.settings import settings
+from api.logging_config import get_logger
+
+
+logger = get_logger(__name__)
 
 
 class BackupService:
@@ -42,7 +46,7 @@ class BackupService:
             self.lock_file.write_text(json.dumps(lock_data))
             return True
         except Exception as e:
-            print(f"Warning: Failed to acquire lock: {e}")
+            logger.warning("Failed to acquire lock: %s", e)
             return True
 
     def _release_lock(self):
@@ -51,7 +55,7 @@ class BackupService:
             if self.lock_file.exists():
                 self.lock_file.unlink()
         except Exception as e:
-            print(f"Warning: Failed to release lock: {e}")
+            logger.warning("Failed to release lock: %s", e)
 
     def _update_restore_progress(
         self, status: str, current: int = 0, total: int = 0,
@@ -69,7 +73,7 @@ class BackupService:
             if warnings:
                 self.warnings_file.write_text(json.dumps(warnings, indent=2))
         except Exception as e:
-            print(f"Warning: Failed to update progress: {e}")
+            logger.warning("Failed to update progress: %s", e)
 
     def get_restore_status(self) -> Optional[Dict]:
         """Get current restore operation status."""
@@ -84,7 +88,7 @@ class BackupService:
             status_data["lock_operation"] = lock_operation
             return status_data
         except Exception as e:
-            print(f"Warning: Failed to get restore status: {e}")
+            logger.warning("Failed to get restore status: %s", e)
             return None
 
     def check_operation_lock(self) -> Optional[str]:
@@ -99,8 +103,25 @@ class BackupService:
                 return None
             return lock_data.get("operation")
         except Exception as e:
-            print(f"Warning: Failed to check lock: {e}")
+            logger.warning("Failed to check lock: %s", e)
             return None
+
+    def _build_bearer_headers(self, token: str) -> Dict[str, str]:
+        """Build Authorization headers for a bearer token.
+
+        Args:
+            token: Access token string.
+
+        Returns:
+            Dict[str, str]: Authorization headers.
+        """
+
+        normalized = (token or "").strip()
+        if not normalized:
+            return {}
+        if normalized.lower().startswith("bearer "):
+            return {"Authorization": normalized}
+        return {"Authorization": f"Bearer {normalized}"}
 
     def _looks_like_gzip(self, path: Path) -> bool:
         """Return True when the file appears to be gzip-compressed.
@@ -509,7 +530,7 @@ class BackupService:
         db_user: str,
         db_password: str,
         target_api_url: str = None,
-        target_api_key: str = None
+        target_api_token: str = None
     ) -> dict:
         """
         Restore database from backup file.
@@ -523,7 +544,7 @@ class BackupService:
             db_user: Database username
             db_password: Database password
             target_api_url: Optional URL of target API to unlock after restore
-            target_api_key: Optional API key for target API unlock endpoint
+            target_api_token: Optional bearer token for target API unlock endpoint
             
         Returns:
             dict: Information about the restore operation including warnings
@@ -613,20 +634,20 @@ class BackupService:
                 try:
                     backup_file.unlink()
                 except Exception as e:
-                    print(f"Warning: Failed to clean up temp file: {e}")
+                    logger.warning("Failed to clean up temp file: %s", e)
             
             # Unlock target API if it was provided
-            if target_api_url and target_api_key:
+            if target_api_url and target_api_token:
                 try:
                     import httpx
                     with httpx.Client(timeout=10.0) as client:
                         client.post(
                             f"{target_api_url}/database/unlock",
-                            headers={"X-Admin-Key": target_api_key},
+                            headers=self._build_bearer_headers(target_api_token),
                         )
-                    print(f"✅ Unlocked target API: {target_api_url}")
+                    logger.info("Unlocked target API: %s", target_api_url)
                 except Exception as e:
-                    print(f"Warning: Failed to unlock target API: {e}")
+                    logger.warning("Failed to unlock target API: %s", e)
     
     def _restore_postgresql(self, backup_file: Path, is_compressed: bool, db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) -> None:
         """Restore PostgreSQL database using psql."""

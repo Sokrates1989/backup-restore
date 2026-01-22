@@ -15,9 +15,6 @@ _SENSITIVE_HEADER_NAMES = {
     "authorization",
     "cookie",
     "set-cookie",
-    "x-admin-key",
-    "x-restore-key",
-    "x-delete-key",
 }
 
 _SENSITIVE_JSON_KEYS = {

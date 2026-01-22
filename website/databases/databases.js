@@ -323,10 +323,10 @@ async function deleteDatabase(id) {
     if (!confirm('Are you sure you want to delete this database?')) return;
     
     try {
-        if (typeof apiDeleteCall !== 'function') {
+        if (typeof keycloakApiDeleteCall !== 'function') {
             throw new Error('Delete helper not available');
         }
-        await apiDeleteCall(`/automation/targets/${id}`);
+        await keycloakApiDeleteCall(`/automation/targets/${id}`);
         showStatus('Database deleted');
         await loadDatabases();
         updateScheduleSelects();
@@ -672,10 +672,10 @@ async function executeDatabaseAction() {
                 restorePayload.encryption_password = pwd;
             }
             
-            if (typeof apiRestoreCall !== 'function') {
+            if (typeof keycloakApiRestoreCall !== 'function') {
                 throw new Error('Restore helper not available');
             }
-            const result = await apiRestoreCall('/automation/restore-now', restorePayload);
+            const result = await keycloakApiRestoreCall('/automation/restore-now', restorePayload);
 
             showStatus(`Restore completed successfully!`, 'success');
         }

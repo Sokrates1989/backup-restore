@@ -3,11 +3,11 @@
 
 This script runs as a periodic service to execute due backup schedules.
 It can run in two modes:
-1. API mode: Calls the backup-restore API to execute due schedules
+1. API mode: Calls the backup-restore API with Keycloak service credentials
 2. Direct mode: Executes schedules directly using the automation service
 
 Usage:
-    python runner.py [--interval SECONDS] [--api-url URL] [--api-key KEY]
+    python runner.py [--interval SECONDS] [--api-url URL]
 """
 
 import argparse
@@ -16,6 +16,7 @@ import logging
 import os
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, List, Tuple
 
@@ -63,12 +64,76 @@ def get_env_or_file(env_name: str, file_env_name: str, default: str = "") -> str
     return default
 
 
-async def run_due_via_api(api_url: str, api_key: str, max_schedules: int = 10) -> dict:
+@dataclass(frozen=True)
+class KeycloakRunnerConfig:
+    """Configuration for Keycloak service account authentication.
+
+    Attributes:
+        url: Keycloak base URL for token requests.
+        realm: Keycloak realm name.
+        client_id: Client ID for the runner service account.
+        client_secret: Client secret for the runner service account.
+    """
+
+    url: str
+    realm: str
+    client_id: str
+    client_secret: str
+
+
+def resolve_keycloak_url(public_url: str, internal_url: str) -> str:
+    """Resolve the Keycloak URL to use for token requests.
+
+    Args:
+        public_url: Public Keycloak URL.
+        internal_url: Internal Keycloak URL (Docker network).
+
+    Returns:
+        str: URL to use for token requests.
+    """
+
+    return internal_url or public_url
+
+
+async def get_keycloak_token(config: KeycloakRunnerConfig) -> str:
+    """Fetch a Keycloak service account token using client credentials.
+
+    Args:
+        config: Keycloak runner configuration.
+
+    Returns:
+        str: Access token.
+
+    Raises:
+        ValueError: When configuration is incomplete or token is missing.
+    """
+
+    if not config.url or not config.realm or not config.client_id or not config.client_secret:
+        raise ValueError("Keycloak configuration is incomplete. Check KEYCLOAK_URL, KEYCLOAK_REALM, KEYCLOAK_CLIENT_ID, and KEYCLOAK_CLIENT_SECRET.")
+
+    token_endpoint = f"{config.url.rstrip('/')}/realms/{config.realm}/protocol/openid-connect/token"
+    payload = {
+        "grant_type": "client_credentials",
+        "client_id": config.client_id,
+        "client_secret": config.client_secret,
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(token_endpoint, data=payload)
+        response.raise_for_status()
+        data = response.json()
+        token = data.get("access_token")
+        if not token:
+            raise ValueError("Keycloak token response did not include access_token")
+        return token
+
+
+async def run_due_via_api(api_url: str, bearer_token: str, max_schedules: int = 10) -> dict:
     """Execute due schedules via API call.
 
     Args:
         api_url: Base URL of the backup-restore API.
-        api_key: Admin API key.
+        bearer_token: Keycloak bearer token.
         max_schedules: Maximum schedules to run per cycle.
 
     Returns:
@@ -76,7 +141,7 @@ async def run_due_via_api(api_url: str, api_key: str, max_schedules: int = 10) -
     """
 
     endpoint = f"{api_url}/automation/runner/run-due"
-    headers = {"X-Admin-Key": api_key, "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {bearer_token}", "Content-Type": "application/json"}
     payload = {"max_schedules": max_schedules}
 
     async with httpx.AsyncClient(timeout=300.0) as client:
@@ -164,7 +229,7 @@ def extract_run_due_summary(result: Any) -> Tuple[int, List[str]]:
 async def run_cycle(
     mode: str,
     api_url: str = "",
-    api_key: str = "",
+    keycloak_config: KeycloakRunnerConfig | None = None,
     max_schedules: int = 10,
     drain_mode: bool = False,
     drain_max_batches: int = 20,
@@ -174,7 +239,7 @@ async def run_cycle(
     Args:
         mode: 'api' or 'direct'.
         api_url: API URL for API mode.
-        api_key: API key for API mode.
+        keycloak_config: Keycloak configuration for API mode.
         max_schedules: Maximum schedules per cycle.
         drain_mode: When True, keep running batches in a single cycle until fewer than
             max_schedules were executed (or a safety limit is reached).
@@ -199,7 +264,10 @@ async def run_cycle(
                 break
 
             if mode == "api":
-                result = await run_due_via_api(api_url, api_key, max_schedules)
+                if keycloak_config is None:
+                    raise ValueError("Keycloak configuration is required for API mode")
+                token = await get_keycloak_token(keycloak_config)
+                result = await run_due_via_api(api_url, token, max_schedules)
             else:
                 result = await run_due_direct(max_schedules)
 
@@ -235,7 +303,7 @@ async def main_loop(
     interval: int,
     mode: str,
     api_url: str = "",
-    api_key: str = "",
+    keycloak_config: KeycloakRunnerConfig | None = None,
     max_schedules: int = 10,
     drain_mode: bool = False,
     drain_max_batches: int = 20,
@@ -246,7 +314,7 @@ async def main_loop(
         interval: Seconds between cycles.
         mode: 'api' or 'direct'.
         api_url: API URL for API mode.
-        api_key: API key for API mode.
+        keycloak_config: Keycloak configuration for API mode.
         max_schedules: Maximum schedules per cycle.
         drain_mode: When True, keep running batches in a single cycle until fewer than
             max_schedules were executed (or a safety limit is reached).
@@ -295,7 +363,7 @@ async def main_loop(
         await run_cycle(
             mode,
             api_url,
-            api_key,
+            keycloak_config,
             max_schedules,
             drain_mode=drain_mode,
             drain_max_batches=drain_max_batches,
@@ -325,9 +393,27 @@ def main():
         help="Backup API URL for API mode",
     )
     parser.add_argument(
-        "--api-key",
-        default=get_env_or_file("ADMIN_API_KEY", "ADMIN_API_KEY_FILE"),
-        help="Admin API key for API mode",
+        "--keycloak-url",
+        default=resolve_keycloak_url(
+            os.environ.get("KEYCLOAK_URL", ""),
+            os.environ.get("KEYCLOAK_INTERNAL_URL", ""),
+        ),
+        help="Keycloak URL for service account token requests",
+    )
+    parser.add_argument(
+        "--keycloak-realm",
+        default=os.environ.get("KEYCLOAK_REALM", ""),
+        help="Keycloak realm for service account authentication",
+    )
+    parser.add_argument(
+        "--keycloak-client-id",
+        default=os.environ.get("KEYCLOAK_CLIENT_ID", ""),
+        help="Keycloak client ID for service account authentication",
+    )
+    parser.add_argument(
+        "--keycloak-client-secret",
+        default=get_env_or_file("KEYCLOAK_CLIENT_SECRET", "KEYCLOAK_CLIENT_SECRET_FILE"),
+        help="Keycloak client secret for service account authentication",
     )
     parser.add_argument(
         "--max-schedules",
@@ -355,16 +441,24 @@ def main():
 
     args = parser.parse_args()
 
-    if args.mode == "api" and not args.api_key:
-        logger.error("API key required for API mode. Set ADMIN_API_KEY or use --api-key")
-        sys.exit(1)
+    keycloak_config = None
+    if args.mode == "api":
+        keycloak_config = KeycloakRunnerConfig(
+            url=args.keycloak_url,
+            realm=args.keycloak_realm,
+            client_id=args.keycloak_client_id,
+            client_secret=args.keycloak_client_secret,
+        )
+        if not keycloak_config.url or not keycloak_config.realm or not keycloak_config.client_id or not keycloak_config.client_secret:
+            logger.error("Keycloak configuration required for API mode. Set KEYCLOAK_URL, KEYCLOAK_REALM, KEYCLOAK_CLIENT_ID, and KEYCLOAK_CLIENT_SECRET.")
+            sys.exit(1)
 
     if args.once:
         asyncio.run(
             run_cycle(
                 args.mode,
                 args.api_url,
-                args.api_key,
+                keycloak_config,
                 args.max_schedules,
                 drain_mode=args.drain,
                 drain_max_batches=args.drain_max_batches,
@@ -376,7 +470,7 @@ def main():
                 args.interval,
                 args.mode,
                 args.api_url,
-                args.api_key,
+                keycloak_config,
                 args.max_schedules,
                 drain_mode=args.drain,
                 drain_max_batches=args.drain_max_batches,

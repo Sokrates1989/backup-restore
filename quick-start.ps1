@@ -30,8 +30,11 @@ Write-Host "Using Docker Compose project: $composeProjectName" -ForegroundColor 
 # Import modules
 Import-Module "$setupDir\modules\docker_helpers.ps1" -Force
 Import-Module "$setupDir\modules\version_manager.ps1" -Force
-Import-Module "$setupDir\modules\menu_handlers.ps1" -Force
 Import-Module "$setupDir\modules\browser_helpers.ps1" -Force
+Import-Module "$setupDir\modules\menu_io.ps1" -Force
+Import-Module "$setupDir\modules\menu_browser.ps1" -Force
+Import-Module "$setupDir\modules\menu_keycloak.ps1" -Force
+Import-Module "$setupDir\modules\menu_actions.ps1" -Force
 
 Write-Host "FastAPI Redis API Test - Quick Start" -ForegroundColor Cyan
 Write-Host "======================================" -ForegroundColor Cyan

@@ -16,8 +16,11 @@ SETUP_DIR="${SCRIPT_DIR}/setup"
 # Source modules
 source "${SETUP_DIR}/modules/docker_helpers.sh"
 source "${SETUP_DIR}/modules/version_manager.sh"
-source "${SETUP_DIR}/modules/menu_handlers.sh"
 source "${SETUP_DIR}/modules/browser_helpers.sh"
+source "${SETUP_DIR}/modules/menu_io.sh"
+source "${SETUP_DIR}/modules/menu_browser.sh"
+source "${SETUP_DIR}/modules/menu_keycloak.sh"
+source "${SETUP_DIR}/modules/menu_actions.sh"
 
 echo "🚀 FastAPI Redis API Test - Quick Start"
 echo "======================================"

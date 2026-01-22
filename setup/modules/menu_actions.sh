@@ -1,199 +1,9 @@
 #!/bin/bash
 #
-# menu_handlers.sh
+# menu_actions.sh
 #
-# Module for handling menu actions in quick-start script
-
-read_prompt() {
-    local prompt="$1"
-    local var_name="$2"
-
-    if [[ -r /dev/tty ]]; then
-        read -r -p "$prompt" "$var_name" < /dev/tty
-    else
-        read -r -p "$prompt" "$var_name"
-    fi
-}
-
-# Retrieve a Keycloak access token using client credentials.
-get_keycloak_access_token() {
-    local access_token="${ACCESS_TOKEN:-}"
-    local keycloak_url="${KEYCLOAK_URL:-}"
-    local keycloak_realm="${KEYCLOAK_REALM:-}"
-    local keycloak_client_id="${KEYCLOAK_CLIENT_ID:-}"
-    local keycloak_client_secret="${KEYCLOAK_CLIENT_SECRET:-}"
-
-    if [ -f ".env" ]; then
-        keycloak_url=$(grep "^KEYCLOAK_URL=" .env | head -n1 | cut -d'=' -f2- | tr -d ' "')
-        keycloak_realm=$(grep "^KEYCLOAK_REALM=" .env | head -n1 | cut -d'=' -f2- | tr -d ' "')
-        keycloak_client_id=$(grep "^KEYCLOAK_CLIENT_ID=" .env | head -n1 | cut -d'=' -f2- | tr -d ' "')
-        keycloak_client_secret=$(grep "^KEYCLOAK_CLIENT_SECRET=" .env | head -n1 | cut -d'=' -f2- | tr -d ' "')
-    fi
-
-    if [ -z "$access_token" ] && [ -n "$keycloak_url" ] && [ -n "$keycloak_realm" ] && [ -n "$keycloak_client_id" ] && [ -n "$keycloak_client_secret" ]; then
-        local token_endpoint="${keycloak_url%/}/realms/${keycloak_realm}/protocol/openid-connect/token"
-        local token_response
-        token_response=$(curl -s -X POST "$token_endpoint" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            -d "grant_type=client_credentials" \
-            -d "client_id=$keycloak_client_id" \
-            -d "client_secret=$keycloak_client_secret")
-        access_token=$(python3 -c "import json,sys; print(json.load(sys.stdin).get('access_token',''))" <<< "$token_response")
-    fi
-
-    if [ -z "$access_token" ]; then
-        read_prompt "Enter Keycloak access token: " access_token
-    fi
-
-    echo "$access_token"
-}
-
-open_browser_incognito() {
-    local port="$1"
-    local compose_file="$2"
-    local test_databases="$3"  # Optional: "test" to indicate test databases mode
-
-    local api_url="http://localhost:$port/docs"
-    local web_port="${WEB_PORT:-}"
-    if [ -z "$web_port" ] && [ -f ".env" ]; then
-        web_port=$(grep "^WEB_PORT=" .env 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d ' "')
-    fi
-    web_port="${web_port:-8086}"
-
-    local gui_url="http://localhost:${web_port}/"
-    local neo4j_url="http://localhost:7474"
-    local urls=("$gui_url" "$api_url")
-
-    if [[ "$compose_file" == *neo4j* ]]; then
-        urls+=("$neo4j_url")
-        echo "Neo4j Browser will open at $neo4j_url using the same private window."
-    fi
-
-    # Add test database admin UIs if in test mode
-    if [[ "$test_databases" == "test" ]]; then
-        urls+=("http://localhost:5050")  # pgAdmin
-        urls+=("http://localhost:8080")  # phpMyAdmin
-        urls+=("http://localhost:7475/browser?connectURL=neo4j://localhost:7688")  # Neo4j Browser (test)
-        urls+=("http://localhost:8082/")  # Adminer
-        urls+=("http://localhost:8085/")  # Adminer (SQLite)
-        urls+=("http://localhost:8084")  # SQLite Web
-        urls+=("http://localhost:8090")  # SQLite Browser (GUI)
-        
-        echo ""
-        echo "🌐 Opening browser with all admin UIs:"
-        echo "  - Backup Manager: $gui_url"
-        echo "  - API Docs: $api_url"
-        echo "  - pgAdmin: http://localhost:5050"
-        echo "  - phpMyAdmin: http://localhost:8080"
-        echo "  - Neo4j Browser: http://localhost:7475"
-        echo "  - Adminer: http://localhost:8082"
-        echo "  - Adminer (SQLite): http://localhost:8085"
-        echo "  - SQLite Web: http://localhost:8084"
-        echo "  - SQLite Browser (GUI): http://localhost:8090"
-    fi
-
-    # Add admin UIs if in admin mode
-    if [[ "$test_databases" == "admin" ]]; then
-        if [[ "$compose_file" == *postgres* ]]; then
-            urls+=("http://localhost:5051")  # pgAdmin for app's postgres
-        fi
-        if [[ "$compose_file" == *neo4j* ]]; then
-            urls+=("http://localhost:7474")  # Neo4j Browser (app's)
-        fi
-        
-        echo ""
-        echo "🌐 Opening browser with admin UIs:"
-        echo "  - Backup Manager: $gui_url"
-        echo "  - API Docs: $api_url"
-        if [[ "$compose_file" == *postgres* ]]; then
-            echo "  - pgAdmin (app DB): http://localhost:5051"
-        fi
-        if [[ "$compose_file" == *neo4j* ]]; then
-            echo "  - Neo4j Browser: http://localhost:7474"
-        fi
-    fi
-
-    echo "Opening browser..."
-
-    local profile_base="${TMPDIR:-/tmp}"
-    local edge_profile="${profile_base}/edge_incog_profile_backup_restore"
-    local chrome_profile="${profile_base}/chrome_incog_profile_backup_restore"
-    mkdir -p "$edge_profile" "$chrome_profile"
-
-    # Best-effort: close prior windows using this profile so only fresh tabs remain
-    stop_incognito_profile_procs() {
-        local profile_dir="$1"; shift || true
-        [ -z "$profile_dir" ] && return 0
-        [ $# -eq 0 ] && return 0
-        
-        # Kill all browser processes using this profile
-        for pname in "$@"; do
-            # Find processes using the profile directory
-            pkill -f "$pname.*--user-data-dir=$profile_dir" >/dev/null 2>&1 || true
-            pkill -f "$pname.*--profile-directory=$profile_dir" >/dev/null 2>&1 || true
-            
-            # Also kill any processes that might be using temp directories
-            pkill -f "$pname.*backup_restore" >/dev/null 2>&1 || true
-        done
-        
-        # Wait a moment for processes to die
-        sleep 1
-        
-        # Force kill any remaining processes
-        for pname in "$@"; do
-            pkill -9 -f "$pname.*--user-data-dir=$profile_dir" >/dev/null 2>&1 || true
-            pkill -9 -f "$pname.*--profile-directory=$profile_dir" >/dev/null 2>&1 || true
-        done
-    }
-
-    # Always restart browser processes for clean state
-    stop_incognito_profile_procs "$edge_profile" "microsoft-edge"
-    stop_incognito_profile_procs "$chrome_profile" "chrome" "google-chrome"
-    
-    # Additional cleanup for any Chrome/Edge processes with backup_restore in args
-    pkill -f "chrome.*backup_restore" >/dev/null 2>&1 || true
-    pkill -f "edge.*backup_restore" >/dev/null 2>&1 || true
-    
-    # Remove profile directories to ensure clean start
-    rm -rf "$edge_profile" "$chrome_profile" 2>/dev/null || true
-    mkdir -p "$edge_profile" "$chrome_profile"
-
-    if command -v microsoft-edge &> /dev/null; then
-        microsoft-edge --inprivate --user-data-dir="$edge_profile" "${urls[@]}" >/dev/null 2>&1 &
-        return
-    fi
-
-    if command -v google-chrome &> /dev/null; then
-        google-chrome --incognito --user-data-dir="$chrome_profile" "${urls[@]}" >/dev/null 2>&1 &
-        return
-    fi
-
-    if command -v chromium-browser &> /dev/null; then
-        # For chromium, we can't easily manage profiles, so just open normally
-        chromium-browser --incognito "${urls[@]}" >/dev/null 2>&1 &
-        return
-    fi
-
-    if command -v open &> /dev/null; then
-        # macOS: Try Chrome first, then Safari, then default
-        open -na "Google Chrome" --args --incognito --user-data-dir="$chrome_profile" "${urls[@]}" 2>/dev/null || \
-        open -na "Safari" --args --private "${urls[@]}" 2>/dev/null || \
-        open "${urls[0]}"
-        return
-    fi
-
-    if command -v xdg-open &> /dev/null; then
-        # Linux: Open each URL (may open in different browsers)
-        for url in "${urls[@]}"; do
-            xdg-open "$url" &
-        done
-    else
-        echo "Could not detect browser command. Please open manually: $api_url"
-        if [[ "$compose_file" == *neo4j* ]]; then
-            echo "Neo4j Browser: $neo4j_url"
-        fi
-    fi
-}
+# Module for main menu action handlers
+#
 
 handle_backend_start() {
     local port="$1"
@@ -784,125 +594,50 @@ handle_deploy_all_services_detached() {
     echo "To stop services: docker compose -f $compose_file -f $runner_file down"
 }
 
-handle_keycloak_bootstrap() {
-    local project_root
-    project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-    local scripts_dir="$project_root/scripts"
-    local bootstrap_image="backup-restore-keycloak-bootstrap"
+handle_view_logs() {
+    local compose_file="$1"
+    local runner_file="local-deployment/docker-compose.runner.yml"
     
-    echo "🔐 Keycloak Bootstrap"
+    echo "📜 Viewing logs..."
     echo ""
     
-    # Load .env defaults
-    local keycloak_url="${KEYCLOAK_URL:-http://localhost:9090}"
-    local keycloak_realm="${KEYCLOAK_REALM:-backup-restore}"
-    if [ -f "$project_root/.env" ]; then
-        keycloak_url=$(grep "^KEYCLOAK_URL=" "$project_root/.env" 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d ' "') || keycloak_url="http://localhost:9090"
-        keycloak_realm=$(grep "^KEYCLOAK_REALM=" "$project_root/.env" 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d ' "') || keycloak_realm="backup-restore"
-    fi
-    
-    # Check if Keycloak is reachable
-    echo "🔍 Checking Keycloak at $keycloak_url..."
-    if ! curl -s --connect-timeout 5 "$keycloak_url/" >/dev/null 2>&1; then
-        echo ""
-        echo "❌ Cannot reach Keycloak at $keycloak_url"
-        echo ""
-        echo "Please ensure Keycloak is running. Start it from the dedicated repo:"
-        echo "  https://github.com/Sokrates1989/keycloak.git"
-        echo ""
-        return 1
-    fi
-    echo "✅ Keycloak is reachable"
-    echo ""
-    
-    # Check if bootstrap image exists, build if not
-    if ! docker image inspect "$bootstrap_image" >/dev/null 2>&1; then
-        echo "🐳 Building bootstrap image..."
-        docker build -t "$bootstrap_image" "$scripts_dir" || {
-            echo "❌ Failed to build bootstrap image"
-            return 1
-        }
-    fi
-    
-    # Collect configuration
-    read_prompt "Keycloak base URL [$keycloak_url]: " input_url
-    keycloak_url="${input_url:-$keycloak_url}"
-    
-    read_prompt "Keycloak admin username [admin]: " admin_user
-    admin_user="${admin_user:-admin}"
-    
-    read_prompt "Keycloak admin password [admin]: " admin_password
-    admin_password="${admin_password:-admin}"
-    
-    read_prompt "Realm name [$keycloak_realm]: " realm
-    realm="${realm:-$keycloak_realm}"
-    
-    read_prompt "Frontend client ID [backup-restore-frontend]: " frontend_client
-    frontend_client="${frontend_client:-backup-restore-frontend}"
-    
-    read_prompt "Backend client ID [backup-restore-backend]: " backend_client
-    backend_client="${backend_client:-backup-restore-backend}"
-    
-    local web_port="${WEB_PORT:-8086}"
-    read_prompt "Frontend root URL [http://localhost:$web_port]: " frontend_url
-    frontend_url="${frontend_url:-http://localhost:$web_port}"
-    
-    local api_port="${PORT:-8000}"
-    read_prompt "API root URL [http://localhost:$api_port]: " api_url
-    api_url="${api_url:-http://localhost:$api_port}"
-    
-    echo ""
-    echo "✅ Creating granular roles:"
-    echo "   - backup:read    (view backups, stats)"
-    echo "   - backup:create  (create backups)"
-    echo "   - backup:restore (restore backups - CRITICAL)"
-    echo "   - backup:delete  (delete backups)"
-    echo "   - backup:admin   (full access)"
-    echo ""
-    
-    read_prompt "Create default users (admin/operator/viewer)? (Y/n): " use_defaults
-    local user_args=""
-    if [[ ! "$use_defaults" =~ ^[Nn]$ ]]; then
-        user_args="--user admin:admin:backup:admin --user operator:operator:backup:read,backup:create,backup:restore --user viewer:viewer:backup:read"
+    if [ -f "$runner_file" ]; then
+        docker compose --env-file .env -f "$compose_file" -f "$runner_file" logs -f --tail=100
     else
-        echo "Role format: backup:read, backup:create, backup:restore, backup:delete, backup:admin"
-        read_prompt "Enter user spec (username:password:role1,role2): " custom_user
-        if [ -n "$custom_user" ]; then
-            user_args="--user $custom_user"
-        fi
+        docker compose --env-file .env -f "$compose_file" logs -f --tail=100
     fi
+}
+
+handle_db_reinstall() {
+    local compose_file="$1"
     
-    if [ -z "$user_args" ]; then
-        echo "❌ No users specified. Aborting bootstrap."
+    echo "🗄️  Database Re-Install"
+    echo ""
+    echo "This will:"
+    echo "  1. Stop all containers"
+    echo "  2. Remove database volumes"
+    echo "  3. Restart with fresh database"
+    echo ""
+    
+    read_prompt "Are you sure? This will DELETE all database data! (y/N): " confirm
+    
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        echo "❌ Cancelled."
         return 1
     fi
     
     echo ""
-    echo "🚀 Bootstrapping Keycloak realm..."
-    
-    # Run bootstrap in Docker
-    # shellcheck disable=SC2086
-    docker run --rm --network host "$bootstrap_image" \
-        --base-url "$keycloak_url" \
-        --admin-user "$admin_user" \
-        --admin-password "$admin_password" \
-        --realm "$realm" \
-        --frontend-client-id "$frontend_client" \
-        --backend-client-id "$backend_client" \
-        --frontend-root-url "$frontend_url" \
-        --api-root-url "$api_url" \
-        $user_args
-    
-    local exit_code=$?
+    echo "🛑 Stopping containers..."
+    docker compose --env-file .env -f "$compose_file" down -v
     
     echo ""
-    if [ $exit_code -eq 0 ]; then
-        echo "✅ Bootstrap complete! Update your .env with the client secret from output above."
-    else
-        echo "❌ Bootstrap failed. Check Keycloak logs for details."
-    fi
+    echo "🗑️  Removing database data..."
+    rm -rf .docker/postgres-data 2>/dev/null || true
+    rm -rf .docker/neo4j-data 2>/dev/null || true
+    rm -rf .docker/mysql-data 2>/dev/null || true
     
-    return $exit_code
+    echo ""
+    echo "✅ Database volumes removed. Run 'Start all services' to create fresh databases."
 }
 
 show_main_menu() {

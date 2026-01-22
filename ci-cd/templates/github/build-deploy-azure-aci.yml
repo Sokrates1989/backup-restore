@@ -124,10 +124,15 @@ jobs:
             --environment-variables \
               PORT=8000 \
               DEBUG=false \
+              KEYCLOAK_ENABLED=true \
             --secure-environment-variables \
               DATABASE_URL="${{ secrets.PROD_DATABASE_URL }}" \
               REDIS_URL="${{ secrets.PROD_REDIS_URL }}" \
-              ADMIN_API_KEY="${{ secrets.PROD_ADMIN_API_KEY }}" \
+              KEYCLOAK_URL="${{ secrets.KEYCLOAK_URL }}" \
+              KEYCLOAK_INTERNAL_URL="${{ secrets.KEYCLOAK_INTERNAL_URL }}" \
+              KEYCLOAK_REALM="${{ secrets.KEYCLOAK_REALM }}" \
+              KEYCLOAK_CLIENT_ID="${{ secrets.KEYCLOAK_CLIENT_ID }}" \
+              KEYCLOAK_CLIENT_SECRET="${{ secrets.KEYCLOAK_CLIENT_SECRET }}" \
             --registry-login-server docker.io \
             --registry-username ${{ secrets.DOCKER_USERNAME }} \
             --registry-password ${{ secrets.DOCKER_PASSWORD }}

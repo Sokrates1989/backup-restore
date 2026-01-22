@@ -34,16 +34,19 @@ This service provides centralized database backup and restore functionality with
 
 ## 🔐 Security & Authentication
 
-This is a **privileged admin service**. The API is currently protected by shared secrets (e.g., `X-Admin-Key`, `X-Delete-Key`, `X-Restore-Key`). Because these operations can overwrite or destroy data, treat access as high risk.
+This is a **privileged admin service**. All API access uses **Keycloak-issued JWT bearer tokens** with role-based access control:
 
-**Recommended deployment patterns:**
-- **Internal/admin-only:** keep the API on a private network or behind VPN/IP allowlists, and keep the API keys as a second factor for destructive endpoints.
-- **Reverse proxy auth (low effort):** use Basic Auth, IP allowlists, or OIDC forward-auth at the proxy layer. The API should only be reachable through the proxy.
-- **Full OIDC (multi-user):** implement JWT validation in the API and use OAuth2 PKCE in the UI. This enables per-user identity, RBAC, MFA, audit logs, and token revocation.
+- `admin`: full access (backup/restore/delete)
+- `operator`: backup + restore
+- `viewer`: read-only
 
-**Keycloak** is the best self-hosted option when you need full OIDC + role-based access. It adds MFA, group/role management, and auditability, but requires operating Keycloak + its database and keeping it patched. If this tool remains internal, you likely *do not* need a full Keycloak setup; if it becomes multi-user or internet-facing, Keycloak is recommended.
+The UI uses the Keycloak JS adapter (Authorization Code + PKCE). API clients must send:
 
-For a deeper comparison, see `security-compare-auth.md`.
+```
+Authorization: Bearer <access_token>
+```
+
+For a broader discussion of auth options and threat modeling, see `security-compare-auth.md`.
 
 ## 📋 Prerequisites
 
@@ -275,7 +278,7 @@ DATABASE_URL=postgresql://user:password@localhost:5432/mydb
 
 ```bash
 curl -X POST "http://localhost:8000/backup/neo4j/download?compress=true" \
-  -H "X-Admin-Key: your-admin-key" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "neo4j_url": "bolt://target-server:7687",
@@ -289,7 +292,7 @@ curl -X POST "http://localhost:8000/backup/neo4j/download?compress=true" \
 
 ```bash
 curl -X POST "http://localhost:8000/backup/sql/restore-upload" \
-  -H "X-Restore-Key: your-restore-key" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -F "file=@backup.sql.gz" \
   -F "db_type=postgresql" \
   -F "db_host=target-server" \
@@ -298,14 +301,14 @@ curl -X POST "http://localhost:8000/backup/sql/restore-upload" \
   -F "db_user=postgres" \
   -F "db_password=password" \
   -F "target_api_url=http://target-api:8000" \
-  -F "target_api_key=admin-key"
+  -F "target_api_token=$TARGET_API_TOKEN"
 ```
 
 ### Check Restore Status
 
 ```bash
 curl -X GET "http://localhost:8000/backup/sql/restore-status" \
-  -H "X-Restore-Key: your-restore-key"
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
 ## 🐳 Docker Commands

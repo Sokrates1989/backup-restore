@@ -308,13 +308,9 @@ async def get_current_user(
     keycloak = get_keycloak_auth()
     
     if keycloak is None:
-        # Keycloak disabled - return a mock admin user for backward compatibility
-        return KeycloakUser(
-            sub="legacy-api-key",
-            username="api-key-user",
-            email="",
-            roles=["admin", "operator", "viewer"],
-            raw_token={},
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Keycloak authentication is not configured. Set KEYCLOAK_ENABLED=true and configure Keycloak settings.",
         )
     
     if credentials is None:
