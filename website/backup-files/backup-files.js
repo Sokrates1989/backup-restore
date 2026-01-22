@@ -637,27 +637,39 @@ function sanitizeName(value) {
 }
 
 function updateBackupFilesDatabaseFilter() {
-    const select = document.getElementById('backup-files-database-filter');
-    if (!select) return;
+    const container = document.getElementById('backup-files-database-filter');
+    if (!container) return;
 
-    const current = select.value;
-    select.innerHTML = '<option value="">All Databases</option>';
+    // Preserve currently checked values
+    const currentChecked = getCheckedFilterValues('backup-files-database');
+    
+    container.innerHTML = '';
 
-    if (Array.isArray(databases)) {
+    if (Array.isArray(databases) && databases.length > 0) {
         databases
             .filter(d => d && d.id)
             .forEach(d => {
-                select.innerHTML += `<option value="${d.id}">${d.name}</option>`;
+                const isChecked = currentChecked.includes(d.id);
+                container.innerHTML += `
+                    <div class="multiselect-option">
+                        <span>${d.name}</span>
+                        <input type="checkbox" name="backup-files-database" value="${d.id}" ${isChecked ? 'checked' : ''}>
+                    </div>
+                `;
             });
+    } else {
+        container.innerHTML = '<span class="hint">No databases configured</span>';
     }
-
-    if ([...select.options].some(o => o.value === current)) {
-        select.value = current;
-    }
+    
+    // Update display text
+    updateMultiselectDisplay('backup-files-database-filter-dropdown', 'backup-files-database', 'All Databases');
 }
 
 function getSelectedTargetId() {
-    return document.getElementById('backup-files-database-filter')?.value || '';
+    // Return comma-separated list of selected database IDs for multi-select
+    const checked = document.querySelectorAll('input[name="backup-files-database"]:checked');
+    if (checked.length === 0) return '';
+    return Array.from(checked).map(cb => cb.value).join(',');
 }
 
 function getSelectedTargetFolder() {
@@ -671,12 +683,14 @@ function getSelectedTargetFolder() {
 async function loadBackupFiles() {
     try {
         resetBackupFilesPagination();
-        const location = document.getElementById('backup-files-storage-location')?.value || 'all';
-        currentStorageLocation = location;
+        // Get selected storage locations (multi-select)
+        const checked = document.querySelectorAll('input[name="backup-files-storage-location"]:checked');
+        const locations = checked.length > 0 ? Array.from(checked).map(cb => cb.value) : ['all'];
+        currentStorageLocation = locations.join(',');
         const initialLimit = getBackupFilesInitialLimit();
         backupFilesVisibleLimit = initialLimit;
 
-        const sourceIds = getBackupFilesSourceIds(location);
+        const sourceIds = getBackupFilesSourceIds(currentStorageLocation);
         backupFilesPagingState = createBackupFilesPagingState(sourceIds);
 
         await fetchMoreBackupFiles(initialLimit);
@@ -756,16 +770,22 @@ async function downloadBackupDelegated(type, destinationId, backupId, fallbackFi
 }
 
 function updateBackupFilesStorageSelector() {
-    const select = document.getElementById('backup-files-storage-location');
-    if (!select) return;
+    const container = document.getElementById('backup-files-storage-location');
+    if (!container) return;
     
-    // Preserve current selection
-    const currentValue = select.value;
+    // Preserve currently checked values
+    const currentChecked = getCheckedFilterValues('backup-files-storage-location');
     
     // Rebuild options
     let html = `
-        <option value="all">All Locations (Local + Remote)</option>
-        <option value="local">Local Storage Only</option>
+        <div class="multiselect-option">
+            <span>All Locations (Local + Remote)</span>
+            <input type="checkbox" name="backup-files-storage-location" value="all" ${currentChecked.includes('all') ? 'checked' : ''}>
+        </div>
+        <div class="multiselect-option">
+            <span>Local Storage Only</span>
+            <input type="checkbox" name="backup-files-storage-location" value="local" ${currentChecked.includes('local') ? 'checked' : ''}>
+        </div>
     `;
     
     remoteStorageLocations
@@ -774,15 +794,19 @@ function updateBackupFilesStorageSelector() {
         const typeLabel = location.destination_type === 'local' ? '(Local Dir)' : 
                          location.destination_type === 'sftp' ? '(SFTP)' : 
                          location.destination_type === 'google_drive' ? '(Google Drive)' : '';
-        html += `<option value="${location.id}">${location.name} ${typeLabel}</option>`;
+        const isChecked = currentChecked.includes(location.id);
+        html += `
+            <div class="multiselect-option">
+                <span>${location.name} ${typeLabel}</span>
+                <input type="checkbox" name="backup-files-storage-location" value="${location.id}" ${isChecked ? 'checked' : ''}>
+            </div>
+        `;
     });
     
-    select.innerHTML = html;
+    container.innerHTML = html;
     
-    // Restore selection if still valid
-    if ([...select.options].some(opt => opt.value === currentValue)) {
-        select.value = currentValue;
-    }
+    // Update display text
+    updateMultiselectDisplay('backup-files-storage-location-dropdown', 'backup-files-storage-location', 'All Locations (Local + Remote)');
 }
 
 /**
@@ -894,7 +918,7 @@ function renderBackupFiles() {
                 <button type="button" class="btn btn-secondary" id="backup-files-load-more" ${loadAllActive ? 'disabled' : ''}>Load More (${remainingLabel})</button>
                 <button type="button" class="btn btn-secondary" id="backup-files-load-all" ${loadAllActive ? 'disabled' : ''}>Load All</button>
                 ${loadAllActive ? `<button type="button" class="btn btn-secondary" id="backup-files-cancel-load-all">${cancelRequested ? 'Cancelling...' : 'Cancel'}</button>` : ''}
-            </div>
+            </div>‚
         `;
     };
 
@@ -902,8 +926,8 @@ function renderBackupFiles() {
         container.innerHTML = visibleBackups.map(backup => {
             const typeLabel = backup.type === 'local' ? 'Local File' : 'Remote Storage';
             const downloadFilename = backup.filename;
-        const canDownload = true;
-        const canRestore = true;
+            const canDownload = typeof canDownloadBackups === 'function' ? canDownloadBackups() : false;
+            const canRestore = hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_RESTORE_ROLE]);
 
             const encodedId = encodeURIComponent(backup.id || '');
             const encodedType = encodeURIComponent(backup.type || '');
@@ -970,8 +994,8 @@ function renderBackupFiles() {
         const rendered = items.map(backup => {
             const typeLabel = backup.type === 'local' ? 'Local File' : 'Remote Storage';
             const downloadFilename = backup.filename;
-        const canDownload = true;
-        const canRestore = true;
+        const canDownload = typeof canDownloadBackups === 'function' ? canDownloadBackups() : false;
+        const canRestore = hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_RESTORE_ROLE]);
 
             const encodedId = encodeURIComponent(backup.id || '');
             const encodedType = encodeURIComponent(backup.type || '');
@@ -1134,29 +1158,49 @@ function wireBackupDetailsModalFooter() {
     const downloadBtn = document.getElementById('download-backup-btn');
     const deleteBtn = document.getElementById('delete-backup-btn');
 
+    // Check role-based permissions
+    const canRestore = hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_RESTORE_ROLE]);
+    const canDownload = typeof canDownloadBackups === 'function' ? canDownloadBackups() : false;
+    const canDelete = hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_DELETE_ROLE]);
+
     if (restoreBtn) {
-        restoreBtn.onclick = async () => {
-            if (!currentModalBackup) return;
-            await restoreBackupFromModal();
-        };
+        if (canRestore) {
+            restoreBtn.classList.remove('hidden');
+            restoreBtn.onclick = async () => {
+                if (!currentModalBackup) return;
+                await restoreBackupFromModal();
+            };
+        } else {
+            restoreBtn.classList.add('hidden');
+        }
     }
 
     if (downloadBtn) {
-        downloadBtn.onclick = async () => {
-            if (!currentModalBackup) return;
-            const b = currentModalBackup;
-            const destId = b.destination_id || '';
-            const bid = b.backup_id || b.id || '';
-            await downloadBackupDelegated(b.type, destId, bid, b.filename || 'backup');
-        };
+        if (canDownload) {
+            downloadBtn.classList.remove('hidden');
+            downloadBtn.onclick = async () => {
+                if (!currentModalBackup) return;
+                const b = currentModalBackup;
+                const destId = b.destination_id || '';
+                const bid = b.backup_id || b.id || '';
+                await downloadBackupDelegated(b.type, destId, bid, b.filename || 'backup');
+            };
+        } else {
+            downloadBtn.classList.add('hidden');
+        }
     }
 
     if (deleteBtn) {
-        deleteBtn.onclick = async () => {
-            if (!currentModalBackup) return;
-            const b = currentModalBackup;
-            await deleteBackup(b.id, b.type, b.destination_id || '', b.backup_id || '', b.filename || '');
-        };
+        if (canDelete) {
+            deleteBtn.classList.remove('hidden');
+            deleteBtn.onclick = async () => {
+                if (!currentModalBackup) return;
+                const b = currentModalBackup;
+                await deleteBackup(b.id, b.type, b.destination_id || '', b.backup_id || '', b.filename || '');
+            };
+        } else {
+            deleteBtn.classList.add('hidden');
+        }
     }
 }
 
@@ -1335,16 +1379,27 @@ function initBackupFilesTab() {
     // Backup actions
     document.getElementById('refresh-backup-files-btn').addEventListener('click', loadBackupFiles);
     
-    // Storage location selector
-    const storageSelect = document.getElementById('backup-files-storage-location');
-    if (storageSelect) {
-        storageSelect.addEventListener('change', loadBackupFiles);
-    }
-
-    const databaseSelect = document.getElementById('backup-files-database-filter');
-    if (databaseSelect) {
-        databaseSelect.addEventListener('change', loadBackupFiles);
-    }
+    
+    // Initialize multi-select dropdowns
+    initMultiselectDropdowns();
+    
+    // Add event listeners for clear filter buttons
+    document.querySelectorAll('.btn-clear-filter').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const filterType = btn.getAttribute('data-clear');
+            if (filterType === 'database') {
+                // Clear backup files database filter
+                document.querySelectorAll('input[name="backup-files-database"]').forEach(cb => { cb.checked = false; });
+                updateMultiselectDisplay('backup-files-database-filter-dropdown', 'backup-files-database', 'All Databases');
+                loadBackupFiles();
+            } else if (filterType === 'storage') {
+                // Clear backup files storage filter
+                document.querySelectorAll('input[name="backup-files-storage-location"]').forEach(cb => { cb.checked = false; });
+                updateMultiselectDisplay('backup-files-storage-location-dropdown', 'backup-files-storage-location', 'All Locations (Local + Remote)');
+                loadBackupFiles();
+            }
+        });
+    });
 
     const sortSelect = document.getElementById('backup-files-sort');
     if (sortSelect) {

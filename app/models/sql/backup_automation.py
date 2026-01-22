@@ -241,5 +241,8 @@ class AuditEvent(Base):
 
     run_id = Column(String, nullable=True, index=True)
 
+    user_id = Column(String, nullable=True, index=True)
+    user_name = Column(String(255), nullable=True)
+
     details = Column(JSON, nullable=False, default=dict)
     error_message = Column(Text, nullable=True)

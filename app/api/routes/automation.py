@@ -24,7 +24,7 @@ from api.schemas.automation import (
     TargetCreateRequest,
     TargetUpdateRequest,
 )
-from api.security import verify_admin_key, verify_delete_key, verify_restore_key
+from api.security import verify_admin_key, verify_delete_key, verify_download_key, verify_history_key, verify_restore_key
 from backend.database import get_database_handler
 from backend.database.sql_handler import SQLHandler
 from backend.services.automation.destination_service import DestinationService
@@ -62,6 +62,8 @@ def _audit_event_to_dict(event: AuditEvent) -> dict:
         "backup_id": event.backup_id,
         "backup_name": event.backup_name,
         "run_id": event.run_id,
+        "user_id": event.user_id,
+        "user_name": event.user_name,
         "details": event.details,
         "error_message": event.error_message,
     }
@@ -128,7 +130,7 @@ async def list_audit_events(
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     include_total: bool = Query(False, description="When true return a wrapper with total count"),
-    _: str = Depends(verify_admin_key),
+    _: str = Depends(verify_history_key),
 ):
     """List recent audit events with optional filtering.
 
@@ -186,7 +188,7 @@ async def list_audit_events(
 
 
 @router.get("/audit/{event_id}")
-async def get_audit_event(event_id: str, _: str = Depends(verify_admin_key)):
+async def get_audit_event(event_id: str, _: str = Depends(verify_history_key)):
     """Get a single audit event by id."""
 
     handler = _get_sql_handler()
@@ -195,6 +197,48 @@ async def get_audit_event(event_id: str, _: str = Depends(verify_admin_key)):
         if not event:
             raise HTTPException(status_code=404, detail=f"Audit event not found: {event_id}")
         return _audit_event_to_dict(event)
+
+
+@router.post("/audit/login")
+async def log_login_event(
+    user_id: str = Depends(verify_admin_key),
+):
+    """Log a user login event to the audit trail.
+
+    This endpoint should be called by the frontend after successful Keycloak authentication
+    to record when a user accessed the backup manager UI.
+
+    Returns:
+        dict: Created audit event summary.
+    """
+
+    from datetime import datetime, timezone
+
+    handler = _get_sql_handler()
+    async with handler.AsyncSessionLocal() as session:
+        # Extract username from user_id (format: "keycloak:username")
+        user_name = user_id.split(":", 1)[-1] if ":" in user_id else user_id
+
+        event = AuditEvent(
+            operation="login",
+            trigger="manual",
+            status="success",
+            started_at=datetime.now(timezone.utc),
+            finished_at=datetime.now(timezone.utc),
+            user_id=user_id,
+            user_name=user_name,
+            details={"action": "User logged in to backup manager UI"},
+        )
+        session.add(event)
+        await session.commit()
+        await session.refresh(event)
+
+        return {
+            "id": event.id,
+            "operation": event.operation,
+            "user_name": event.user_name,
+            "started_at": event.started_at.isoformat() if event.started_at else None,
+        }
 
 
 @router.put("/targets/{target_id}")
@@ -226,7 +270,7 @@ async def download_destination_backup(
     destination_id: str,
     backup_id: str = Query(..., description="Provider-specific backup identifier"),
     filename: str | None = Query(None, description="Optional download filename"),
-    _: str = Depends(verify_admin_key),
+    _: str = Depends(verify_download_key),
 ):
     """Download a backup file from a destination.
 

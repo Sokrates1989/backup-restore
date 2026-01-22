@@ -216,10 +216,33 @@ GRANULAR_ROLES = {
     "backup:create": "Create new backups (MEDIUM criticality)",
     "backup:restore": "Restore backups - modifies production data (HIGHEST criticality)",
     "backup:delete": "Delete backup files permanently (HIGH criticality)",
+    "backup:download": "Download backup files (MEDIUM criticality)",
+    "backup:history": "View audit history and login events (LOW criticality)",
     "backup:admin": "Full access including configuration changes",
 }
 
 DEFAULT_ROLES = list(GRANULAR_ROLES.keys())
+
+
+def role_exists(base_url: str, token: str, realm: str, role: str) -> bool:
+    """Check if a realm role exists.
+
+    Args:
+        base_url: Keycloak base URL.
+        token: Admin access token.
+        realm: Realm name.
+        role: Role name to check.
+
+    Returns:
+        bool: True if the role exists.
+    """
+    response = request_with_token(
+        "GET",
+        base_url,
+        token,
+        f"/admin/realms/{realm}/roles/{role}",
+    )
+    return response.status_code == 200
 
 
 def ensure_roles(
@@ -241,6 +264,11 @@ def ensure_roles(
         descriptions = GRANULAR_ROLES
 
     for role in roles:
+        # First check if role already exists
+        if role_exists(base_url, token, realm, role):
+            print(f"  ✓ Role '{role}' already exists")
+            continue
+
         description = descriptions.get(role, f"Role {role}")
         response = request_with_token(
             "POST",
@@ -249,7 +277,11 @@ def ensure_roles(
             f"/admin/realms/{realm}/roles",
             {"name": role, "description": description},
         )
-        if response.status_code in (201, 204, 409):
+        if response.status_code in (201, 204):
+            print(f"  + Role '{role}' created")
+            continue
+        if response.status_code == 409:
+            print(f"  ✓ Role '{role}' already exists (conflict)")
             continue
         raise KeycloakBootstrapError(
             f"Failed to create role '{role}': {response.status_code} {response.text}"
@@ -431,8 +463,8 @@ def set_user_password(base_url: str, token: str, realm: str, user_id: str, passw
 
 
 def get_role_representations(
-    base_url: str, token: str, realm: str, roles: Iterable[str]
-) -> list[dict[str, object]]:
+    base_url: str, token: str, realm: str, roles: Iterable[str], skip_missing: bool = False
+) -> tuple[list[dict[str, object]], list[str]]:
     """Fetch role representations for assignment.
 
     Args:
@@ -440,12 +472,14 @@ def get_role_representations(
         token: Admin access token.
         realm: Realm name.
         roles: Role names.
+        skip_missing: If True, skip missing roles instead of raising an error.
 
     Returns:
-        list[dict[str, object]]: Role representations.
+        tuple[list[dict[str, object]], list[str]]: Role representations and list of missing roles.
     """
 
     representations = []
+    missing_roles = []
     for role in roles:
         response = request_with_token(
             "GET",
@@ -454,15 +488,18 @@ def get_role_representations(
             f"/admin/realms/{realm}/roles/{role}",
         )
         if response.status_code != 200:
+            if skip_missing:
+                missing_roles.append(role)
+                continue
             raise KeycloakBootstrapError(
                 f"Failed to fetch role '{role}': {response.status_code} {response.text}"
             )
         representations.append(response.json())
-    return representations
+    return representations, missing_roles
 
 
 def assign_realm_roles(
-    base_url: str, token: str, realm: str, user_id: str, roles: Iterable[str]
+    base_url: str, token: str, realm: str, user_id: str, roles: Iterable[str], username: str = ""
 ) -> None:
     """Assign realm roles to a user.
 
@@ -472,12 +509,21 @@ def assign_realm_roles(
         realm: Realm name.
         user_id: User UUID.
         roles: Role names.
+        username: Username for logging purposes.
 
     Raises:
         KeycloakBootstrapError: When role assignment fails.
     """
-
-    role_reps = get_role_representations(base_url, token, realm, roles)
+    roles_list = list(roles)
+    role_reps, missing_roles = get_role_representations(base_url, token, realm, roles_list, skip_missing=True)
+    
+    if missing_roles:
+        print(f"  ⚠ Warning: Skipping missing roles for user '{username}': {', '.join(missing_roles)}")
+    
+    if not role_reps:
+        print(f"  ⚠ No valid roles to assign to user '{username}'")
+        return
+    
     response = request_with_token(
         "POST",
         base_url,
@@ -489,6 +535,8 @@ def assign_realm_roles(
         raise KeycloakBootstrapError(
             f"Failed to assign roles to user: {response.status_code} {response.text}"
         )
+    assigned = [r.get('name', '?') for r in role_reps]
+    print(f"  ✓ Assigned roles to '{username}': {', '.join(assigned)}")
 
 
 def assign_service_account_role(
@@ -517,7 +565,7 @@ def assign_service_account_role(
     user_id = response.json().get("id")
     if not user_id:
         raise KeycloakBootstrapError("Service account user id missing")
-    assign_realm_roles(base_url, token, realm, user_id, [role])
+    assign_realm_roles(base_url, token, realm, user_id, [role], "service-account")
 
 
 def build_client_specs(
@@ -586,6 +634,8 @@ def run_bootstrap(args: argparse.Namespace) -> None:
 
     token = get_admin_token(args.base_url, args.admin_user, args.admin_password)
     ensure_realm(args.base_url, token, args.realm, args.realm.replace("-", " ").title())
+    
+    print("\nEnsuring roles exist...")
     ensure_roles(args.base_url, token, args.realm, roles)
 
     frontend_spec, backend_spec = build_client_specs(
@@ -598,10 +648,12 @@ def run_bootstrap(args: argparse.Namespace) -> None:
     backend_uuid = ensure_client(args.base_url, token, args.realm, backend_spec)
     backend_secret = get_client_secret(args.base_url, token, args.realm, backend_uuid)
 
+    print("\nCreating/updating users...")
     for user in users:
+        print(f"  Processing user '{user.username}'...")
         user_id = ensure_user(args.base_url, token, args.realm, user)
         set_user_password(args.base_url, token, args.realm, user_id, user.password)
-        assign_realm_roles(args.base_url, token, args.realm, user_id, user.roles)
+        assign_realm_roles(args.base_url, token, args.realm, user_id, user.roles, user.username)
 
     if args.assign_service_account_role:
         assign_service_account_role(

@@ -304,6 +304,40 @@ function showMain() {
     mainSection.classList.remove('hidden');
     // Show logout button when logged in
     logoutBtn.classList.remove('hidden');
+    
+    // Hide history tab if user doesn't have backup:history or backup:admin role
+    updateHistoryTabVisibility();
+}
+
+/**
+ * Update visibility of the history tab based on user roles.
+ *
+ * @returns {void}
+ */
+function updateHistoryTabVisibility() {
+    const historyTab = document.querySelector('.tab[data-tab="history"]');
+    if (!historyTab) return;
+    
+    if (typeof canViewHistory === 'function' && !canViewHistory()) {
+        historyTab.classList.add('hidden');
+    } else {
+        historyTab.classList.remove('hidden');
+    }
+}
+
+/**
+ * Log a login event to the audit trail.
+ * This is fire-and-forget; errors are logged but not shown to the user.
+ *
+ * @returns {Promise<void>}
+ */
+async function logLoginEvent() {
+    try {
+        await apiCall('/automation/audit/login', 'POST');
+        console.log('[App] Login event logged to audit trail');
+    } catch (error) {
+        console.warn('[App] Failed to log login event:', error.message || error);
+    }
 }
 
 // Track loaded scripts to avoid duplicate loading
@@ -587,6 +621,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             showMain();
             await switchTab('databases');
             showStatus(`Welcome, ${user?.name || user?.username || 'User'}!`);
+            
+            // Log login event to audit trail (fire and forget)
+            logLoginEvent();
+            
             setupEventListeners();
             return;
         }

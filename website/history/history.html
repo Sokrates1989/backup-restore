@@ -4,42 +4,96 @@
         <div class="card-header">
             <h2>History</h2>
             <div class="header-actions">
-                <button id="refresh-history-btn" class="btn btn-secondary btn-sm">🔄 Refresh</button>
+                <button id="clear-all-history-filters-btn" class="btn btn-secondary btn-sm">🗑️ Clear All Filters</button>
+                <button id="refresh-history-btn" class="btn btn-primary btn-sm">🔄 Refresh</button>
             </div>
         </div>
 
         <div class="filter-sort-row">
             <div class="filter-sort-col">
-                <div class="filter-sort-title"><span class="filter-sort-icon">≡</span> Filters</div>
+                <div class="filter-sort-title">
+                    <span class="filter-sort-icon">≡</span> Filters
+                </div>
+                
                 <div class="form-group">
-                    <label for="history-database-filter">Filter by Database</label>
-                    <select id="history-database-filter">
-                        <option value="">All Databases</option>
-                    </select>
+                    <div class="filter-label-row">
+                        <label>Filter by Database</label>
+                        <button type="button" class="btn-clear-filter" data-clear="database">Clear</button>
+                    </div>
+                    <div class="multiselect-dropdown" id="history-database-filter-dropdown">
+                        <div class="multiselect-trigger" tabindex="0">
+                            <span class="multiselect-display">All Databases</span>
+                            <span class="multiselect-arrow">▾</span>
+                        </div>
+                        <div class="multiselect-options" id="history-database-filter">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
                 </div>
 
                 <div class="form-group">
-                    <label for="history-operation-filter">Filter by Operation</label>
-                    <select id="history-operation-filter">
-                        <option value="">All Operations</option>
-                        <option value="backup">Backup</option>
-                        <option value="restore">Restore</option>
-                        <option value="delete_backup">Delete Backup</option>
-                    </select>
+                    <div class="filter-label-row">
+                        <label>Filter by Operation</label>
+                        <button type="button" class="btn-clear-filter" data-clear="operation">Clear</button>
+                    </div>
+                    <div class="multiselect-dropdown" id="history-operation-filter-dropdown">
+                        <div class="multiselect-trigger" tabindex="0">
+                            <span class="multiselect-display">All Operations</span>
+                            <span class="multiselect-arrow">▾</span>
+                        </div>
+                        <div class="multiselect-options" id="history-operation-filter">
+                            <div class="multiselect-option">
+                                <span>Backup</span>
+                                <input type="checkbox" name="history-operation" value="backup">
+                            </div>
+                            <div class="multiselect-option">
+                                <span>Restore</span>
+                                <input type="checkbox" name="history-operation" value="restore">
+                            </div>
+                            <div class="multiselect-option">
+                                <span>Delete Backup</span>
+                                <input type="checkbox" name="history-operation" value="delete_backup">
+                            </div>
+                            <div class="multiselect-option">
+                                <span>Login</span>
+                                <input type="checkbox" name="history-operation" value="login">
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="form-group">
-                    <label for="history-trigger-filter">Filter by Trigger</label>
-                    <select id="history-trigger-filter">
-                        <option value="">All Triggers</option>
-                        <option value="manual">Manual</option>
-                        <option value="scheduled">Scheduled</option>
-                        <option value="non_scheduled">Everything except scheduled</option>
-                    </select>
+                    <div class="filter-label-row">
+                        <label>Filter by Trigger</label>
+                        <button type="button" class="btn-clear-filter" data-clear="trigger">Clear</button>
+                    </div>
+                    <div class="multiselect-dropdown" id="history-trigger-filter-dropdown">
+                        <div class="multiselect-trigger" tabindex="0">
+                            <span class="multiselect-display">All Triggers</span>
+                            <span class="multiselect-arrow">▾</span>
+                        </div>
+                        <div class="multiselect-options" id="history-trigger-filter">
+                            <div class="multiselect-option">
+                                <span>Manual</span>
+                                <input type="checkbox" name="history-trigger" value="manual">
+                            </div>
+                            <div class="multiselect-option">
+                                <span>Scheduled</span>
+                                <input type="checkbox" name="history-trigger" value="scheduled">
+                            </div>
+                            <div class="multiselect-option">
+                                <span>System</span>
+                                <input type="checkbox" name="history-trigger" value="system">
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="form-group">
-                    <label for="history-start-date">Start Date</label>
+                    <div class="filter-label-row">
+                        <label for="history-start-date">Start Date</label>
+                        <button type="button" class="btn-clear-filter" data-clear="dates">Clear</button>
+                    </div>
                     <input type="datetime-local" id="history-start-date">
                 </div>
 
@@ -60,12 +114,13 @@
                         <option value="operation">Operation</option>
                         <option value="status">Status</option>
                         <option value="trigger">Trigger</option>
+                        <option value="user">User</option>
                     </select>
                 </div>
             </div>
         </div>
 
-        <p class="hint">Shows audit events for important operations (backup/restore/delete). History entries are not deletable.</p>
+        <p class="hint">Shows audit events for important operations (backup/restore/delete/login). History entries are not deletable.</p>
 
         <div id="history-list" class="items-list">
             <p class="loading">Loading history...</p>

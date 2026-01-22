@@ -17,6 +17,8 @@ BACKUP_READ_ROLE = "backup:read"
 BACKUP_CREATE_ROLE = "backup:create"
 BACKUP_RESTORE_ROLE = "backup:restore"
 BACKUP_DELETE_ROLE = "backup:delete"
+BACKUP_DOWNLOAD_ROLE = "backup:download"
+BACKUP_HISTORY_ROLE = "backup:history"
 BACKUP_ADMIN_ROLE = "backup:admin"
 
 BACKUP_ACCESS_ROLES = (
@@ -25,6 +27,18 @@ BACKUP_ACCESS_ROLES = (
     BACKUP_CREATE_ROLE,
     BACKUP_RESTORE_ROLE,
     BACKUP_DELETE_ROLE,
+    BACKUP_DOWNLOAD_ROLE,
+    BACKUP_HISTORY_ROLE,
+)
+
+BACKUP_DOWNLOAD_ROLES = (
+    BACKUP_ADMIN_ROLE,
+    BACKUP_DOWNLOAD_ROLE,
+)
+
+BACKUP_HISTORY_ROLES = (
+    BACKUP_ADMIN_ROLE,
+    BACKUP_HISTORY_ROLE,
 )
 
 def _validate_keycloak_roles(
@@ -141,4 +155,46 @@ async def verify_delete_key(
     return _validate_keycloak_roles(
         bearer_token,
         (BACKUP_ADMIN_ROLE, BACKUP_DELETE_ROLE),
+    )
+
+
+async def verify_download_key(
+    bearer_token: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+) -> str:
+    """
+    Verify Keycloak authentication for download operations.
+
+    Args:
+        bearer_token: Bearer token credentials from Authorization header.
+
+    Returns:
+        str: Authenticated user identifier.
+
+    Raises:
+        HTTPException: If authentication fails or roles are insufficient.
+    """
+    return _validate_keycloak_roles(
+        bearer_token,
+        BACKUP_DOWNLOAD_ROLES,
+    )
+
+
+async def verify_history_key(
+    bearer_token: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+) -> str:
+    """
+    Verify Keycloak authentication for history/audit access.
+
+    Args:
+        bearer_token: Bearer token credentials from Authorization header.
+
+    Returns:
+        str: Authenticated user identifier.
+
+    Raises:
+        HTTPException: If authentication fails or roles are insufficient.
+    """
+    return _validate_keycloak_roles(
+        bearer_token,
+        BACKUP_HISTORY_ROLES,
     )

@@ -21,7 +21,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 
-from api.security import verify_admin_key, verify_delete_key, verify_restore_key
+from api.security import verify_admin_key, verify_delete_key, verify_download_key, verify_restore_key
 from api.settings import settings
 from backend.services.neo4j.backup_service import Neo4jBackupService
 from backend.services.sql.backup_service import BackupService
@@ -280,7 +280,7 @@ async def list_backups(
 @router.get("/download/{filename:path}")
 async def download_backup(
     filename: str,
-    _: str = Depends(verify_admin_key),
+    _: str = Depends(verify_download_key),
 ) -> FileResponse:
     """Download a stored backup file.
 

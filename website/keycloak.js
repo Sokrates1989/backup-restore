@@ -8,6 +8,15 @@
  * - Keycloak JS adapter (loaded dynamically from Keycloak server or CDN)
  */
 
+// Granular role constants
+const BACKUP_READ_ROLE = 'backup:read';
+const BACKUP_CREATE_ROLE = 'backup:create';
+const BACKUP_RESTORE_ROLE = 'backup:restore';
+const BACKUP_DELETE_ROLE = 'backup:delete';
+const BACKUP_DOWNLOAD_ROLE = 'backup:download';
+const BACKUP_HISTORY_ROLE = 'backup:history';
+const BACKUP_ADMIN_ROLE = 'backup:admin';
+
 // Keycloak configuration - will be set from environment or defaults
 const KEYCLOAK_CONFIG = {
     url: window.KEYCLOAK_URL || 'http://localhost:9090',
@@ -347,8 +356,8 @@ async function keycloakApiCall(endpoint, method = 'GET', body = null) {
  */
 async function keycloakApiDeleteCall(endpoint) {
     // Check if user has delete permission
-    if (!hasAnyKeycloakRole(['admin'])) {
-        throw new Error('You do not have permission to delete. Required role: admin');
+    if (!hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_DELETE_ROLE])) {
+        throw new Error('You do not have permission to delete. Required role: backup:admin or backup:delete');
     }
 
     const token = await getKeycloakToken();
@@ -382,8 +391,8 @@ async function keycloakApiDeleteCall(endpoint) {
  */
 async function keycloakApiRestoreCall(endpoint, body) {
     // Check if user has restore permission
-    if (!hasAnyKeycloakRole(['admin', 'operator'])) {
-        throw new Error('You do not have permission to restore. Required role: admin or operator');
+    if (!hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_RESTORE_ROLE])) {
+        throw new Error('You do not have permission to restore. Required role: backup:admin or backup:restore');
     }
 
     const token = await getKeycloakToken();
@@ -409,7 +418,32 @@ async function keycloakApiRestoreCall(endpoint, body) {
     return await response.json().catch(() => ({}));
 }
 
-// Export functions to global scope
+/**
+ * Check if current user can view history.
+ * 
+ * @returns {boolean} True if user has backup:history or backup:admin role
+ */
+function canViewHistory() {
+    return hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_HISTORY_ROLE]);
+}
+
+/**
+ * Check if current user can download backups.
+ * 
+ * @returns {boolean} True if user has backup:download or backup:admin role
+ */
+function canDownloadBackups() {
+    return hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_DOWNLOAD_ROLE]);
+}
+
+// Export functions and constants to global scope
+window.BACKUP_READ_ROLE = BACKUP_READ_ROLE;
+window.BACKUP_CREATE_ROLE = BACKUP_CREATE_ROLE;
+window.BACKUP_RESTORE_ROLE = BACKUP_RESTORE_ROLE;
+window.BACKUP_DELETE_ROLE = BACKUP_DELETE_ROLE;
+window.BACKUP_DOWNLOAD_ROLE = BACKUP_DOWNLOAD_ROLE;
+window.BACKUP_HISTORY_ROLE = BACKUP_HISTORY_ROLE;
+window.BACKUP_ADMIN_ROLE = BACKUP_ADMIN_ROLE;
 window.initKeycloak = initKeycloak;
 window.isKeycloakEnabled = isKeycloakEnabled;
 window.isKeycloakAuthenticated = isKeycloakAuthenticated;
@@ -419,6 +453,8 @@ window.getKeycloakToken = getKeycloakToken;
 window.getKeycloakUser = getKeycloakUser;
 window.hasKeycloakRole = hasKeycloakRole;
 window.hasAnyKeycloakRole = hasAnyKeycloakRole;
+window.canViewHistory = canViewHistory;
+window.canDownloadBackups = canDownloadBackups;
 window.keycloakApiCall = keycloakApiCall;
 window.keycloakApiDeleteCall = keycloakApiDeleteCall;
 window.keycloakApiRestoreCall = keycloakApiRestoreCall;
