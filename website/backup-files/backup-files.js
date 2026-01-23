@@ -80,7 +80,7 @@ function getBackupFilesLimitValue(selectId, storageKey, fallback) {
         const storedValue = parseBackupFilesLimit(storedRaw, fallback);
         const select = document.getElementById(selectId);
         if (select) {
-            const match = [...select.options].find(option => {
+            const match = Array.from(select.options).find(option => {
                 return parseBackupFilesLimit(option.value, fallback) === storedValue;
             });
             if (match) {
