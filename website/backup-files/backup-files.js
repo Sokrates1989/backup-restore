@@ -810,6 +810,17 @@ function updateBackupFilesStorageSelector() {
 }
 
 /**
+ * Get selected values from a checkbox filter group.
+ *
+ * @param {string} name Checkbox input name attribute.
+ * @returns {string[]} Array of selected values.
+ */
+function getCheckedFilterValues(name) {
+    const checkboxes = document.querySelectorAll(`input[name="${name}"]:checked`);
+    return Array.from(checkboxes).map(cb => cb.value);
+}
+
+/**
  * Render the backup files list and pagination controls.
  *
  * @returns {void}
