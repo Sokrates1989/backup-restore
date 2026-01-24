@@ -17,6 +17,7 @@ backups/*.db
 backups/*.db.gz
 backups/*.backup
 backups/*.cypher.gz
+backups/
 
 # Auto-generated MariaDB-compatible SQL files (created by setup wizard when restoring MySQL 8 backups).
 *__mariadb.sql
