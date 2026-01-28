@@ -114,7 +114,11 @@ ci-cd/
 |------------|-------------|---------|
 | `PROD_DATABASE_URL` | Production database connection string | `postgresql://user:pass@host:5432/db` |
 | `PROD_REDIS_URL` | Production Redis connection string | `redis://host:6379` |
-| `PROD_ADMIN_API_KEY` | Production admin API key | Generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"` |
+| `KEYCLOAK_URL` | Keycloak issuer URL | `https://sso.example.com` |
+| `KEYCLOAK_INTERNAL_URL` | Internal Keycloak URL (optional) | `http://keycloak:8080` |
+| `KEYCLOAK_REALM` | Keycloak realm | `backup-restore` |
+| `KEYCLOAK_CLIENT_ID` | Backend client ID | `backup-restore-backend` |
+| `KEYCLOAK_CLIENT_SECRET` | Backend client secret | (from Keycloak)
 
 ## 📍 Where to Add Secrets
 

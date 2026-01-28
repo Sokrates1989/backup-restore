@@ -11,16 +11,16 @@ ENV IMAGE_TAG=$IMAGE_TAG
 WORKDIR /app
 
 # Install database client tools for backup/restore
-# Clean up package cache to save space
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
     ca-certificates \
     postgresql-client \
     mariadb-client \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
+    && apt-get autoremove -y && \
+    apt-get autoclean && \
+    rm -rf /var/lib/apt/lists/* \
     && rm -rf /var/cache/apt/archives/* \
-    && rm -rf /tmp/* \
-    && rm -rf /var/tmp/*
+    && rm -rf /tmp/*
 
 # Copy only dependency files first for better build caching
 COPY pyproject.toml pdm.lock ./

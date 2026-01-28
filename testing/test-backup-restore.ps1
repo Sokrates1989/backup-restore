@@ -7,21 +7,69 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $envFile = Join-Path $repoRoot ".env"
 
 $port = "8000"
-$ADMIN_KEY = "change-this-to-a-secure-random-key"
-$RESTORE_KEY = "change-this-restore-key-to-something-secure"
-$DELETE_KEY = "change-this-delete-key-to-something-secure"
+$keycloakUrl = ""
+$keycloakInternalUrl = ""
+$keycloakRealm = ""
+$keycloakClientId = ""
+$keycloakClientSecret = ""
 
 if (Test-Path $envFile) {
     $envLines = Get-Content $envFile
     foreach ($line in $envLines) {
         if ($line -match '^PORT=(.+)$') { $port = $Matches[1].Trim().Trim('"') }
-        if ($line -match '^ADMIN_API_KEY=(.+)$') { $ADMIN_KEY = $Matches[1].Trim().Trim('"') }
-        if ($line -match '^BACKUP_RESTORE_API_KEY=(.+)$') { $RESTORE_KEY = $Matches[1].Trim().Trim('"') }
-        if ($line -match '^BACKUP_DELETE_API_KEY=(.+)$') { $DELETE_KEY = $Matches[1].Trim().Trim('"') }
+        if ($line -match '^KEYCLOAK_URL=(.+)$') { $keycloakUrl = $Matches[1].Trim().Trim('"') }
+        if ($line -match '^KEYCLOAK_INTERNAL_URL=(.+)$') { $keycloakInternalUrl = $Matches[1].Trim().Trim('"') }
+        if ($line -match '^KEYCLOAK_REALM=(.+)$') { $keycloakRealm = $Matches[1].Trim().Trim('"') }
+        if ($line -match '^KEYCLOAK_CLIENT_ID=(.+)$') { $keycloakClientId = $Matches[1].Trim().Trim('"') }
+        if ($line -match '^KEYCLOAK_CLIENT_SECRET=(.+)$') { $keycloakClientSecret = $Matches[1].Trim().Trim('"') }
     }
 }
 
 $API_URL = "http://localhost:$port"
+
+if ($keycloakInternalUrl) {
+    $keycloakUrl = $keycloakInternalUrl
+}
+
+function Get-KeycloakAccessToken {
+    <#
+    .SYNOPSIS
+    Retrieves a Keycloak access token for test calls.
+
+    .RETURNS
+    System.String
+    Access token string.
+    #>
+    $accessToken = $env:ACCESS_TOKEN
+    if ($accessToken) {
+        return $accessToken
+    }
+
+    if ($keycloakUrl -and $keycloakRealm -and $keycloakClientId -and $keycloakClientSecret) {
+        $tokenEndpoint = "$($keycloakUrl.TrimEnd('/'))/realms/$keycloakRealm/protocol/openid-connect/token"
+        $body = @{ 
+            grant_type = "client_credentials"
+            client_id = $keycloakClientId
+            client_secret = $keycloakClientSecret
+        }
+        try {
+            $tokenResponse = Invoke-RestMethod -Method Post -Uri $tokenEndpoint -Body $body -ContentType "application/x-www-form-urlencoded" -ErrorAction Stop
+            if ($tokenResponse.access_token) {
+                return $tokenResponse.access_token
+            }
+        } catch {
+            Write-Host "[WARN] Failed to fetch Keycloak access token: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+
+    return Read-Host "Enter Keycloak access token"
+}
+
+$AccessToken = Get-KeycloakAccessToken
+if (-not $AccessToken) {
+    Write-Host "[ERROR] Missing Keycloak access token." -ForegroundColor Red
+    exit 1
+}
 
 Write-Host "=====================================" -ForegroundColor Cyan
 Write-Host "  Backup & Restore Test" -ForegroundColor Cyan
@@ -37,7 +85,7 @@ function Invoke-ApiCall {
     )
 
     $headers = @{
-        "X-Admin-Key" = $ADMIN_KEY
+        "Authorization" = "Bearer $AccessToken"
         "Content-Type" = "application/json"
     }
 
@@ -60,7 +108,7 @@ function Invoke-RestoreCall {
     )
 
     $headers = @{
-        "X-Restore-Key" = $RESTORE_KEY
+        "Authorization" = "Bearer $AccessToken"
         "Content-Type" = "application/json"
     }
 
@@ -78,7 +126,7 @@ function Invoke-DeleteCall {
     )
 
     $headers = @{
-        "X-Delete-Key" = $DELETE_KEY
+        "Authorization" = "Bearer $AccessToken"
         "Content-Type" = "application/json"
     }
 

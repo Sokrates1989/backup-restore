@@ -8,6 +8,61 @@ if (Test-Path $browserHelpersPath) {
     . $browserHelpersPath
 }
 
+function Get-KeycloakAccessToken {
+    <#
+    .SYNOPSIS
+    Retrieves a Keycloak access token for CLI operations.
+
+    .DESCRIPTION
+    Uses environment variables or .env file values to request a service-account token.
+    Falls back to prompting for a token if automatic retrieval is not possible.
+
+    .PARAMETER EnvFile
+    Path to the environment file to read KEYCLOAK_* variables from.
+
+    .RETURNS
+    System.String
+    Access token string.
+    #>
+    param(
+        [string]$EnvFile = ".env"
+    )
+
+    $accessToken = $env:ACCESS_TOKEN
+    if ($accessToken) {
+        return $accessToken
+    }
+
+    $keycloakUrl = Get-EnvVariable -VariableName "KEYCLOAK_URL" -EnvFile $EnvFile -DefaultValue ""
+    $keycloakInternalUrl = Get-EnvVariable -VariableName "KEYCLOAK_INTERNAL_URL" -EnvFile $EnvFile -DefaultValue ""
+    $keycloakRealm = Get-EnvVariable -VariableName "KEYCLOAK_REALM" -EnvFile $EnvFile -DefaultValue ""
+    $keycloakClientId = Get-EnvVariable -VariableName "KEYCLOAK_CLIENT_ID" -EnvFile $EnvFile -DefaultValue ""
+    $keycloakClientSecret = Get-EnvVariable -VariableName "KEYCLOAK_CLIENT_SECRET" -EnvFile $EnvFile -DefaultValue ""
+
+    if ($keycloakInternalUrl) {
+        $keycloakUrl = $keycloakInternalUrl
+    }
+
+    if ($keycloakUrl -and $keycloakRealm -and $keycloakClientId -and $keycloakClientSecret) {
+        $tokenEndpoint = "$($keycloakUrl.TrimEnd('/'))/realms/$keycloakRealm/protocol/openid-connect/token"
+        $body = @{ 
+            grant_type = "client_credentials"
+            client_id = $keycloakClientId
+            client_secret = $keycloakClientSecret
+        }
+        try {
+            $tokenResponse = Invoke-RestMethod -Method Post -Uri $tokenEndpoint -Body $body -ContentType "application/x-www-form-urlencoded" -ErrorAction Stop
+            if ($tokenResponse.access_token) {
+                return $tokenResponse.access_token
+            }
+        } catch {
+            Write-Host "[WARN] Failed to fetch Keycloak access token: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+
+    return Read-Host "Enter Keycloak access token"
+}
+
 function Remove-TestDatabaseData {
     <#
     .SYNOPSIS
@@ -536,22 +591,18 @@ function Invoke-BackupNow {
         return
     }
 
-    # Get admin key from .env
-    $adminKey = ""
-    if (Test-Path ".env") {
-        $adminKey = (Select-String -Path ".env" -Pattern "^ADMIN_API_KEY=" -SimpleMatch).Line -replace "^ADMIN_API_KEY=", "" -replace '"', ''
-    }
-
-    if (-not $adminKey) {
-        $adminKey = Read-Host "Enter Admin API Key"
+    $accessToken = Get-KeycloakAccessToken
+    if (-not $accessToken) {
+        Write-Host "[ERROR] Missing Keycloak access token." -ForegroundColor Red
+        return
     }
 
     # List schedules
     Write-Host "[LIST] Fetching schedules..." -ForegroundColor Cyan
     try {
-        $schedulesResponse = Invoke-RestMethod -Uri "http://localhost:$Port/automation/schedules" -Headers @{ "X-Admin-Key" = $adminKey } -ErrorAction Stop
+        $schedulesResponse = Invoke-RestMethod -Uri "http://localhost:$Port/automation/schedules" -Headers @{ Authorization = "Bearer $accessToken" } -ErrorAction Stop
     } catch {
-        Write-Host "[ERROR] Failed to fetch schedules. Check your API key." -ForegroundColor Red
+        Write-Host "[ERROR] Failed to fetch schedules. Check your access token." -ForegroundColor Red
         return
     }
 
@@ -588,7 +639,7 @@ function Invoke-BackupNow {
     Write-Host ""
     Write-Host "[INFO] Running backup..." -ForegroundColor Cyan
     try {
-        $result = Invoke-RestMethod -Uri "http://localhost:$Port/automation/schedules/$scheduleId/run-now" -Method POST -Headers @{ "X-Admin-Key" = $adminKey } -ErrorAction Stop
+        $result = Invoke-RestMethod -Uri "http://localhost:$Port/automation/schedules/$scheduleId/run-now" -Method POST -Headers @{ Authorization = "Bearer $accessToken" } -ErrorAction Stop
         
         if ($result.backup_filename) {
             Write-Host "[OK] Backup completed successfully!" -ForegroundColor Green
@@ -625,21 +676,17 @@ function Show-BackupList {
         return
     }
 
-    # Get admin key from .env
-    $adminKey = ""
-    if (Test-Path ".env") {
-        $adminKey = (Select-String -Path ".env" -Pattern "^ADMIN_API_KEY=" -SimpleMatch).Line -replace "^ADMIN_API_KEY=", "" -replace '"', ''
-    }
-
-    if (-not $adminKey) {
-        $adminKey = Read-Host "Enter Admin API Key"
+    $accessToken = Get-KeycloakAccessToken
+    if (-not $accessToken) {
+        Write-Host "[ERROR] Missing Keycloak access token." -ForegroundColor Red
+        return
     }
 
     Write-Host "[LIST] Fetching backup files..." -ForegroundColor Cyan
     try {
-        $response = Invoke-RestMethod -Uri "http://localhost:$Port/backup/list" -Headers @{ "X-Admin-Key" = $adminKey } -ErrorAction Stop
+        $response = Invoke-RestMethod -Uri "http://localhost:$Port/backup/list" -Headers @{ Authorization = "Bearer $accessToken" } -ErrorAction Stop
     } catch {
-        Write-Host "[ERROR] Failed to fetch backup files. Check your API key." -ForegroundColor Red
+        Write-Host "[ERROR] Failed to fetch backup files. Check your access token." -ForegroundColor Red
         return
     }
 
@@ -902,6 +949,144 @@ function Start-WithAdminUIs {
     docker compose --env-file .env -f $ComposeFile -f $runnerFile --profile admin up --build --watch
 }
 
+function Invoke-KeycloakBootstrap {
+    <#
+    .SYNOPSIS
+    Bootstrap Keycloak realm with clients, roles, and users.
+    #>
+    $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+    $scriptsDir = Join-Path $projectRoot "scripts"
+    $bootstrapImage = "backup-restore-keycloak-bootstrap"
+    
+    Write-Host "🔐 Keycloak Bootstrap" -ForegroundColor Cyan
+    Write-Host ""
+    
+    # Load .env defaults
+    $envFile = Join-Path $projectRoot ".env"
+    $keycloakUrl = "http://localhost:9090"
+    $keycloakRealm = "backup-restore"
+    if (Test-Path $envFile) {
+        $envContent = Get-Content $envFile
+        foreach ($line in $envContent) {
+            if ($line -match "^KEYCLOAK_URL=(.+)$") { $keycloakUrl = $Matches[1].Trim('"', ' ') }
+            if ($line -match "^KEYCLOAK_REALM=(.+)$") { $keycloakRealm = $Matches[1].Trim('"', ' ') }
+        }
+    }
+    
+    # Check if Keycloak is reachable
+    Write-Host "🔍 Checking Keycloak at $keycloakUrl..." -ForegroundColor Cyan
+    try {
+        $response = Invoke-WebRequest -Uri "$keycloakUrl/" -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop
+    } catch {
+        Write-Host ""
+        Write-Host "❌ Cannot reach Keycloak at $keycloakUrl" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Please ensure Keycloak is running. Start it from the dedicated repo:" -ForegroundColor Yellow
+        Write-Host "  https://github.com/Sokrates1989/keycloak.git"
+        Write-Host ""
+        return 1
+    }
+    Write-Host "✅ Keycloak is reachable" -ForegroundColor Green
+    Write-Host ""
+    
+    # Build image if needed
+    $imageExists = docker image inspect $bootstrapImage 2>$null
+    if (-not $imageExists) {
+        Write-Host "🐳 Building bootstrap image..." -ForegroundColor Cyan
+        docker build -t $bootstrapImage $scriptsDir
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "❌ Failed to build bootstrap image" -ForegroundColor Red
+            return 1
+        }
+    }
+    
+    # Collect configuration
+    $inputUrl = Read-Host "Keycloak base URL [$keycloakUrl]"
+    if ($inputUrl) { $keycloakUrl = $inputUrl }
+    
+    $adminUser = Read-Host "Keycloak admin username [admin]"
+    if (-not $adminUser) { $adminUser = "admin" }
+    
+    $adminPassword = Read-Host "Keycloak admin password [admin]"
+    if (-not $adminPassword) { $adminPassword = "admin" }
+    
+    $realm = Read-Host "Realm name [$keycloakRealm]"
+    if (-not $realm) { $realm = $keycloakRealm }
+    
+    $frontendClient = Read-Host "Frontend client ID [backup-restore-frontend]"
+    if (-not $frontendClient) { $frontendClient = "backup-restore-frontend" }
+    
+    $backendClient = Read-Host "Backend client ID [backup-restore-backend]"
+    if (-not $backendClient) { $backendClient = "backup-restore-backend" }
+    
+    $webPort = if ($env:WEB_PORT) { $env:WEB_PORT } else { "8086" }
+    $frontendUrl = Read-Host "Frontend root URL [http://localhost:$webPort]"
+    if (-not $frontendUrl) { $frontendUrl = "http://localhost:$webPort" }
+    
+    $apiPort = if ($env:PORT) { $env:PORT } else { "8000" }
+    $apiUrl = Read-Host "API root URL [http://localhost:$apiPort]"
+    if (-not $apiUrl) { $apiUrl = "http://localhost:$apiPort" }
+    
+    Write-Host ""
+    Write-Host "✅ Creating granular roles:" -ForegroundColor Green
+    Write-Host "   - backup:read    (view backups, stats)" -ForegroundColor Gray
+    Write-Host "   - backup:create  (create backups)" -ForegroundColor Gray
+    Write-Host "   - backup:restore (restore backups - CRITICAL)" -ForegroundColor Yellow
+    Write-Host "   - backup:delete  (delete backups)" -ForegroundColor Gray
+    Write-Host "   - backup:admin   (full access)" -ForegroundColor Gray
+    Write-Host ""
+    
+    $useDefaults = Read-Host "Create default users (admin/operator/viewer)? (Y/n)"
+    $userArgs = @()
+    if ($useDefaults -notmatch "^[Nn]") {
+        $userArgs += "--user"
+        $userArgs += "admin:admin:backup:admin"
+        $userArgs += "--user"
+        $userArgs += "operator:operator:backup:read,backup:create,backup:restore"
+        $userArgs += "--user"
+        $userArgs += "viewer:viewer:backup:read"
+    } else {
+        Write-Host "Role format: backup:read, backup:create, backup:restore, backup:delete, backup:admin" -ForegroundColor Cyan
+        $customUser = Read-Host "Enter user spec (username:password:role1,role2)"
+        if ($customUser) {
+            $userArgs += "--user"
+            $userArgs += $customUser
+        }
+    }
+    
+    if ($userArgs.Count -eq 0) {
+        Write-Host "❌ No users specified. Aborting bootstrap." -ForegroundColor Red
+        return 1
+    }
+    
+    Write-Host ""
+    Write-Host "🚀 Bootstrapping Keycloak realm..." -ForegroundColor Cyan
+    
+    $dockerArgs = @(
+        "--base-url", $keycloakUrl,
+        "--admin-user", $adminUser,
+        "--admin-password", $adminPassword,
+        "--realm", $realm,
+        "--frontend-client-id", $frontendClient,
+        "--backend-client-id", $backendClient,
+        "--frontend-root-url", $frontendUrl,
+        "--api-root-url", $apiUrl
+    ) + $userArgs
+    
+    docker run --rm --network host $bootstrapImage $dockerArgs
+    
+    $exitCode = $LASTEXITCODE
+    
+    Write-Host ""
+    if ($exitCode -eq 0) {
+        Write-Host "✅ Bootstrap complete! Update your .env with the client secret from output above." -ForegroundColor Green
+    } else {
+        Write-Host "❌ Bootstrap failed. Check Keycloak logs for details." -ForegroundColor Red
+    }
+    
+    return $exitCode
+}
+
 function Show-MainMenu {
     param(
         [string]$Port,
@@ -929,6 +1114,7 @@ function Show-MainMenu {
     $MENU_CLEAN_TEST_DATA = $menuNext; $menuNext++
 
     $MENU_SETUP = $menuNext; $menuNext++
+    $MENU_KEYCLOAK_BOOTSTRAP = $menuNext; $menuNext++
 
     $MENU_EXIT = $menuNext
 
@@ -961,6 +1147,7 @@ function Show-MainMenu {
     Write-Host "" 
     Write-Host "Setup:" -ForegroundColor Yellow
     Write-Host "  $MENU_SETUP) Re-run setup wizard" -ForegroundColor Gray
+    Write-Host "  $MENU_KEYCLOAK_BOOTSTRAP) Bootstrap Keycloak (realm, roles, users)" -ForegroundColor Gray
     Write-Host "" 
     Write-Host "  $MENU_EXIT) Exit" -ForegroundColor Gray
     Write-Host ""
@@ -1033,6 +1220,15 @@ function Show-MainMenu {
                 $summary = "Setup wizard re-run completed"
             } else {
                 $summary = "Setup wizard re-run failed or aborted"
+                $exitCode = 1
+            }
+        }
+        "$MENU_KEYCLOAK_BOOTSTRAP" {
+            $result = Invoke-KeycloakBootstrap
+            if ($result -eq 0) {
+                $summary = "Keycloak bootstrap completed"
+            } else {
+                $summary = "Keycloak bootstrap failed"
                 $exitCode = 1
             }
         }

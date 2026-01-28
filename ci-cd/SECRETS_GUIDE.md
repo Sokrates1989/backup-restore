@@ -113,12 +113,11 @@ These should be **different** from your local development values!
 |------------|-------------|-----------------|---------|
 | `PROD_DATABASE_URL` | Production database connection | Your database provider | `postgresql://user:pass@prod-db.com:5432/apidb` |
 | `PROD_REDIS_URL` | Production Redis connection | Your Redis provider | `redis://prod-redis.com:6379` |
-| `PROD_ADMIN_API_KEY` | Production admin API key | Generate random token | See command below |
-
-**Generate secure API key:**
-```bash
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-```
+| `KEYCLOAK_URL` | Keycloak issuer URL | Keycloak base URL | `https://sso.example.com` |
+| `KEYCLOAK_INTERNAL_URL` | Keycloak internal URL (optional) | Internal routing | `http://keycloak:8080` |
+| `KEYCLOAK_REALM` | Keycloak realm | Realm name | `backup-restore` |
+| `KEYCLOAK_CLIENT_ID` | Backend client ID | Keycloak client | `backup-restore-backend` |
+| `KEYCLOAK_CLIENT_SECRET` | Backend client secret | Keycloak admin console | (generated in Keycloak)
 
 ---
 
@@ -188,7 +187,10 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 - [ ] `PROD_DATABASE_URL` secret added
 - [ ] `PROD_REDIS_URL` secret added
-- [ ] `PROD_ADMIN_API_KEY` secret added (newly generated, not from .env)
+- [ ] `KEYCLOAK_URL` secret added
+- [ ] `KEYCLOAK_REALM` secret added
+- [ ] `KEYCLOAK_CLIENT_ID` secret added
+- [ ] `KEYCLOAK_CLIENT_SECRET` secret added
 - [ ] Production database is accessible from deployment target
 - [ ] Production Redis is accessible from deployment target
 
@@ -258,12 +260,12 @@ For security, rotate secrets regularly (recommended: every 90 days).
 3. Test deployment
 4. Delete old service principal
 
-### Rotate Production API Key
+### Rotate Production Keycloak Secret
 
-1. Generate new API key
-2. Update `PROD_ADMIN_API_KEY` secret
+1. Generate a new client secret in Keycloak
+2. Update the `KEYCLOAK_CLIENT_SECRET` secret
 3. Deploy application
-4. Update any clients using the old key
+4. Verify service-account token requests succeed
 
 ---
 
@@ -300,8 +302,7 @@ ssh-keygen -t ed25519 -C "ci-cd-deploy" -f ~/.ssh/cicd_deploy
 # Get SSH known hosts
 ssh-keyscan your-server.com
 
-# Generate API key
-python -c "import secrets; print(secrets.token_urlsafe(32))"
+# Keycloak secrets are created in the admin console or via setup_keycloak.py
 
 # Create Azure service principal
 az ad sp create-for-rbac --name "cicd-deploy" --role contributor --scopes /subscriptions/{sub-id}/resourceGroups/{rg} --sdk-auth

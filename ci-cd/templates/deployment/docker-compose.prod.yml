@@ -24,15 +24,19 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
       
-      # Security
-      # ⚠️  IMPORTANT: Use a strong, unique API key for production!
-      - ADMIN_API_KEY=${ADMIN_API_KEY}
+      # Security (Keycloak)
+      - KEYCLOAK_ENABLED=${KEYCLOAK_ENABLED:-true}
+      - KEYCLOAK_URL=${KEYCLOAK_URL}
+      - KEYCLOAK_INTERNAL_URL=${KEYCLOAK_INTERNAL_URL:-}
+      - KEYCLOAK_REALM=${KEYCLOAK_REALM}
+      - KEYCLOAK_CLIENT_ID=${KEYCLOAK_CLIENT_ID}
+      - KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET}
     
     # Uncomment to use Docker secrets (recommended for production)
     # secrets:
     #   - database_url
     #   - redis_url
-    #   - admin_api_key
+    #   - keycloak_client_secret
     
     # Health check
     healthcheck:
@@ -127,5 +131,5 @@ networks:
 #     external: true
 #   redis_url:
 #     external: true
-#   admin_api_key:
+#   keycloak_client_secret:
 #     external: true

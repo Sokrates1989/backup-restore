@@ -108,14 +108,15 @@ function getHistorySortValue() {
 
 /**
  * Get the current history query filter values.
+ * Now supports multi-select for databases, operations, and triggers.
  *
- * @returns {{targetId: string, operation: string, trigger: string}} Current filter values.
+ * @returns {{targetIds: string[], operations: string[], triggers: string[]}} Current filter values.
  */
 function getHistoryQueryParams() {
     return {
-        targetId: document.getElementById('history-database-filter')?.value || '',
-        operation: document.getElementById('history-operation-filter')?.value || '',
-        trigger: document.getElementById('history-trigger-filter')?.value || ''
+        targetIds: getCheckedFilterValues('history-database'),
+        operations: getCheckedFilterValues('history-operation'),
+        triggers: getCheckedFilterValues('history-trigger')
     };
 }
 
@@ -196,7 +197,13 @@ function createHistoryPagingState() {
  * @returns {void}
  */
 function resetHistoryPagination() {
-    historyVisibleLimit = getHistoryInitialLimit();
+    // Try to get limit from UI first, fallback to storage, then default
+    const selectElement = document.getElementById('history-initial-limit');
+    if (selectElement && selectElement.value) {
+        historyVisibleLimit = parseHistoryLimit(selectElement.value, HISTORY_DEFAULT_INITIAL_LIMIT);
+    } else {
+        historyVisibleLimit = getHistoryInitialLimit();
+    }
     historyPagingState = null;
 }
 
@@ -234,6 +241,7 @@ function hasMoreHistoryAvailable() {
 
 /**
  * Fetch the next page of history runs.
+ * Note: Multi-select filtering is now done client-side to support checkbox filters.
  *
  * @param {number} limit Max items to request.
  * @returns {Promise<void>} Resolves when the page is loaded.
@@ -241,11 +249,8 @@ function hasMoreHistoryAvailable() {
 async function fetchMoreHistory(limit) {
     if (!historyPagingState) return;
 
-    const { targetId, operation, trigger } = getHistoryQueryParams();
+    // Fetch records with proper limit and offset
     let url = `/automation/audit?limit=${limit}&offset=${historyPagingState.offset}&include_total=true`;
-    if (targetId) url += `&target_id=${encodeURIComponent(targetId)}`;
-    if (operation) url += `&operation=${encodeURIComponent(operation)}`;
-    if (trigger) url += `&trigger=${encodeURIComponent(trigger)}`;
 
     const response = await apiCall(url);
     let items = [];
@@ -349,9 +354,12 @@ function cancelLoadAllHistory() {
  */
 function renderHistoryRunItem(run) {
     const status = run.status || 'unknown';
-    const title = run.backup_name || run.backup_id || `Event ${run.id}`;
+    const operation = run.operation || 'unknown';
+    const isLogin = operation === 'login';
+    const title = isLogin ? 'User Login' : (run.backup_name || run.backup_id || `Event ${run.id}`);
     const created = run.started_at ? new Date(run.started_at).toLocaleString() : 'Unknown';
     const finished = run.finished_at ? new Date(run.finished_at).toLocaleString() : null;
+    const userName = run.user_name || 'System';
 
     return `
         <div class="item">
@@ -362,9 +370,10 @@ function renderHistoryRunItem(run) {
                 </div>
             </div>
             <div class="item-details">
-                <p><strong>Database:</strong> ${run.target_name || 'Unknown'}</p>
-                <p><strong>Destination:</strong> ${run.destination_name || 'Unknown'}</p>
-                <p><strong>Operation:</strong> ${run.operation || 'unknown'}</p>
+                <p><strong>User:</strong> ${userName}</p>
+                ${!isLogin ? `<p><strong>Database:</strong> ${run.target_name || 'N/A'}</p>` : ''}
+                ${!isLogin ? `<p><strong>Destination:</strong> ${run.destination_name || 'N/A'}</p>` : ''}
+                <p><strong>Operation:</strong> ${operation}</p>
                 <p><strong>Trigger:</strong> ${run.trigger || 'unknown'}</p>
                 ${run.schedule_name ? `<p><strong>Schedule:</strong> ${run.schedule_name}</p>` : ''}
                 <p><strong>Status:</strong> <span class="status ${status}">${status}</span></p>
@@ -383,13 +392,25 @@ function renderHistoryRunItem(run) {
  */
 async function loadHistory() {
     try {
+        // Get the initial limit before resetting
+        const initialLimit = getHistoryInitialLimit();
+        
         resetHistoryPagination();
         historyRuns = [];
         historyPagingState = createHistoryPagingState();
-
-        const initialLimit = getHistoryInitialLimit();
+        
+        // Set the visible limit to exactly what the user selected
         historyVisibleLimit = initialLimit;
+        
+        // For initial load, fetch exactly the initial limit from backend
         await fetchMoreHistory(initialLimit);
+        
+        // Double-check we don't have more than needed
+        if (historyRuns.length > initialLimit) {
+            historyRuns = historyRuns.slice(0, initialLimit);
+            historyPagingState.offset = initialLimit;
+        }
+        
         renderHistory();
     } catch (error) {
         showStatus(`Failed to load history: ${error.message}`, 'error', true);
@@ -399,23 +420,32 @@ async function loadHistory() {
 window.loadHistory = loadHistory;
 
 function updateHistoryDatabaseFilter() {
-    const select = document.getElementById('history-database-filter');
-    if (!select) return;
+    const container = document.getElementById('history-database-filter');
+    if (!container) return;
 
-    const current = select.value;
-    select.innerHTML = '<option value="">All Databases</option>';
+    // Preserve currently checked values
+    const currentChecked = getCheckedFilterValues('history-database');
+    
+    container.innerHTML = '';
 
-    if (Array.isArray(databases)) {
+    if (Array.isArray(databases) && databases.length > 0) {
         databases
             .filter(d => d && d.id)
             .forEach(d => {
-                select.innerHTML += `<option value="${d.id}">${d.name}</option>`;
+                const isChecked = currentChecked.includes(d.id);
+                container.innerHTML += `
+                    <div class="multiselect-option">
+                        <span>${d.name}</span>
+                        <input type="checkbox" name="history-database" value="${d.id}" ${isChecked ? 'checked' : ''}>
+                    </div>
+                `;
             });
+    } else {
+        container.innerHTML = '<span class="hint">No databases configured</span>';
     }
-
-    if ([...select.options].some(o => o.value === current)) {
-        select.value = current;
-    }
+    
+    // Update display text
+    updateMultiselectDisplay('history-database-filter-dropdown', 'history-database', 'All Databases');
 }
 
 window.updateHistoryDatabaseFilter = updateHistoryDatabaseFilter;
@@ -431,10 +461,29 @@ function renderHistory() {
 
     const items = Array.isArray(historyRuns) ? historyRuns : [];
     const range = getHistoryDateRangeFilter();
+    const filterParams = getHistoryQueryParams();
+    
+    // Apply client-side multi-select filtering
     const filtered = items.filter(r => {
         const ts = getHistoryStartedAtMs(r);
         if (range.startMs !== null && ts < range.startMs) return false;
         if (range.endMs !== null && ts > range.endMs) return false;
+        
+        // Multi-select database filter
+        if (filterParams.targetIds.length > 0 && !filterParams.targetIds.includes(r.target_id)) {
+            return false;
+        }
+        
+        // Multi-select operation filter
+        if (filterParams.operations.length > 0 && !filterParams.operations.includes(r.operation)) {
+            return false;
+        }
+        
+        // Multi-select trigger filter
+        if (filterParams.triggers.length > 0 && !filterParams.triggers.includes(r.trigger)) {
+            return false;
+        }
+        
         return true;
     });
 
@@ -459,6 +508,12 @@ function renderHistory() {
     } else if (sortValue === 'trigger') {
         sortedRuns.sort((a, b) => {
             const diff = compareByString(a.trigger, b.trigger);
+            if (diff !== 0) return diff;
+            return getHistoryStartedAtMs(b) - getHistoryStartedAtMs(a);
+        });
+    } else if (sortValue === 'user') {
+        sortedRuns.sort((a, b) => {
+            const diff = compareByString(a.user_name, b.user_name);
             if (diff !== 0) return diff;
             return getHistoryStartedAtMs(b) - getHistoryStartedAtMs(a);
         });
@@ -600,15 +655,75 @@ function hideHistoryDetailsModal() {
     document.getElementById('history-details-modal')?.classList.add('hidden');
 }
 
+/**
+ * Clear all history filters and reload.
+ *
+ * @returns {void}
+ */
+function clearAllHistoryFilters() {
+    // Clear all checkbox filters
+    document.querySelectorAll('input[name="history-database"]').forEach(cb => { cb.checked = false; });
+    document.querySelectorAll('input[name="history-operation"]').forEach(cb => { cb.checked = false; });
+    document.querySelectorAll('input[name="history-trigger"]').forEach(cb => { cb.checked = false; });
+    
+    // Clear date filters
+    const startDate = document.getElementById('history-start-date');
+    const endDate = document.getElementById('history-end-date');
+    if (startDate) startDate.value = '';
+    if (endDate) endDate.value = '';
+    
+    // Update dropdown displays
+    updateMultiselectDisplay('history-database-filter-dropdown', 'history-database', 'All Databases');
+    updateMultiselectDisplay('history-operation-filter-dropdown', 'history-operation', 'All Operations');
+    updateMultiselectDisplay('history-trigger-filter-dropdown', 'history-trigger', 'All Triggers');
+    
+    renderHistory();
+}
+
+/**
+ * Clear a specific filter group.
+ *
+ * @param {string} filterType Filter type to clear (database, operation, trigger, dates).
+ * @returns {void}
+ */
+function clearHistoryFilter(filterType) {
+    if (filterType === 'database') {
+        document.querySelectorAll('input[name="history-database"]').forEach(cb => { cb.checked = false; });
+        updateMultiselectDisplay('history-database-filter-dropdown', 'history-database', 'All Databases');
+    } else if (filterType === 'operation') {
+        document.querySelectorAll('input[name="history-operation"]').forEach(cb => { cb.checked = false; });
+        updateMultiselectDisplay('history-operation-filter-dropdown', 'history-operation', 'All Operations');
+    } else if (filterType === 'trigger') {
+        document.querySelectorAll('input[name="history-trigger"]').forEach(cb => { cb.checked = false; });
+        updateMultiselectDisplay('history-trigger-filter-dropdown', 'history-trigger', 'All Triggers');
+    } else if (filterType === 'dates') {
+        const startDate = document.getElementById('history-start-date');
+        const endDate = document.getElementById('history-end-date');
+        if (startDate) startDate.value = '';
+        if (endDate) endDate.value = '';
+    }
+    
+    renderHistory();
+}
+
 function initHistoryTab() {
     document.getElementById('refresh-history-btn')?.addEventListener('click', loadHistory);
-    document.getElementById('history-database-filter')?.addEventListener('change', loadHistory);
-    document.getElementById('history-operation-filter')?.addEventListener('change', loadHistory);
-    document.getElementById('history-trigger-filter')?.addEventListener('change', loadHistory);
-    document.getElementById('history-sort')?.addEventListener('change', loadHistory);
+    document.getElementById('clear-all-history-filters-btn')?.addEventListener('click', clearAllHistoryFilters);
+    document.getElementById('history-sort')?.addEventListener('change', renderHistory);
 
-    document.getElementById('history-start-date')?.addEventListener('change', loadHistory);
-    document.getElementById('history-end-date')?.addEventListener('change', loadHistory);
+    document.getElementById('history-start-date')?.addEventListener('change', renderHistory);
+    document.getElementById('history-end-date')?.addEventListener('change', renderHistory);
+    
+    // Initialize multi-select dropdowns
+    initMultiselectDropdowns();
+    
+    // Add event listeners for clear filter buttons
+    document.querySelectorAll('.btn-clear-filter').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const filterType = btn.getAttribute('data-clear');
+            if (filterType) clearHistoryFilter(filterType);
+        });
+    });
 
     document.querySelectorAll('#history-details-modal .modal-close').forEach(btn => {
         btn.addEventListener('click', hideHistoryDetailsModal);

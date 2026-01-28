@@ -100,7 +100,12 @@ deploy-azure:
           DEBUG=false \
           DATABASE_URL="$PROD_DATABASE_URL" \
           REDIS_URL="$PROD_REDIS_URL" \
-          ADMIN_API_KEY="$PROD_ADMIN_API_KEY" \
+          KEYCLOAK_ENABLED=true \
+          KEYCLOAK_URL="$KEYCLOAK_URL" \
+          KEYCLOAK_INTERNAL_URL="$KEYCLOAK_INTERNAL_URL" \
+          KEYCLOAK_REALM="$KEYCLOAK_REALM" \
+          KEYCLOAK_CLIENT_ID="$KEYCLOAK_CLIENT_ID" \
+          KEYCLOAK_CLIENT_SECRET="$KEYCLOAK_CLIENT_SECRET" \
           WEBSITES_PORT=8000
     
     # Restart the app

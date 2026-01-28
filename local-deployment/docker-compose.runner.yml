@@ -30,7 +30,11 @@ services:
       RUNNER_INTERVAL: ${RUNNER_INTERVAL:-60}
       RUNNER_MAX_SCHEDULES: ${RUNNER_MAX_SCHEDULES:-10}
       BACKUP_API_URL: http://app:8000
-      ADMIN_API_KEY: ${ADMIN_API_KEY}
+      KEYCLOAK_URL: ${KEYCLOAK_URL:-http://localhost:9090}
+      KEYCLOAK_INTERNAL_URL: ${KEYCLOAK_INTERNAL_URL:-http://keycloak:9090}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-backup-restore}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-backup-restore-backend}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-}
     depends_on:
       app:
         condition: service_healthy

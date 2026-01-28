@@ -1,299 +1,200 @@
-"""
-Security utilities for API authentication.
+"""Security utilities for API authentication.
+
+This module validates Keycloak-issued JWT bearer tokens and enforces
+role-based access control (RBAC) for admin, restore, and delete operations.
 """
 from __future__ import annotations
 
-from collections import deque
-from dataclasses import dataclass
-from datetime import datetime, timezone
-import secrets
-from typing import Deque, Dict, Optional
+from typing import Optional, Sequence
 
-from fastapi import Request, Security, HTTPException, status
-from fastapi.security import APIKeyHeader
-from api.settings import settings
+from fastapi import Security, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-# Define the API key headers
-admin_key_header = APIKeyHeader(name="X-Admin-Key", auto_error=False)
-restore_key_header = APIKeyHeader(name="X-Restore-Key", auto_error=False)
-delete_key_header = APIKeyHeader(name="X-Delete-Key", auto_error=False)
+# Bearer token for Keycloak JWT authentication
+bearer_scheme = HTTPBearer(auto_error=False)
 
+BACKUP_READ_ROLE = "backup:read"
+BACKUP_CREATE_ROLE = "backup:create"
+BACKUP_RESTORE_ROLE = "backup:restore"
+BACKUP_DELETE_ROLE = "backup:delete"
+BACKUP_DOWNLOAD_ROLE = "backup:download"
+BACKUP_HISTORY_ROLE = "backup:history"
+BACKUP_ADMIN_ROLE = "backup:admin"
 
-@dataclass(frozen=True)
-class _RateLimitResult:
-    """Represents the result of a rate-limit check."""
+BACKUP_ACCESS_ROLES = (
+    BACKUP_ADMIN_ROLE,
+    BACKUP_READ_ROLE,
+    BACKUP_CREATE_ROLE,
+    BACKUP_RESTORE_ROLE,
+    BACKUP_DELETE_ROLE,
+    BACKUP_DOWNLOAD_ROLE,
+    BACKUP_HISTORY_ROLE,
+)
 
-    allowed: bool
-    retry_after_seconds: int
+BACKUP_DOWNLOAD_ROLES = (
+    BACKUP_ADMIN_ROLE,
+    BACKUP_DOWNLOAD_ROLE,
+)
 
+BACKUP_HISTORY_ROLES = (
+    BACKUP_ADMIN_ROLE,
+    BACKUP_HISTORY_ROLE,
+)
 
-class _InMemoryRateLimiter:
-    """In-memory sliding-window rate limiter.
-
-    This is intended as basic protection against brute forcing API keys and
-    accidental repeated destructive operations.
-
-    Note:
-        This is process-local and resets on restart. For multi-worker or
-        distributed deployments, replace with Redis-based rate limiting.
-    """
-
-    def __init__(self) -> None:
-        """Initialize the limiter."""
-
-        self._events: Dict[str, Deque[float]] = {}
-
-    def check_and_add(self, *, key: str, limit: int, window_seconds: int, now: float) -> _RateLimitResult:
-        """Check a sliding-window limit and record the current event.
-
-        Args:
-            key: Bucket key.
-            limit: Maximum number of events allowed within the window.
-            window_seconds: Window duration in seconds.
-            now: Current timestamp (seconds).
-
-        Returns:
-            _RateLimitResult: Whether allowed and how long to wait if blocked.
-        """
-
-        bucket = self._events.setdefault(key, deque())
-        cutoff = now - float(window_seconds)
-        while bucket and bucket[0] < cutoff:
-            bucket.popleft()
-
-        if len(bucket) >= limit:
-            retry_after = int(max(1.0, bucket[0] + float(window_seconds) - now))
-            return _RateLimitResult(allowed=False, retry_after_seconds=retry_after)
-
-        bucket.append(now)
-        return _RateLimitResult(allowed=True, retry_after_seconds=0)
-
-
-_rate_limiter = _InMemoryRateLimiter()
-
-
-def _client_bucket_key(request: Optional[Request]) -> str:
-    """Build a stable bucket key for a client.
+def _validate_keycloak_roles(
+    bearer_token: Optional[HTTPAuthorizationCredentials],
+    required_roles: Sequence[str],
+) -> str:
+    """Validate a Keycloak bearer token and enforce required roles.
 
     Args:
-        request: Request context.
+        bearer_token: Bearer token credentials from Authorization header.
+        required_roles: Roles required to access the endpoint.
 
     Returns:
-        str: Bucket identifier.
-    """
-
-    if not request or not request.client:
-        return "unknown"
-    return request.client.host or "unknown"
-
-
-def _raise_rate_limited(*, retry_after_seconds: int, scope: str) -> None:
-    """Raise a 429 HTTPException for a rate limited operation.
-
-    Args:
-        retry_after_seconds: Suggested wait time.
-        scope: Human readable scope label.
+        str: Identifier for the authenticated user.
 
     Raises:
-        HTTPException: Always.
+        HTTPException: If authentication fails or roles are insufficient.
     """
 
-    raise HTTPException(
-        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        detail=f"Too many requests ({scope}). Please retry later.",
-        headers={"Retry-After": str(max(1, int(retry_after_seconds)))} if retry_after_seconds else None,
+    if bearer_token is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Provide a Bearer token in the Authorization header.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    from api.keycloak_auth import get_keycloak_auth
+
+    keycloak = get_keycloak_auth()
+    if keycloak is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Keycloak authentication is not configured. Set KEYCLOAK_ENABLED=true and configure Keycloak settings.",
+        )
+
+    try:
+        user = keycloak.validate_token(bearer_token.credentials)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Token validation failed: {str(exc)}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not user.has_any_role(list(required_roles)):
+        required_text = ", ".join(required_roles)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Access denied. Required role(s): "
+                f"{required_text}. Your roles: {', '.join(user.roles)}"
+            ),
+        )
+
+    return f"keycloak:{user.username}"
+
+
+async def verify_admin_key(
+    bearer_token: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+) -> str:
+    """
+    Verify Keycloak authentication for backup access endpoints.
+
+    Args:
+        bearer_token: Bearer token credentials from Authorization header.
+
+    Returns:
+        str: Authenticated user identifier.
+
+    Raises:
+        HTTPException: If authentication fails or roles are insufficient.
+    """
+    return _validate_keycloak_roles(bearer_token, BACKUP_ACCESS_ROLES)
+
+
+async def verify_restore_key(
+    bearer_token: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+) -> str:
+    """
+    Verify Keycloak authentication for restore operations.
+
+    Args:
+        bearer_token: Bearer token credentials from Authorization header.
+
+    Returns:
+        str: Authenticated user identifier.
+
+    Raises:
+        HTTPException: If authentication fails or roles are insufficient.
+    """
+    return _validate_keycloak_roles(
+        bearer_token,
+        (BACKUP_ADMIN_ROLE, BACKUP_RESTORE_ROLE),
     )
 
 
-def _enforce_auth_failure_budget(*, request: Optional[Request], kind: str) -> None:
-    """Enforce a rate limit budget for auth failures.
+async def verify_delete_key(
+    bearer_token: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+) -> str:
+    """
+    Verify Keycloak authentication for delete operations.
 
     Args:
-        request: Request context.
-        kind: One of: admin|restore|delete.
-
-    Raises:
-        HTTPException: 429 if exceeded.
-    """
-
-    now = datetime.now(timezone.utc).timestamp()
-    client = _client_bucket_key(request)
-    key = f"authfail:{kind}:{client}"
-    result = _rate_limiter.check_and_add(key=key, limit=20, window_seconds=300, now=now)
-    if not result.allowed:
-        _raise_rate_limited(retry_after_seconds=result.retry_after_seconds, scope=f"auth failures ({kind})")
-
-
-def _enforce_operation_budget(*, request: Optional[Request], kind: str) -> None:
-    """Enforce a rate limit budget for destructive operations.
-
-    Args:
-        request: Request context.
-        kind: One of: restore|delete.
-
-    Raises:
-        HTTPException: 429 if exceeded.
-    """
-
-    now = datetime.now(timezone.utc).timestamp()
-    client = _client_bucket_key(request)
-
-    if kind == "restore":
-        limit = 6
-        window_seconds = 300
-    else:
-        limit = 30
-        window_seconds = 300
-
-    key = f"op:{kind}:{client}"
-    result = _rate_limiter.check_and_add(key=key, limit=limit, window_seconds=window_seconds, now=now)
-    if not result.allowed:
-        _raise_rate_limited(retry_after_seconds=result.retry_after_seconds, scope=f"{kind} operations")
-
-
-async def verify_admin_key(request: Request, admin_key: str = Security(admin_key_header)) -> str:
-    """
-    Verify the admin API key provided in the X-Admin-Key header.
-    
-    This is used for sensitive operations like backup/restore.
-    
-    Args:
-        admin_key: The admin API key from the request header
-        
-    Returns:
-        The validated admin API key
-        
-    Raises:
-        HTTPException: If the admin API key is missing or invalid
-    """
-    # Get admin API key from file or environment
-    configured_admin_key = settings.get_admin_api_key()
-    
-    # Check if ADMIN_API_KEY is configured
-    if not configured_admin_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Admin API key not configured. Please set ADMIN_API_KEY or ADMIN_API_KEY_FILE."
-        )
-    
-    # Check if API key was provided
-    if not admin_key:
-        _enforce_auth_failure_budget(request=request, kind="admin")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing API key. This endpoint requires 'X-Admin-Key' header. Use the 'Authorize' button in Swagger UI to provide your admin key."
-        )
-    
-    # Verify the API key (constant-time comparison)
-    if not secrets.compare_digest(str(admin_key or ""), str(configured_admin_key or "")):
-        _enforce_auth_failure_budget(request=request, kind="admin")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid admin API key. The provided 'X-Admin-Key' does not match the configured ADMIN_API_KEY."
-        )
-    
-    return admin_key
-
-
-async def verify_restore_key(request: Request, restore_key: str = Security(restore_key_header)) -> str:
-    """
-    Verify the restore API key provided in the X-Restore-Key header.
-    
-    This is used for destructive restore operations that overwrite the database.
-    
-    Args:
-        restore_key: The restore API key from the request header
-        
-    Returns:
-        The validated restore API key
-        
-    Raises:
-        HTTPException: If the restore API key is missing or invalid
-    """
-    # Get restore API key from file or environment
-    configured_restore_key = settings.get_restore_api_key()
-    
-    # Check if BACKUP_RESTORE_API_KEY is configured
-    if not configured_restore_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Restore API key not configured. Please set BACKUP_RESTORE_API_KEY or BACKUP_RESTORE_API_KEY_FILE."
-        )
-    
-    # Check if API key was provided
-    if not restore_key:
-        _enforce_auth_failure_budget(request=request, kind="restore")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing API key. This endpoint requires 'X-Restore-Key' header. Use the 'Authorize' button in Swagger UI to provide your restore key."
-        )
-    
-    # Verify the API key (constant-time comparison)
-    if not secrets.compare_digest(str(restore_key or ""), str(configured_restore_key or "")):
-        _enforce_auth_failure_budget(request=request, kind="restore")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid restore API key. The provided 'X-Restore-Key' does not match the configured BACKUP_RESTORE_API_KEY."
-        )
-
-    if request.method.upper() == "POST" and "restore" in request.url.path:
-        _enforce_operation_budget(request=request, kind="restore")
-    
-    return restore_key
-
-
-async def verify_delete_key(request: Request, delete_key: str = Security(delete_key_header)) -> str:
-    """
-    Verify the delete API key provided in the X-Delete-Key header.
-
-    This is used for destructive delete operations.
-
-    In DEBUG mode, when BACKUP_DELETE_API_KEY is not configured, this falls back
-    to using the configured admin key as delete key.
-
-    Args:
-        delete_key: The delete API key from the request header
+        bearer_token: Bearer token credentials from Authorization header.
 
     Returns:
-        The validated delete API key
+        str: Authenticated user identifier.
 
     Raises:
-        HTTPException: If the delete API key is missing or invalid
+        HTTPException: If authentication fails or roles are insufficient.
     """
-    configured_delete_key = settings.get_delete_api_key()
+    return _validate_keycloak_roles(
+        bearer_token,
+        (BACKUP_ADMIN_ROLE, BACKUP_DELETE_ROLE),
+    )
 
-    if not configured_delete_key and settings.DEBUG:
-        configured_delete_key = settings.get_admin_api_key()
 
-    if not configured_delete_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                "Delete API key not configured. Please set BACKUP_DELETE_API_KEY or BACKUP_DELETE_API_KEY_FILE. "
-                "(Tip: in DEBUG mode you can also set ADMIN_API_KEY and use it as X-Delete-Key.)"
-            ),
-        )
+async def verify_download_key(
+    bearer_token: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+) -> str:
+    """
+    Verify Keycloak authentication for download operations.
 
-    if not delete_key:
-        _enforce_auth_failure_budget(request=request, kind="delete")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=(
-                "Missing API key. This endpoint requires 'X-Delete-Key' header. "
-                "Use the 'Authorize' button in Swagger UI to provide your delete key."
-            ),
-        )
+    Args:
+        bearer_token: Bearer token credentials from Authorization header.
 
-    if not secrets.compare_digest(str(delete_key or ""), str(configured_delete_key or "")):
-        _enforce_auth_failure_budget(request=request, kind="delete")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "Invalid delete API key. The provided 'X-Delete-Key' does not match the configured BACKUP_DELETE_API_KEY."
-            ),
-        )
+    Returns:
+        str: Authenticated user identifier.
 
-    if request.method.upper() == "DELETE":
-        _enforce_operation_budget(request=request, kind="delete")
+    Raises:
+        HTTPException: If authentication fails or roles are insufficient.
+    """
+    return _validate_keycloak_roles(
+        bearer_token,
+        BACKUP_DOWNLOAD_ROLES,
+    )
 
-    return delete_key
+
+async def verify_history_key(
+    bearer_token: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+) -> str:
+    """
+    Verify Keycloak authentication for history/audit access.
+
+    Args:
+        bearer_token: Bearer token credentials from Authorization header.
+
+    Returns:
+        str: Authenticated user identifier.
+
+    Raises:
+        HTTPException: If authentication fails or roles are insufficient.
+    """
+    return _validate_keycloak_roles(
+        bearer_token,
+        BACKUP_HISTORY_ROLES,
+    )

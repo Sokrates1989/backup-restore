@@ -11,7 +11,7 @@ This service includes a complete backup and restore system with API endpoints fo
 ✅ **List all backups** with metadata (including safety backups)  
 ✅ **Delete old backups**  
 ✅ **Automatic compression** with gzip  
-✅ **Tiered security** with separate API keys for admin, restore, and delete operations  
+✅ **Role-based security** with Keycloak bearer tokens (admin/operator/viewer)  
 ✅ **Safety backups** - Automatically creates backup before restore  
 ✅ **Clean restore** - Drops existing data before restoring  
 ✅ **Volume mounted** - Backups accessible on host system  
@@ -25,7 +25,7 @@ This service includes a complete backup and restore system with API endpoints fo
 
 ```bash
 curl -X POST "http://localhost:8081/backup/create?compress=true" \
-  -H "X-Admin-Key: your-admin-key"
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
 **Response:**
@@ -42,7 +42,7 @@ curl -X POST "http://localhost:8081/backup/create?compress=true" \
 
 ```bash
 curl -X GET "http://localhost:8081/backup/download/backup_postgresql_20241110_120000.sql.gz" \
-  -H "X-Admin-Key: your-admin-key" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -O
 ```
 
@@ -50,53 +50,24 @@ curl -X GET "http://localhost:8081/backup/download/backup_postgresql_20241110_12
 
 ```bash
 curl -X POST "http://localhost:8081/backup/restore/backup_postgresql_20241110_120000.sql.gz?create_safety_backup=true" \
-  -H "X-Restore-Key: your-restore-key"
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
 ---
 
-## Security - Tiered API Keys
+## Security - Keycloak Roles
 
-The backup system uses **three levels of API keys** for different operations:
+The backup system uses **Keycloak bearer tokens** with role-based access control:
 
-### Level 1: Admin Key (`X-Admin-Key`)
-**Read-only operations** - Low risk
-- Create backups
-- Download backups
-- List backups
+- **admin**: full access (backup/restore/delete)
+- **operator**: backup + restore
+- **viewer**: read-only
 
-### Level 2: Restore Key (`X-Restore-Key`)
-**Destructive operations** - Medium risk
-- Restore from backup (overwrites database)
-- Upload and restore
+All requests must include:
 
-⚠️ **WARNING:** Restore operations will:
-1. Create a safety backup of current data (unless disabled)
-2. Drop all existing tables and data
-3. Restore from the backup file
-
-### Level 3: Delete Key (`X-Delete-Key`)
-**Permanent deletion** - High risk
-- Delete backup files
-
-⚠️ **WARNING:** Deletion is permanent and cannot be undone!
-
-### Configuration
-
-Set these in your `.env` file:
-
-```env
-# Level 1: Admin read operations
-ADMIN_API_KEY=change-this-to-a-secure-random-key
-
-# Level 2: Restore operations (overwrites database!)
-BACKUP_RESTORE_API_KEY=change-this-restore-key-to-something-secure
-
-# Level 3: Delete operations (permanent deletion!)
-BACKUP_DELETE_API_KEY=change-this-delete-key-to-something-secure
+```http
+Authorization: Bearer <access_token>
 ```
-
-**Best Practice:** Use different keys for each level to limit damage from key compromise.
 
 ---
 
@@ -123,11 +94,11 @@ Create a new database backup.
 ```bash
 # Compressed backup (default)
 curl -X POST "http://localhost:8081/backup/create?compress=true" \
-  -H "X-Admin-Key: your-admin-key"
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 
 # Uncompressed backup
 curl -X POST "http://localhost:8081/backup/create?compress=false" \
-  -H "X-Admin-Key: your-admin-key"
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
 ---
@@ -144,7 +115,7 @@ Download a backup file.
 **Example:**
 ```bash
 curl -X GET "http://localhost:8081/backup/download/backup_postgresql_20241110_120000.sql.gz" \
-  -H "X-Admin-Key: your-admin-key" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -O
 ```
 
@@ -156,7 +127,7 @@ Restore database from an existing backup file.
 
 **⚠️ WARNING: This will overwrite the current database!**
 
-**Authentication:** Requires `X-Restore-Key` header
+**Authentication:** Requires bearer token with `admin` or `operator` role
 
 **What happens during restore:**
 1. **Safety backup** - Creates a backup of current data (unless `create_safety_backup=false`)
@@ -181,11 +152,11 @@ Restore database from an existing backup file.
 ```bash
 # Restore with safety backup (recommended)
 curl -X POST "http://localhost:8081/backup/restore/backup_postgresql_20241110_120000.sql.gz?create_safety_backup=true" \
-  -H "X-Restore-Key: your-restore-key"
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 
 # Restore without safety backup (not recommended)
 curl -X POST "http://localhost:8081/backup/restore/backup_postgresql_20241110_120000.sql.gz?create_safety_backup=false" \
-  -H "X-Restore-Key: your-restore-key"
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
 ---
@@ -196,7 +167,7 @@ Upload and restore from a backup file.
 
 **⚠️ WARNING: This will overwrite the current database!**
 
-**Authentication:** Requires `X-Restore-Key` header
+**Authentication:** Requires bearer token with `admin` or `operator` role
 
 **What happens during restore:**
 1. **Safety backup** - Creates a backup of current data (unless `create_safety_backup=false`)
@@ -221,12 +192,12 @@ Upload and restore from a backup file.
 ```bash
 # Upload and restore with safety backup (recommended)
 curl -X POST "http://localhost:8081/backup/restore-upload?create_safety_backup=true" \
-  -H "X-Restore-Key: your-restore-key" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -F "file=@/path/to/backup.sql.gz"
 
 # Upload and restore without safety backup (not recommended)
 curl -X POST "http://localhost:8081/backup/restore-upload?create_safety_backup=false" \
-  -H "X-Restore-Key: your-restore-key" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -F "file=@/path/to/backup.sql.gz"
 ```
 
@@ -262,7 +233,7 @@ List all available backup files.
 **Example:**
 ```bash
 curl -X GET "http://localhost:8081/backup/list" \
-  -H "X-Admin-Key: your-admin-key"
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
 ---
@@ -273,7 +244,7 @@ Delete a backup file.
 
 **⚠️ WARNING: This permanently deletes the backup file!**
 
-**Authentication:** Requires `X-Delete-Key` header
+**Authentication:** Requires bearer token with `admin` role
 
 **Parameters:**
 - `filename` (path): Name of the backup file to delete
@@ -289,7 +260,7 @@ Delete a backup file.
 **Example:**
 ```bash
 curl -X DELETE "http://localhost:8081/backup/delete/backup_postgresql_20241110_120000.sql.gz" \
-  -H "X-Delete-Key: your-delete-key"
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
 ---
@@ -406,31 +377,23 @@ Exports all nodes and relationships as Cypher CREATE statements.
 
 ## Security
 
-### Admin Authentication Required
+### Authentication Required
 
-All backup endpoints require the `X-Admin-Key` header:
+All backup endpoints require a Keycloak bearer token:
 
 ```bash
--H "X-Admin-Key: your-admin-key"
+-H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
-Set your admin key in `.env`:
-```env
-ADMIN_API_KEY=your-secure-random-key-here
-```
-
-**Generate a secure key:**
-```bash
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-```
+Set Keycloak values in `.env` or the container environment (see `setup/.env.template`).
 
 ### Best Practices
 
-1. ✅ **Use strong admin keys** - Generate random, long keys
-2. ✅ **Never commit keys** - Keep `.env` out of version control
-3. ✅ **Rotate keys regularly** - Change admin keys periodically
+1. ✅ **Protect Keycloak credentials** - Store client secrets in secure vaults
+2. ✅ **Never commit secrets** - Keep `.env` out of version control
+3. ✅ **Rotate client secrets** - Change Keycloak secrets periodically
 4. ✅ **Use HTTPS in production** - Encrypt API traffic
-5. ✅ **Limit backup access** - Only trusted admins should have keys
+5. ✅ **Limit backup access** - Only trusted admins should have access
 6. ✅ **Store backups securely** - Keep backups in secure locations
 7. ✅ **Test restores regularly** - Verify backups actually work
 
@@ -474,13 +437,13 @@ Create a cron job or scheduled task to automate backups:
 **Linux/Mac (crontab):**
 ```bash
 # Daily backup at 2 AM
-0 2 * * * curl -X POST "http://localhost:8081/backup/create?compress=true" -H "X-Admin-Key: your-admin-key"
+0 2 * * * curl -X POST "http://localhost:8081/backup/create?compress=true" -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
 **Windows (Task Scheduler):**
 ```powershell
 # Create scheduled task
-$action = New-ScheduledTaskAction -Execute 'curl' -Argument '-X POST "http://localhost:8081/backup/create?compress=true" -H "X-Admin-Key: your-admin-key"'
+$action = New-ScheduledTaskAction -Execute 'curl' -Argument '-X POST "http://localhost:8081/backup/create?compress=true" -H "Authorization: Bearer $ACCESS_TOKEN"'
 $trigger = New-ScheduledTaskTrigger -Daily -At 2am
 Register-ScheduledTask -Action $action -Trigger $trigger -TaskName "DatabaseBackup" -Description "Daily database backup"
 ```
@@ -490,9 +453,9 @@ Register-ScheduledTask -Action $action -Trigger $trigger -TaskName "DatabaseBack
 services:
   backup-cron:
     image: alpine:latest
-    command: sh -c "echo '0 2 * * * curl -X POST http://app:8000/backup/create?compress=true -H \"X-Admin-Key: $$ADMIN_API_KEY\"' | crontab - && crond -f"
+    command: sh -c "echo '0 2 * * * curl -X POST http://app:8000/backup/create?compress=true -H \"Authorization: Bearer $$ACCESS_TOKEN\"' | crontab - && crond -f"
     environment:
-      - ADMIN_API_KEY=${ADMIN_API_KEY}
+      - ACCESS_TOKEN=${ACCESS_TOKEN}
     depends_on:
       - app
 ```
@@ -506,7 +469,7 @@ Automatically delete old backups to save space:
 # Keep only last 7 days of backups
 
 # Get list of backups
-BACKUPS=$(curl -s -X GET "http://localhost:8081/backup/list" -H "X-Admin-Key: your-admin-key" | jq -r '.backups[].filename')
+BACKUPS=$(curl -s -X GET "http://localhost:8081/backup/list" -H "Authorization: Bearer $ACCESS_TOKEN" | jq -r '.backups[].filename')
 
 # Delete backups older than 7 days
 for backup in $BACKUPS; do
@@ -515,7 +478,7 @@ for backup in $BACKUPS; do
   DIFF=$(( (NOW - AGE) / 86400 ))
   
   if [ $DIFF -gt 7 ]; then
-    curl -X DELETE "http://localhost:8081/backup/delete/$backup" -H "X-Admin-Key: your-admin-key"
+    curl -X DELETE "http://localhost:8081/backup/delete/$backup" -H "Authorization: Bearer $ACCESS_TOKEN"
     echo "Deleted old backup: $backup"
   fi
 done
@@ -530,13 +493,13 @@ done
 ```bash
 # 1. Create backup
 BACKUP=$(curl -s -X POST "http://localhost:8081/backup/create?compress=true" \
-  -H "X-Admin-Key: your-admin-key" | jq -r '.filename')
+  -H "Authorization: Bearer $ACCESS_TOKEN" | jq -r '.filename')
 
 echo "Created backup: $BACKUP"
 
 # 2. Download backup
 curl -X GET "http://localhost:8081/backup/download/$BACKUP" \
-  -H "X-Admin-Key: your-admin-key" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -o "$BACKUP"
 
 echo "Downloaded backup to: $BACKUP"
@@ -552,13 +515,13 @@ echo "Uploaded to S3"
 ```bash
 # 1. List available backups
 curl -X GET "http://localhost:8081/backup/list" \
-  -H "X-Admin-Key: your-admin-key" | jq
+  -H "Authorization: Bearer $ACCESS_TOKEN" | jq
 
 # 2. Choose a backup and restore
 BACKUP="backup_postgresql_20241110_120000.sql.gz"
 
 curl -X POST "http://localhost:8081/backup/restore/$BACKUP" \
-  -H "X-Admin-Key: your-admin-key"
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 
 echo "Database restored from: $BACKUP"
 ```
@@ -571,7 +534,7 @@ aws s3 cp "s3://my-backups/backup_postgresql_20241110_120000.sql.gz" ./backup.sq
 
 # Upload and restore
 curl -X POST "http://localhost:8081/backup/restore-upload" \
-  -H "X-Admin-Key: your-admin-key" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -F "file=@./backup.sql.gz"
 
 echo "Database restored from external backup"
@@ -612,9 +575,9 @@ RUN apt-get update && apt-get install -y postgresql-client mysql-client
 
 ### "Unauthorized"
 
-**Cause:** Missing or incorrect admin key
+**Cause:** Missing or expired access token
 
-**Fix:** Include correct `X-Admin-Key` header in requests
+**Fix:** Include a valid `Authorization: Bearer <token>` header
 
 ---
 
@@ -633,7 +596,7 @@ Regularly test restore procedures:
 ```bash
 # Test restore in a separate database
 docker compose -f docker-compose.test.yml up -d
-curl -X POST "http://localhost:8082/backup/restore/$BACKUP" -H "X-Admin-Key: $KEY"
+curl -X POST "http://localhost:8082/backup/restore/$BACKUP" -H "Authorization: Bearer $ACCESS_TOKEN"
 # Verify data integrity
 ```
 

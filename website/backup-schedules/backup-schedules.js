@@ -779,10 +779,10 @@ async function deleteBackupSchedule(id) {
     if (!confirm('Are you sure you want to delete this backup schedule?')) return;
     
     try {
-        if (typeof apiDeleteCall !== 'function') {
+        if (typeof keycloakApiDeleteCall !== 'function') {
             throw new Error('Delete helper not available');
         }
-        await apiDeleteCall(`/automation/schedules/${id}`);
+        await keycloakApiDeleteCall(`/automation/schedules/${id}`);
         showStatus('Backup schedule deleted');
         await loadBackupSchedules();
     } catch (error) {

@@ -154,6 +154,149 @@ header h1 {
     }
 }
 
+/* Multi-Select Dropdown */
+.multiselect-dropdown {
+    position: relative;
+    width: 100%;
+}
+
+.multiselect-trigger {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    background-color: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.15s;
+    min-height: 38px;
+}
+
+.multiselect-trigger:hover,
+.multiselect-trigger:focus {
+    border-color: var(--primary-color);
+    outline: none;
+}
+
+.multiselect-dropdown.open .multiselect-trigger {
+    border-color: var(--primary-color);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.multiselect-display {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-color);
+}
+
+.multiselect-display.placeholder {
+    color: var(--text-muted);
+}
+
+.multiselect-arrow {
+    margin-left: 0.5rem;
+    color: var(--text-muted);
+    transition: transform 0.2s;
+}
+
+.multiselect-dropdown.open .multiselect-arrow {
+    transform: rotate(180deg);
+}
+
+.multiselect-options {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background-color: var(--input-bg);
+    border: 1px solid var(--primary-color);
+    border-top: none;
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 100;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.multiselect-dropdown.open .multiselect-options {
+    display: block;
+}
+
+.multiselect-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background-color 0.1s;
+    min-height: 32px;
+}
+
+.multiselect-option:hover {
+    background-color: rgba(124, 58, 237, 0.08);
+}
+
+.multiselect-option span {
+    flex: 1;
+    line-height: 1.2;
+}
+
+.multiselect-option input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+}
+
+.multiselect-option:has(input:checked) {
+    background-color: rgba(124, 58, 237, 0.05);
+    color: var(--primary-color);
+}
+
+.multiselect-options .hint {
+    padding: 0.5rem 0.75rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+/* Filter Label Row with Clear Button */
+.filter-label-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.25rem;
+}
+
+.filter-label-row label {
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+
+.btn-clear-filter {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    cursor: pointer;
+    padding: 0.15rem 0.35rem;
+    border-radius: 3px;
+    transition: all 0.15s;
+}
+
+.btn-clear-filter:hover {
+    background-color: rgba(220, 38, 38, 0.1);
+    color: var(--danger-color);
+}
+
 /* Tabs */
 .tabs {
     display: flex;

@@ -5,18 +5,19 @@ A standalone FastAPI service for backing up and restoring databases with configu
 ## 📚 Table of Contents
 
 1. [📖 Overview](#-overview)
-2. [📋 Prerequisites](#-prerequisites)
-3. [🚀 Quick Start](#-quick-start)
-4. [🔧 Dependency Management](#-dependency-management)
-5. [📁 Project Structure](#-project-structure)
-6. [⚙️ Configuration](#-configuration)
-7. [🧪 API Tests](#-api-tests)
-8. [🐳 Docker Commands](#-docker-commands)
-9. [🔄 Development Workflow](#-development-workflow)
-10. [🏗️ Docker Image Build & Deploy](#-docker-image-build--deploy)
-11. [✨ Benefits](#-benefits)
-12. [📚 Additional Information](#-additional-information)
-13. [⚠️ Deprecated: Alternative Installation Methods](#-deprecated-alternative-installation-methods)
+2. [🔐 Security & Authentication](#-security--authentication)
+3. [📋 Prerequisites](#-prerequisites)
+4. [🚀 Quick Start](#-quick-start)
+5. [🔧 Dependency Management](#-dependency-management)
+6. [📁 Project Structure](#-project-structure)
+7. [⚙️ Configuration](#-configuration)
+8. [🧪 API Tests](#-api-tests)
+9. [🐳 Docker Commands](#-docker-commands)
+10. [🔄 Development Workflow](#-development-workflow)
+11. [🏗️ Docker Image Build & Deploy](#-docker-image-build--deploy)
+12. [✨ Benefits](#-benefits)
+13. [📚 Additional Information](#-additional-information)
+14. [⚠️ Deprecated: Alternative Installation Methods](#-deprecated-alternative-installation-methods)
 
 ## 📖 Overview
 
@@ -30,6 +31,22 @@ This service provides centralized database backup and restore functionality with
 - ✅ **Background processing** - Non-blocking restore operations
 - ✅ **Progress tracking** - Monitor restore status in real-time
 - ✅ **Docker-ready** - Containerized deployment
+
+## 🔐 Security & Authentication
+
+This is a **privileged admin service**. All API access uses **Keycloak-issued JWT bearer tokens** with role-based access control:
+
+- `admin`: full access (backup/restore/delete)
+- `operator`: backup + restore
+- `viewer`: read-only
+
+The UI uses the Keycloak JS adapter (Authorization Code + PKCE). API clients must send:
+
+```
+Authorization: Bearer <access_token>
+```
+
+For a broader discussion of auth options and threat modeling, see `security-compare-auth.md`.
 
 ## 📋 Prerequisites
 
@@ -261,7 +278,7 @@ DATABASE_URL=postgresql://user:password@localhost:5432/mydb
 
 ```bash
 curl -X POST "http://localhost:8000/backup/neo4j/download?compress=true" \
-  -H "X-Admin-Key: your-admin-key" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "neo4j_url": "bolt://target-server:7687",
@@ -275,7 +292,7 @@ curl -X POST "http://localhost:8000/backup/neo4j/download?compress=true" \
 
 ```bash
 curl -X POST "http://localhost:8000/backup/sql/restore-upload" \
-  -H "X-Restore-Key: your-restore-key" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -F "file=@backup.sql.gz" \
   -F "db_type=postgresql" \
   -F "db_host=target-server" \
@@ -284,14 +301,14 @@ curl -X POST "http://localhost:8000/backup/sql/restore-upload" \
   -F "db_user=postgres" \
   -F "db_password=password" \
   -F "target_api_url=http://target-api:8000" \
-  -F "target_api_key=admin-key"
+  -F "target_api_token=$TARGET_API_TOKEN"
 ```
 
 ### Check Restore Status
 
 ```bash
 curl -X GET "http://localhost:8000/backup/sql/restore-status" \
-  -H "X-Restore-Key: your-restore-key"
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
 ## 🐳 Docker Commands
@@ -386,6 +403,7 @@ See `docs/DATABASE.md` for detailed database configuration and usage.
 - **Docker Setup**: `docs/DOCKER_SETUP.md` - Complete Docker setup guide ⭐
 - **How to Add Endpoint**: `docs/HOW_TO_ADD_ENDPOINT.md` - Step-by-step guide ⭐
 - **Database Credentials**: `docs/DATABASE_CREDENTIALS.md` - Security & credential management ⭐
+- **Security & Auth Options**: `security-compare-auth.md` - Authentication strategies and Keycloak guidance ⭐
 - **Project Structure**: `docs/PROJECT_STRUCTURE.md` - Structure explanation
 - **Quick Start**: `docs/QUICK_START.md` - Get started quickly
 - **Database Guide**: `docs/DATABASE.md` - Database configuration and usage

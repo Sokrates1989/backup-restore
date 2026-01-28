@@ -31,6 +31,12 @@ services:
       DB_TYPE: ${DB_TYPE}
       DATABASE_URL: ${DATABASE_URL}
       DEBUG: ${DEBUG}
+      KEYCLOAK_ENABLED: ${KEYCLOAK_ENABLED:-true}
+      KEYCLOAK_URL: ${KEYCLOAK_URL:-http://localhost:9090}
+      KEYCLOAK_INTERNAL_URL: ${KEYCLOAK_INTERNAL_URL:-}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-backup-restore}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-backup-restore-backend}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-}
       # Notification configuration
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -85,6 +91,10 @@ services:
       API_PORT: "8000"
       ASSET_CACHE_CONTROL: "no-store, no-cache, must-revalidate"
       ASSET_EXPIRES: "-1"
+      KEYCLOAK_ENABLED: ${KEYCLOAK_ENABLED:-true}
+      KEYCLOAK_URL: ${KEYCLOAK_URL:-http://localhost:9090}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-backup-restore}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_FRONTEND_CLIENT_ID:-backup-restore-frontend}
     ports:
       - "${WEB_PORT:-8086}:80"
     depends_on:

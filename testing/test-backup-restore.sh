@@ -10,15 +10,46 @@ ENV_FILE="$ROOT_DIR/.env"
 PORT="$(grep -E '^PORT=' "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2 | tr -d ' "\r')"
 DB_TYPE="$(grep -E '^DB_TYPE=' "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2 | tr -d ' "\r')"
 DB_MODE="$(grep -E '^DB_MODE=' "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2 | tr -d ' "\r')"
-ADMIN_KEY="$(grep -E '^ADMIN_API_KEY=' "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d ' "\r')"
-RESTORE_KEY="$(grep -E '^BACKUP_RESTORE_API_KEY=' "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d ' "\r')"
-DELETE_KEY="$(grep -E '^BACKUP_DELETE_API_KEY=' "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d ' "\r')"
+KEYCLOAK_URL="$(grep -E '^KEYCLOAK_URL=' "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d ' "\r')"
+KEYCLOAK_INTERNAL_URL="$(grep -E '^KEYCLOAK_INTERNAL_URL=' "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d ' "\r')"
+KEYCLOAK_REALM="$(grep -E '^KEYCLOAK_REALM=' "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d ' "\r')"
+KEYCLOAK_CLIENT_ID="$(grep -E '^KEYCLOAK_CLIENT_ID=' "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d ' "\r')"
+KEYCLOAK_CLIENT_SECRET="$(grep -E '^KEYCLOAK_CLIENT_SECRET=' "$ENV_FILE" 2>/dev/null | head -n 1 | cut -d'=' -f2- | tr -d ' "\r')"
 
 API_URL="http://localhost:${PORT:-8000}"
 
-ADMIN_KEY="${ADMIN_KEY:-change-this-to-a-secure-random-key}"
-RESTORE_KEY="${RESTORE_KEY:-change-this-restore-key-to-something-secure}"
-DELETE_KEY="${DELETE_KEY:-change-this-delete-key-to-something-secure}"
+KEYCLOAK_URL="${KEYCLOAK_INTERNAL_URL:-$KEYCLOAK_URL}"
+
+get_access_token() {
+    local token="$ACCESS_TOKEN"
+    if [ -n "$token" ]; then
+        echo "$token"
+        return
+    fi
+
+    if [ -n "$KEYCLOAK_URL" ] && [ -n "$KEYCLOAK_REALM" ] && [ -n "$KEYCLOAK_CLIENT_ID" ] && [ -n "$KEYCLOAK_CLIENT_SECRET" ]; then
+        local token_endpoint="${KEYCLOAK_URL%/}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token"
+        local token_response
+        token_response=$(curl -s -X POST "$token_endpoint" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "grant_type=client_credentials" \
+            -d "client_id=$KEYCLOAK_CLIENT_ID" \
+            -d "client_secret=$KEYCLOAK_CLIENT_SECRET")
+        token=$(python3 -c "import json,sys; print(json.load(sys.stdin).get('access_token',''))" <<< "$token_response")
+    fi
+
+    if [ -z "$token" ]; then
+        read -r -p "Enter Keycloak access token: " token
+    fi
+
+    echo "$token"
+}
+
+ACCESS_TOKEN=$(get_access_token)
+if [ -z "$ACCESS_TOKEN" ]; then
+    echo "❌ Missing Keycloak access token."
+    exit 1
+fi
 
 COMPOSE_FILE="$ROOT_DIR/local-deployment/docker-compose.postgres.yml"
 if [ "$DB_MODE" = "standalone" ]; then
@@ -44,12 +75,12 @@ api_call() {
     
     if [ -n "$data" ]; then
         curl -s -X "$method" "$API_URL$endpoint" \
-            -H "X-Admin-Key: $ADMIN_KEY" \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$data"
     else
         curl -s -X "$method" "$API_URL$endpoint" \
-            -H "X-Admin-Key: $ADMIN_KEY"
+            -H "Authorization: Bearer $ACCESS_TOKEN"
     fi
 }
 
@@ -60,12 +91,12 @@ api_call_restore() {
 
     if [ -n "$data" ]; then
         curl -s -X "$method" "$API_URL$endpoint" \
-            -H "X-Restore-Key: $RESTORE_KEY" \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$data"
     else
         curl -s -X "$method" "$API_URL$endpoint" \
-            -H "X-Restore-Key: $RESTORE_KEY"
+            -H "Authorization: Bearer $ACCESS_TOKEN"
     fi
 }
 
@@ -76,12 +107,12 @@ api_call_delete() {
 
     if [ -n "$data" ]; then
         curl -s -X "$method" "$API_URL$endpoint" \
-            -H "X-Delete-Key: $DELETE_KEY" \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$data"
     else
         curl -s -X "$method" "$API_URL$endpoint" \
-            -H "X-Delete-Key: $DELETE_KEY"
+            -H "Authorization: Bearer $ACCESS_TOKEN"
     fi
 }
 

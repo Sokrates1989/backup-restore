@@ -4,7 +4,7 @@
         <div class="card-header">
             <h2>Backup Files</h2>
             <div class="header-actions">
-                <button id="refresh-backup-files-btn" class="btn btn-secondary btn-sm">🔄 Refresh</button>
+                <button id="refresh-backup-files-btn" class="btn btn-primary btn-sm">🔄 Refresh</button>
             </div>
         </div>
 
@@ -12,19 +12,43 @@
             <div class="filter-sort-col">
                 <div class="filter-sort-title"><span class="filter-sort-icon">≡</span> Filters</div>
                 <div class="form-group">
-                    <label for="backup-files-database-filter">Filter by Database</label>
-                    <select id="backup-files-database-filter">
-                        <option value="">All Databases</option>
-                    </select>
+                    <div class="filter-label-row">
+                        <label>Filter by Database</label>
+                        <button type="button" class="btn-clear-filter" data-clear="database">Clear</button>
+                    </div>
+                    <div class="multiselect-dropdown" id="backup-files-database-filter-dropdown">
+                        <div class="multiselect-trigger" tabindex="0">
+                            <span class="multiselect-display">All Databases</span>
+                            <span class="multiselect-arrow">▾</span>
+                        </div>
+                        <div class="multiselect-options" id="backup-files-database-filter">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
                 </div>
 
                 <div class="form-group">
-                    <label for="backup-files-storage-location">Browse Storage Location</label>
-                    <select id="backup-files-storage-location">
-                        <option value="all">All Locations (Local + Remote)</option>
-                        <option value="local">Local Storage Only</option>
-                        <!-- Remote locations populated by JS -->
-                    </select>
+                    <div class="filter-label-row">
+                        <label>Browse Storage Location</label>
+                        <button type="button" class="btn-clear-filter" data-clear="storage">Clear</button>
+                    </div>
+                    <div class="multiselect-dropdown" id="backup-files-storage-location-dropdown">
+                        <div class="multiselect-trigger" tabindex="0">
+                            <span class="multiselect-display">All Locations (Local + Remote)</span>
+                            <span class="multiselect-arrow">▾</span>
+                        </div>
+                        <div class="multiselect-options" id="backup-files-storage-location">
+                            <div class="multiselect-option">
+                                <span>All Locations (Local + Remote)</span>
+                                <input type="checkbox" name="backup-files-storage-location" value="all">
+                            </div>
+                            <div class="multiselect-option">
+                                <span>Local Storage Only</span>
+                                <input type="checkbox" name="backup-files-storage-location" value="local">
+                            </div>
+                            <!-- Remote locations populated by JS -->
+                        </div>
+                    </div>
                 </div>
             </div>
 

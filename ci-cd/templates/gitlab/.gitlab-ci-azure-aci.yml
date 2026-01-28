@@ -104,10 +104,15 @@ deploy-azure:
         --environment-variables \
           PORT=8000 \
           DEBUG=false \
+          KEYCLOAK_ENABLED=true \
         --secure-environment-variables \
           DATABASE_URL="$PROD_DATABASE_URL" \
           REDIS_URL="$PROD_REDIS_URL" \
-          ADMIN_API_KEY="$PROD_ADMIN_API_KEY" \
+          KEYCLOAK_URL="$KEYCLOAK_URL" \
+          KEYCLOAK_INTERNAL_URL="$KEYCLOAK_INTERNAL_URL" \
+          KEYCLOAK_REALM="$KEYCLOAK_REALM" \
+          KEYCLOAK_CLIENT_ID="$KEYCLOAK_CLIENT_ID" \
+          KEYCLOAK_CLIENT_SECRET="$KEYCLOAK_CLIENT_SECRET" \
         --registry-login-server docker.io \
         --registry-username $DOCKER_USERNAME \
         --registry-password $DOCKER_PASSWORD

@@ -356,7 +356,9 @@ display_env_warnings() {
         local db_url=$(grep "^DATABASE_URL=" "$env_file" | cut -d= -f2-)
         local redis_url=$(grep "^REDIS_URL=" "$env_file" | cut -d= -f2-)
         local debug=$(grep "^DEBUG=" "$env_file" | cut -d= -f2-)
-        local admin_key=$(grep "^ADMIN_API_KEY=" "$env_file" | cut -d= -f2-)
+        local keycloak_url=$(grep "^KEYCLOAK_URL=" "$env_file" | cut -d= -f2-)
+        local keycloak_realm=$(grep "^KEYCLOAK_REALM=" "$env_file" | cut -d= -f2-)
+        local keycloak_client_id=$(grep "^KEYCLOAK_CLIENT_ID=" "$env_file" | cut -d= -f2-)
         
         echo "  DATABASE_URL=$db_url" >&2
         echo "  ⚠️  Use a production database, not localhost!" >&2
@@ -367,8 +369,10 @@ display_env_warnings() {
         echo "  DEBUG=$debug" >&2
         echo "  ⚠️  Should be 'false' in production!" >&2
         echo "" >&2
-        echo "  ADMIN_API_KEY=$admin_key" >&2
-        echo "  ⚠️  Generate a new secure key for production!" >&2
+        echo "  KEYCLOAK_URL=$keycloak_url" >&2
+        echo "  KEYCLOAK_REALM=$keycloak_realm" >&2
+        echo "  KEYCLOAK_CLIENT_ID=$keycloak_client_id" >&2
+        echo "  ⚠️  Ensure Keycloak secrets are set in your deployment environment!" >&2
         echo "" >&2
     fi
     

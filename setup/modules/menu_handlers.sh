@@ -15,6 +15,39 @@ read_prompt() {
     fi
 }
 
+# Retrieve a Keycloak access token using client credentials.
+get_keycloak_access_token() {
+    local access_token="${ACCESS_TOKEN:-}"
+    local keycloak_url="${KEYCLOAK_URL:-}"
+    local keycloak_realm="${KEYCLOAK_REALM:-}"
+    local keycloak_client_id="${KEYCLOAK_CLIENT_ID:-}"
+    local keycloak_client_secret="${KEYCLOAK_CLIENT_SECRET:-}"
+
+    if [ -f ".env" ]; then
+        keycloak_url=$(grep "^KEYCLOAK_URL=" .env | head -n1 | cut -d'=' -f2- | tr -d ' "')
+        keycloak_realm=$(grep "^KEYCLOAK_REALM=" .env | head -n1 | cut -d'=' -f2- | tr -d ' "')
+        keycloak_client_id=$(grep "^KEYCLOAK_CLIENT_ID=" .env | head -n1 | cut -d'=' -f2- | tr -d ' "')
+        keycloak_client_secret=$(grep "^KEYCLOAK_CLIENT_SECRET=" .env | head -n1 | cut -d'=' -f2- | tr -d ' "')
+    fi
+
+    if [ -z "$access_token" ] && [ -n "$keycloak_url" ] && [ -n "$keycloak_realm" ] && [ -n "$keycloak_client_id" ] && [ -n "$keycloak_client_secret" ]; then
+        local token_endpoint="${keycloak_url%/}/realms/${keycloak_realm}/protocol/openid-connect/token"
+        local token_response
+        token_response=$(curl -s -X POST "$token_endpoint" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "grant_type=client_credentials" \
+            -d "client_id=$keycloak_client_id" \
+            -d "client_secret=$keycloak_client_secret")
+        access_token=$(python3 -c "import json,sys; print(json.load(sys.stdin).get('access_token',''))" <<< "$token_response")
+    fi
+
+    if [ -z "$access_token" ]; then
+        read_prompt "Enter Keycloak access token: " access_token
+    fi
+
+    echo "$access_token"
+}
+
 open_browser_incognito() {
     local port="$1"
     local compose_file="$2"
@@ -319,17 +352,6 @@ handle_build_production_image() {
     fi
 }
 
-handle_build_web_image() {
-    echo "🏗️  Building web UI Docker image (nginx)..."
-    echo ""
-    if [ -f "build-image/docker-compose.build.yml" ]; then
-        docker compose -f build-image/docker-compose.build.yml run --rm -e BUILD_TARGET=web build-image
-    else
-        echo "❌ build-image/docker-compose.build.yml not found"
-        echo "⚠️  Please ensure the build-image directory exists"
-    fi
-}
-
 handle_cicd_setup() {
     echo "🚀 CI/CD Pipeline einrichten..."
     echo ""
@@ -376,23 +398,20 @@ handle_run_backup_now() {
         return 1
     fi
     
-    # Get admin key from .env
-    local admin_key=""
-    if [ -f ".env" ]; then
-        admin_key=$(grep "^ADMIN_API_KEY=" .env | cut -d'=' -f2 | tr -d '"')
-    fi
-    
-    if [ -z "$admin_key" ]; then
-        read_prompt "Enter Admin API Key: " admin_key
+    local access_token
+    access_token=$(get_keycloak_access_token)
+    if [ -z "$access_token" ]; then
+        echo "❌ Missing Keycloak access token."
+        return 1
     fi
     
     # List schedules
     echo "📋 Fetching schedules..."
     local schedules_response
-    schedules_response=$(curl -s -H "X-Admin-Key: $admin_key" "http://localhost:$port/automation/schedules")
+    schedules_response=$(curl -s -H "Authorization: Bearer $access_token" "http://localhost:$port/automation/schedules")
     
     if echo "$schedules_response" | grep -q "detail"; then
-        echo "❌ Failed to fetch schedules. Check your API key."
+        echo "❌ Failed to fetch schedules. Check your access token."
         return 1
     fi
     
@@ -440,7 +459,7 @@ except:
     echo ""
     echo "🚀 Running backup..."
     local result
-    result=$(curl -s -X POST -H "X-Admin-Key: $admin_key" \
+    result=$(curl -s -X POST -H "Authorization: Bearer $access_token" \
         "http://localhost:$port/automation/schedules/$schedule_id/run-now")
     
     if echo "$result" | grep -q "backup_filename"; then
@@ -470,19 +489,16 @@ handle_list_backups() {
         return 1
     fi
     
-    # Get admin key from .env
-    local admin_key=""
-    if [ -f ".env" ]; then
-        admin_key=$(grep "^ADMIN_API_KEY=" .env | cut -d'=' -f2 | tr -d '"')
+    local access_token
+    access_token=$(get_keycloak_access_token)
+    if [ -z "$access_token" ]; then
+        echo "❌ Missing Keycloak access token."
+        return 1
     fi
-    
-    if [ -z "$admin_key" ]; then
-        read_prompt "Enter Admin API Key: " admin_key
-    fi
-    
+
     echo "📋 Fetching backup files..."
     local response
-    response=$(curl -s -H "X-Admin-Key: $admin_key" "http://localhost:$port/backup/list")
+    response=$(curl -s -H "Authorization: Bearer $access_token" "http://localhost:$port/backup/list")
     
     echo ""
     echo "$response" | python3 -c "
@@ -543,6 +559,37 @@ handle_start_with_test_databases() {
     fi
     
     local runner_file="local-deployment/docker-compose.runner.yml"
+    local keycloak_enabled="false"
+    local keycloak_url=""
+    
+    # Detect macOS ARM64 and use compatible compose file
+    if [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
+        local macos_test_db_file="local-deployment/docker-compose.test-databases-macos.yml"
+        if [ -f "$macos_test_db_file" ]; then
+            echo "🍎 Detected macOS ARM64 - using ARM64-compatible images"
+            test_db_file="$macos_test_db_file"
+        else
+            echo "⚠️  macOS ARM64 detected but no compatible compose file found."
+            echo "   Some images may fail to pull. Falling back to default."
+        fi
+    fi
+    
+    # Read KEYCLOAK_ENABLED from .env file (not shell environment)
+    if [ -f ".env" ]; then
+        keycloak_enabled=$(grep "^KEYCLOAK_ENABLED=" .env 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d ' "' | tr '[:upper:]' '[:lower:]')
+        keycloak_url=$(grep "^KEYCLOAK_URL=" .env 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d ' "')
+    fi
+    
+    if [ "$keycloak_enabled" = "true" ]; then
+        keycloak_url="${keycloak_url:-http://localhost:9090}"
+        if ! curl -s --connect-timeout 5 "$keycloak_url/" >/dev/null 2>&1; then
+            echo ""
+            echo "⚠️  KEYCLOAK_ENABLED=true but Keycloak is not reachable at $keycloak_url"
+            echo "   Start Keycloak from the dedicated repo before logging in:"
+            echo "   https://github.com/Sokrates1989/keycloak.git"
+            echo ""
+        fi
+    fi
     
     if [ ! -f "$test_db_file" ]; then
         echo "❌ Test databases compose file not found: $test_db_file"
@@ -555,45 +602,21 @@ handle_start_with_test_databases() {
     fi
     
     echo ""
-    echo "🐳 Starting all services with test databases (watch mode)..."
-
-    local timestamp
-    timestamp=$(date +%Y%m%d_%H%M%S)
+    echo "🐳 Starting all services with test databases..."
 
     local project_root
     project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
+    local timestamp
+    timestamp=$(date +%Y%m%d_%H%M%S)
     local log_dir="$project_root/logs/test-databases/$timestamp"
     mkdir -p "$log_dir"
-
     local compose_log_file="$log_dir/docker-compose.log"
-    local transcript_file="$log_dir/terminal-transcript.log"
-
     : > "$compose_log_file"
-    : > "$transcript_file"
+    echo "[LOG] Docker compose output will be written to: $compose_log_file"
+    echo "[LOG] Live terminal output is disabled. Tail the log file if needed."
 
-    echo "[LOG] Writing container logs to: $compose_log_file"
-    echo "[LOG] Writing terminal transcript to: $transcript_file"
-
-    (
-        cd "$project_root" || exit 0
-
-        local deadline
-        deadline=$(( $(date +%s) + 60 ))
-
-        while [ "$(date +%s)" -lt "$deadline" ]; do
-            local running
-            running=$(docker compose --env-file .env -f "$compose_file" -f "$runner_file" -f "$test_db_file" ps --services --filter status=running 2>/dev/null || true)
-            if [ -n "$running" ]; then
-                break
-            fi
-            sleep 1
-        done
-
-        docker compose --env-file .env -f "$compose_file" -f "$runner_file" -f "$test_db_file" logs -f --no-color > "$compose_log_file" 2>&1
-    ) &
-    local logs_pid=$!
-
+    # Start browser opener in background
     (
         local max_wait=120
         local wait_time=0
@@ -610,10 +633,9 @@ handle_start_with_test_databases() {
     local browser_pid=$!
 
     cd "$project_root" || return 1
-    docker compose --env-file .env -f "$compose_file" -f "$runner_file" -f "$test_db_file" up --build --watch
-
-    kill "$logs_pid" >/dev/null 2>&1 || true
-    wait "$logs_pid" >/dev/null 2>&1 || true
+    
+    # Use 'up --watch' to show logs AND watch for file changes (not 'watch' which only shows sync events)
+    docker compose --ansi never --progress plain --env-file .env -f "$compose_file" -f "$runner_file" -f "$test_db_file" up --build --watch > "$compose_log_file" 2>&1
 
     kill "$browser_pid" >/dev/null 2>&1 || true
     wait "$browser_pid" >/dev/null 2>&1 || true
@@ -780,6 +802,127 @@ handle_deploy_all_services_detached() {
     echo "To stop services: docker compose -f $compose_file -f $runner_file down"
 }
 
+handle_keycloak_bootstrap() {
+    local project_root
+    project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+    local scripts_dir="$project_root/scripts"
+    local bootstrap_image="backup-restore-keycloak-bootstrap"
+    
+    echo "🔐 Keycloak Bootstrap"
+    echo ""
+    
+    # Load .env defaults
+    local keycloak_url="${KEYCLOAK_URL:-http://localhost:9090}"
+    local keycloak_realm="${KEYCLOAK_REALM:-backup-restore}"
+    if [ -f "$project_root/.env" ]; then
+        keycloak_url=$(grep "^KEYCLOAK_URL=" "$project_root/.env" 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d ' "') || keycloak_url="http://localhost:9090"
+        keycloak_realm=$(grep "^KEYCLOAK_REALM=" "$project_root/.env" 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d ' "') || keycloak_realm="backup-restore"
+    fi
+    
+    # Check if Keycloak is reachable
+    echo "🔍 Checking Keycloak at $keycloak_url..."
+    if ! curl -s --connect-timeout 5 "$keycloak_url/" >/dev/null 2>&1; then
+        echo ""
+        echo "❌ Cannot reach Keycloak at $keycloak_url"
+        echo ""
+        echo "Please ensure Keycloak is running. Start it from the dedicated repo:"
+        echo "  https://github.com/Sokrates1989/keycloak.git"
+        echo ""
+        return 1
+    fi
+    echo "✅ Keycloak is reachable"
+    echo ""
+    
+    # Check if bootstrap image exists, build if not
+    if ! docker image inspect "$bootstrap_image" >/dev/null 2>&1; then
+        echo "🐳 Building bootstrap image..."
+        docker build -t "$bootstrap_image" "$scripts_dir" || {
+            echo "❌ Failed to build bootstrap image"
+            return 1
+        }
+    fi
+    
+    # Collect configuration
+    read_prompt "Keycloak base URL [$keycloak_url]: " input_url
+    keycloak_url="${input_url:-$keycloak_url}"
+    
+    read_prompt "Keycloak admin username [admin]: " admin_user
+    admin_user="${admin_user:-admin}"
+    
+    read_prompt "Keycloak admin password [admin]: " admin_password
+    admin_password="${admin_password:-admin}"
+    
+    read_prompt "Realm name [$keycloak_realm]: " realm
+    realm="${realm:-$keycloak_realm}"
+    
+    read_prompt "Frontend client ID [backup-restore-frontend]: " frontend_client
+    frontend_client="${frontend_client:-backup-restore-frontend}"
+    
+    read_prompt "Backend client ID [backup-restore-backend]: " backend_client
+    backend_client="${backend_client:-backup-restore-backend}"
+    
+    local web_port="${WEB_PORT:-8086}"
+    read_prompt "Frontend root URL [http://localhost:$web_port]: " frontend_url
+    frontend_url="${frontend_url:-http://localhost:$web_port}"
+    
+    local api_port="${PORT:-8000}"
+    read_prompt "API root URL [http://localhost:$api_port]: " api_url
+    api_url="${api_url:-http://localhost:$api_port}"
+    
+    echo ""
+    echo "✅ Creating granular roles:"
+    echo "   - backup:read    (view backups, stats)"
+    echo "   - backup:create  (create backups)"
+    echo "   - backup:restore (restore backups - CRITICAL)"
+    echo "   - backup:delete  (delete backups)"
+    echo "   - backup:admin   (full access)"
+    echo ""
+    
+    read_prompt "Create default users (admin/operator/viewer)? (Y/n): " use_defaults
+    local user_args=""
+    if [[ ! "$use_defaults" =~ ^[Nn]$ ]]; then
+        user_args="--user admin:admin:backup:admin --user operator:operator:backup:read,backup:create,backup:restore --user viewer:viewer:backup:read"
+    else
+        echo "Role format: backup:read, backup:create, backup:restore, backup:delete, backup:admin"
+        read_prompt "Enter user spec (username:password:role1,role2): " custom_user
+        if [ -n "$custom_user" ]; then
+            user_args="--user $custom_user"
+        fi
+    fi
+    
+    if [ -z "$user_args" ]; then
+        echo "❌ No users specified. Aborting bootstrap."
+        return 1
+    fi
+    
+    echo ""
+    echo "🚀 Bootstrapping Keycloak realm..."
+    
+    # Run bootstrap in Docker
+    # shellcheck disable=SC2086
+    docker run --rm --network host "$bootstrap_image" \
+        --base-url "$keycloak_url" \
+        --admin-user "$admin_user" \
+        --admin-password "$admin_password" \
+        --realm "$realm" \
+        --frontend-client-id "$frontend_client" \
+        --backend-client-id "$backend_client" \
+        --frontend-root-url "$frontend_url" \
+        --api-root-url "$api_url" \
+        $user_args
+    
+    local exit_code=$?
+    
+    echo ""
+    if [ $exit_code -eq 0 ]; then
+        echo "✅ Bootstrap complete! Update your .env with the client secret from output above."
+    else
+        echo "❌ Bootstrap failed. Check Keycloak logs for details."
+    fi
+    
+    return $exit_code
+}
+
 show_main_menu() {
     local port="$1"
     local compose_file="$2"
@@ -799,7 +942,6 @@ show_main_menu() {
         local MENU_MAINT_DB_REINSTALL=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
 
         local MENU_BUILD_IMAGE=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
-        local MENU_BUILD_WEB_IMAGE=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
 
         local MENU_RUN_BACKUP=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
         local MENU_LIST_BACKUPS=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
@@ -809,6 +951,7 @@ show_main_menu() {
         local MENU_CLEAN_TEST_DATA=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
 
         local MENU_SETUP=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_KEYCLOAK_BOOTSTRAP=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
 
         local MENU_EXIT=$MENU_NEXT
 
@@ -827,8 +970,7 @@ show_main_menu() {
         echo "  ${MENU_MAINT_DB_REINSTALL}) DB Re-Install (reset database volume)"
         echo ""
         echo "Build:"
-        echo "  ${MENU_BUILD_IMAGE}) Build Production Docker Image"
-        echo "  ${MENU_BUILD_WEB_IMAGE}) Build Website Docker Image (nginx)"
+        echo "  ${MENU_BUILD_IMAGE}) Build Production Docker Image (API + Web)"
         echo ""
         echo "Backup Automation:"
         echo "  ${MENU_RUN_BACKUP}) Run backup now (CLI)"
@@ -841,6 +983,7 @@ show_main_menu() {
         echo ""
         echo "Setup:"
         echo "  ${MENU_SETUP}) Re-run setup wizard"
+        echo "  ${MENU_KEYCLOAK_BOOTSTRAP}) Bootstrap Keycloak (realm, roles, users)"
         echo ""
         echo "  ${MENU_EXIT}) Exit"
         echo ""
@@ -874,10 +1017,6 @@ show_main_menu() {
             handle_build_production_image
             summary_msg="Production Docker Image Build ausgeführt"
             ;;
-          ${MENU_BUILD_WEB_IMAGE})
-            handle_build_web_image
-            summary_msg="Website Docker Image Build ausgeführt"
-            ;;
           ${MENU_RUN_BACKUP})
             handle_run_backup_now "$port"
             summary_msg="Backup operation completed"
@@ -903,6 +1042,10 @@ show_main_menu() {
           ${MENU_SETUP})
             handle_rerun_setup_wizard
             summary_msg="Setup wizard restarted"
+            ;;
+          ${MENU_KEYCLOAK_BOOTSTRAP})
+            handle_keycloak_bootstrap
+            summary_msg="Keycloak bootstrap completed"
             ;;
           ${MENU_EXIT})
             echo "👋 Skript wird beendet."
