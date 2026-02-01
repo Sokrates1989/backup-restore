@@ -645,7 +645,6 @@ function Show-MainMenu {
     $MENU_DIAGNOSTICS = $menuNext; $menuNext++
 
     $MENU_BUILD = $menuNext; $menuNext++
-    $MENU_BUILD_WEB = $menuNext; $menuNext++
     $MENU_CICD = $menuNext; $menuNext++
     $MENU_BUMP_VERSION = $menuNext; $menuNext++
 
@@ -675,7 +674,6 @@ function Show-MainMenu {
     Write-Host "" 
     Write-Host "Build / CI/CD:" -ForegroundColor Yellow
     Write-Host "  $MENU_BUILD) Build Production Docker Image" -ForegroundColor Gray
-    Write-Host "  $MENU_BUILD_WEB) Build Website Docker Image (nginx)" -ForegroundColor Gray
     Write-Host "  $MENU_CICD) Setup CI/CD Pipeline" -ForegroundColor Gray
     Write-Host "  $MENU_BUMP_VERSION) Bump release version for docker image" -ForegroundColor Gray
     Write-Host "" 
@@ -724,10 +722,6 @@ function Show-MainMenu {
         "$MENU_BUILD" {
             Build-ProductionImage
             $summary = "Production Docker image build triggered"
-        }
-        "$MENU_BUILD_WEB" {
-            Build-WebImage
-            $summary = "Website Docker image build triggered"
         }
         "$MENU_CICD" {
             Start-CICDSetup
