@@ -674,7 +674,7 @@ def run_bootstrap(args: argparse.Namespace) -> None:
         "frontend_client_id": args.frontend_client_id,
         "backend_client_id": args.backend_client_id,
         "backend_client_secret": backend_secret,
-        "roles": roles,
+        "roles": user_roles,
         "users": [dataclasses.asdict(user) for user in users],
     }
     print("\nBootstrap completed. Summary:")
