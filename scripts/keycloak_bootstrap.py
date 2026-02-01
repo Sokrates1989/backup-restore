@@ -631,14 +631,17 @@ def run_bootstrap(args: argparse.Namespace) -> None:
         KeycloakBootstrapError: On failure.
     """
 
-    roles = args.role if args.role else DEFAULT_ROLES
+    # For role creation, always ensure ALL GRANULAR_ROLES exist (for idempotency)
+    # For user assignments, use the provided roles or DEFAULT_ROLES
+    user_roles = args.role if args.role else DEFAULT_ROLES
     users = parse_user_specs(args.user)
 
     token = get_admin_token(args.base_url, args.admin_user, args.admin_password)
     ensure_realm(args.base_url, token, args.realm, args.realm.replace("-", " ").title())
     
     print("\nEnsuring roles exist...")
-    ensure_roles(args.base_url, token, args.realm, roles)
+    # Always ensure all granular roles exist, even if not assigned to users
+    ensure_roles(args.base_url, token, args.realm, DEFAULT_ROLES)
 
     frontend_spec, backend_spec = build_client_specs(
         args.frontend_client_id,
