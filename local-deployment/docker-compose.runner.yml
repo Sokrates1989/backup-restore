@@ -26,7 +26,7 @@ services:
       - ../.env
     environment:
       # Runner configuration
-      RUNNER_MODE: api
+      RUNNER_MODE: ${RUNNER_MODE:-direct}
       RUNNER_INTERVAL: ${RUNNER_INTERVAL:-60}
       RUNNER_MAX_SCHEDULES: ${RUNNER_MAX_SCHEDULES:-10}
       BACKUP_API_URL: http://app:8000

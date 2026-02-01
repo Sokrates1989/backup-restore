@@ -17,6 +17,15 @@ async function loadBackupSchedules() {
 }
 
 /**
+ * Update backup schedule UI controls based on permissions.
+ * @returns {void}
+ */
+function updateBackupScheduleAccessUI() {
+    // Always show all buttons - permission checks happen on click
+    // This allows users to see the full UI capabilities even without permissions
+}
+
+/**
  * Map a legacy on_success/on_warning/on_failure config to a minimum severity.
  *
  * @param {Object} legacy Legacy channel config.
@@ -280,7 +289,16 @@ function updateScheduleTimeOfDayVisibility() {
     }
 }
 
+/**
+ * Trigger all enabled schedules to run immediately.
+ * @returns {Promise<void>}
+ */
 async function runEnabledSchedulesNow() {
+    if (typeof canRunBackups === 'function' && !canRunBackups()) {
+        showStatus('You do not have permission to run schedules.', 'error', true);
+        return;
+    }
+
     if (!confirm('Run all enabled schedules now?')) return;
 
     try {
@@ -332,14 +350,21 @@ function formatAttachmentSummary(notifications) {
     return `Telegram: ${telegramSummary}, Email: ${emailSummary}`;
 }
 
+/**
+ * Render the list of backup schedules.
+ * @returns {void}
+ */
 function renderBackupSchedules() {
     const container = document.getElementById('backup-schedules-list');
+
+    updateBackupScheduleAccessUI();
     
     if (backupSchedules.length === 0) {
         container.innerHTML = '<p class="no-items">No backup schedules configured. Add one to get started.</p>';
         return;
     }
 
+    // Always show all buttons - permission checks happen on click
     container.innerHTML = backupSchedules.map(schedule => {
         const database = databases.find(d => d.id === schedule.target_id);
         const destinationNames = getDestinationNames(schedule.destination_ids);
@@ -388,7 +413,14 @@ function renderBackupSchedules() {
     }).join('');
 }
 
+/**
+ * Show the schedule form for create/update.
+ * @param {Object|null} schedule Existing schedule to edit.
+ * @returns {void}
+ */
 function showBackupScheduleForm(schedule = null) {
+    // Allow users to see the form UI - permission check happens on save
+
     const form = document.getElementById('backup-schedule-form');
     const title = document.getElementById('backup-schedule-form-title');
     const tabRoot = document.getElementById('backup-schedules-tab');
@@ -575,6 +607,10 @@ function editBackupSchedule(id) {
     if (schedule) showBackupScheduleForm(schedule);
 }
 
+/**
+ * Update select options for schedules based on current data.
+ * @returns {void}
+ */
 function updateBackupScheduleSelects() {
     // Update database select
     const databaseSelect = document.getElementById('backup-schedule-database');
@@ -647,7 +683,16 @@ function updateEmailVisibility() {
     }
 }
 
+/**
+ * Save a backup schedule (create or update).
+ * @returns {Promise<void>}
+ */
 async function saveBackupSchedule() {
+    if (typeof canConfigureBackups === 'function' && !canConfigureBackups()) {
+        showStatus('You do not have permission to configure backup schedules. Required role: backup:admin or backup:configure', 'error', true);
+        return;
+    }
+
     const id = document.getElementById('backup-schedule-id').value;
     const name = trimValue(document.getElementById('backup-schedule-name').value);
     const databaseId = document.getElementById('backup-schedule-database').value;
@@ -775,7 +820,20 @@ async function saveBackupSchedule() {
     }
 }
 
+/**
+ * Delete a backup schedule by id.
+ * @param {string} id Schedule id.
+ * @returns {Promise<void>}
+ */
 async function deleteBackupSchedule(id) {
+    if (
+        typeof hasAnyKeycloakRole === 'function'
+        && !hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_DELETE_ROLE])
+    ) {
+        showStatus('You do not have permission to delete schedules. Required role: backup:admin or backup:delete', 'error', true);
+        return;
+    }
+
     if (!confirm('Are you sure you want to delete this backup schedule?')) return;
     
     try {
@@ -790,7 +848,17 @@ async function deleteBackupSchedule(id) {
     }
 }
 
+/**
+ * Run a schedule immediately.
+ * @param {string} scheduleId Schedule id.
+ * @returns {Promise<void>}
+ */
 async function runScheduleNow(scheduleId) {
+    if (typeof canRunBackups === 'function' && !canRunBackups()) {
+        showStatus('You do not have permission to run schedules. Required role: backup:admin, backup:run, or backup:create', 'error', true);
+        return;
+    }
+
     if (!confirm('Run this backup schedule now?')) return;
     
     try {
@@ -803,7 +871,10 @@ async function runScheduleNow(scheduleId) {
     }
 }
 
-// Initialize event listeners for backup schedules tab
+/**
+ * Initialize event listeners for backup schedules tab.
+ * @returns {void}
+ */
 function initBackupSchedulesTab() {
     // Backup schedule form
     document.getElementById('add-backup-schedule-btn').addEventListener('click', () => showBackupScheduleForm());
@@ -882,6 +953,8 @@ function initBackupSchedulesTab() {
             }
         });
     }
+
+    updateBackupScheduleAccessUI();
 }
 
 window.updateBackupScheduleSelects = updateBackupScheduleSelects;

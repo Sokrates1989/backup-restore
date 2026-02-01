@@ -213,12 +213,14 @@ def ensure_realm(base_url: str, token: str, realm: str, display_name: str) -> No
 # Granular role definitions with descriptions
 GRANULAR_ROLES = {
     "backup:read": "View backup files, statistics, and schedules (LOW criticality)",
-    "backup:create": "Create new backups (MEDIUM criticality)",
+    "backup:create": "Create manual backups (MEDIUM criticality)",
+    "backup:run": "Run scheduled backups and manual runs (MEDIUM criticality)",
+    "backup:configure": "Configure targets, destinations, and schedules (HIGH criticality)",
     "backup:restore": "Restore backups - modifies production data (HIGHEST criticality)",
     "backup:delete": "Delete backup files permanently (HIGH criticality)",
     "backup:download": "Download backup files (MEDIUM criticality)",
     "backup:history": "View audit history and login events (LOW criticality)",
-    "backup:admin": "Full access including configuration changes",
+    "backup:admin": "Full access including configuration, execution, and deletion",
 }
 
 DEFAULT_ROLES = list(GRANULAR_ROLES.keys())

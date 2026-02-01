@@ -817,7 +817,7 @@ function Start-WithTestDatabases {
         $deadline = (Get-Date).AddSeconds(60)
         while ((Get-Date) -lt $deadline) {
             try {
-                $running = & docker compose @ComposeArgsBase ps --services --filter status=running 2>$null
+                $running = & docker compose @ComposeArgsBase ps --services --filter status=running 2>&1
                 if ($running -and $running.Count -gt 0) {
                     break
                 }
@@ -958,7 +958,7 @@ function Invoke-KeycloakBootstrap {
     $scriptsDir = Join-Path $projectRoot "scripts"
     $bootstrapImage = "backup-restore-keycloak-bootstrap"
     
-    Write-Host "🔐 Keycloak Bootstrap" -ForegroundColor Cyan
+    Write-Host "Keycloak Bootstrap" -ForegroundColor Cyan
     Write-Host ""
     
     # Load .env defaults
@@ -974,28 +974,28 @@ function Invoke-KeycloakBootstrap {
     }
     
     # Check if Keycloak is reachable
-    Write-Host "🔍 Checking Keycloak at $keycloakUrl..." -ForegroundColor Cyan
+    Write-Host "Checking Keycloak at $keycloakUrl..." -ForegroundColor Cyan
     try {
         $response = Invoke-WebRequest -Uri "$keycloakUrl/" -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop
     } catch {
         Write-Host ""
-        Write-Host "❌ Cannot reach Keycloak at $keycloakUrl" -ForegroundColor Red
+        Write-Host "Cannot reach Keycloak at $keycloakUrl" -ForegroundColor Red
         Write-Host ""
         Write-Host "Please ensure Keycloak is running. Start it from the dedicated repo:" -ForegroundColor Yellow
         Write-Host "  https://github.com/Sokrates1989/keycloak.git"
         Write-Host ""
         return 1
     }
-    Write-Host "✅ Keycloak is reachable" -ForegroundColor Green
+    Write-Host "Keycloak is reachable" -ForegroundColor Green
     Write-Host ""
     
     # Build image if needed
-    $imageExists = docker image inspect $bootstrapImage 2>$null
-    if (-not $imageExists) {
-        Write-Host "🐳 Building bootstrap image..." -ForegroundColor Cyan
+    $bootstrapImageId = docker image ls -q $bootstrapImage
+    if ([string]::IsNullOrWhiteSpace($bootstrapImageId)) {
+        Write-Host "Building bootstrap image..." -ForegroundColor Cyan
         docker build -t $bootstrapImage $scriptsDir
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "❌ Failed to build bootstrap image" -ForegroundColor Red
+            Write-Host "Failed to build bootstrap image" -ForegroundColor Red
             return 1
         }
     }
@@ -1028,12 +1028,14 @@ function Invoke-KeycloakBootstrap {
     if (-not $apiUrl) { $apiUrl = "http://localhost:$apiPort" }
     
     Write-Host ""
-    Write-Host "✅ Creating granular roles:" -ForegroundColor Green
-    Write-Host "   - backup:read    (view backups, stats)" -ForegroundColor Gray
-    Write-Host "   - backup:create  (create backups)" -ForegroundColor Gray
-    Write-Host "   - backup:restore (restore backups - CRITICAL)" -ForegroundColor Yellow
-    Write-Host "   - backup:delete  (delete backups)" -ForegroundColor Gray
-    Write-Host "   - backup:admin   (full access)" -ForegroundColor Gray
+    Write-Host "Creating granular roles:" -ForegroundColor Green
+    Write-Host "   - backup:read      (view backups, stats)" -ForegroundColor Gray
+    Write-Host "   - backup:create    (manual backup runs)" -ForegroundColor Gray
+    Write-Host "   - backup:run       (run scheduled/manual backups)" -ForegroundColor Gray
+    Write-Host "   - backup:configure (configure targets/destinations/schedules)" -ForegroundColor Gray
+    Write-Host "   - backup:restore   (restore backups - CRITICAL)" -ForegroundColor Yellow
+    Write-Host "   - backup:delete    (delete backups)" -ForegroundColor Gray
+    Write-Host "   - backup:admin     (full access)" -ForegroundColor Gray
     Write-Host ""
     
     $useDefaults = Read-Host "Create default users (admin/operator/viewer)? (Y/n)"
@@ -1042,11 +1044,11 @@ function Invoke-KeycloakBootstrap {
         $userArgs += "--user"
         $userArgs += "admin:admin:backup:admin"
         $userArgs += "--user"
-        $userArgs += "operator:operator:backup:read,backup:create,backup:restore"
+        $userArgs += "operator:operator:backup:read,backup:create,backup:run,backup:restore"
         $userArgs += "--user"
         $userArgs += "viewer:viewer:backup:read"
     } else {
-        Write-Host "Role format: backup:read, backup:create, backup:restore, backup:delete, backup:admin" -ForegroundColor Cyan
+        Write-Host "Role format: backup:read, backup:create, backup:run, backup:configure, backup:restore, backup:delete, backup:admin" -ForegroundColor Cyan
         $customUser = Read-Host "Enter user spec (username:password:role1,role2)"
         if ($customUser) {
             $userArgs += "--user"
@@ -1055,12 +1057,12 @@ function Invoke-KeycloakBootstrap {
     }
     
     if ($userArgs.Count -eq 0) {
-        Write-Host "❌ No users specified. Aborting bootstrap." -ForegroundColor Red
+        Write-Host "No users specified. Aborting bootstrap." -ForegroundColor Red
         return 1
     }
     
     Write-Host ""
-    Write-Host "🚀 Bootstrapping Keycloak realm..." -ForegroundColor Cyan
+    Write-Host "Bootstrapping Keycloak realm..." -ForegroundColor Cyan
     
     $dockerArgs = @(
         "--base-url", $keycloakUrl,
@@ -1079,9 +1081,9 @@ function Invoke-KeycloakBootstrap {
     
     Write-Host ""
     if ($exitCode -eq 0) {
-        Write-Host "✅ Bootstrap complete! Update your .env with the client secret from output above." -ForegroundColor Green
+        Write-Host "Bootstrap complete! Update your .env with the client secret from output above." -ForegroundColor Green
     } else {
-        Write-Host "❌ Bootstrap failed. Check Keycloak logs for details." -ForegroundColor Red
+        Write-Host "Bootstrap failed. Check Keycloak logs for details." -ForegroundColor Red
     }
     
     return $exitCode

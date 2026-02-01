@@ -11,6 +11,8 @@
 // Granular role constants
 const BACKUP_READ_ROLE = 'backup:read';
 const BACKUP_CREATE_ROLE = 'backup:create';
+const BACKUP_RUN_ROLE = 'backup:run';
+const BACKUP_CONFIG_ROLE = 'backup:configure';
 const BACKUP_RESTORE_ROLE = 'backup:restore';
 const BACKUP_DELETE_ROLE = 'backup:delete';
 const BACKUP_DOWNLOAD_ROLE = 'backup:download';
@@ -39,6 +41,24 @@ function loadScript(src) {
         script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
         document.head.appendChild(script);
     });
+}
+
+/**
+ * Check if current user can run backups.
+ *
+ * @returns {boolean} True if user has backup:run, backup:create, or backup:admin role
+ */
+function canRunBackups() {
+    return hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_RUN_ROLE, BACKUP_CREATE_ROLE]);
+}
+
+/**
+ * Check if current user can configure backup targets, destinations, and schedules.
+ *
+ * @returns {boolean} True if user has backup:configure or backup:admin role
+ */
+function canConfigureBackups() {
+    return hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_CONFIG_ROLE]);
 }
 
 /**
@@ -439,6 +459,8 @@ function canDownloadBackups() {
 // Export functions and constants to global scope
 window.BACKUP_READ_ROLE = BACKUP_READ_ROLE;
 window.BACKUP_CREATE_ROLE = BACKUP_CREATE_ROLE;
+window.BACKUP_RUN_ROLE = BACKUP_RUN_ROLE;
+window.BACKUP_CONFIG_ROLE = BACKUP_CONFIG_ROLE;
 window.BACKUP_RESTORE_ROLE = BACKUP_RESTORE_ROLE;
 window.BACKUP_DELETE_ROLE = BACKUP_DELETE_ROLE;
 window.BACKUP_DOWNLOAD_ROLE = BACKUP_DOWNLOAD_ROLE;
@@ -453,6 +475,8 @@ window.getKeycloakToken = getKeycloakToken;
 window.getKeycloakUser = getKeycloakUser;
 window.hasKeycloakRole = hasKeycloakRole;
 window.hasAnyKeycloakRole = hasAnyKeycloakRole;
+window.canRunBackups = canRunBackups;
+window.canConfigureBackups = canConfigureBackups;
 window.canViewHistory = canViewHistory;
 window.canDownloadBackups = canDownloadBackups;
 window.keycloakApiCall = keycloakApiCall;

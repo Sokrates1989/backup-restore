@@ -93,6 +93,13 @@ class BackupNowRequest(BaseModel):
     target_id: str = Field(..., description="Backup target id")
     destination_ids: List[str] = Field(default_factory=list, description="Destination ids to upload backup to")
     use_local_storage: bool = Field(False, description="Use default local storage (/app/backups) instead of destinations")
+    encryption_password: Optional[str] = Field(
+        None,
+        description=(
+            "Optional password to encrypt manual backups before upload. "
+            "When provided, the backup artifact is encrypted and stored with a .enc suffix."
+        ),
+    )
 
 
 class BackupNowResponse(BaseModel):

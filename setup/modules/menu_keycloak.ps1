@@ -102,8 +102,8 @@ function Invoke-KeycloakBootstrap {
     Write-Host ""
     
     # Check if bootstrap image exists, build if not
-    $imageExists = docker image inspect $bootstrapImage 2>$null
-    if (-not $imageExists) {
+    $bootstrapImageId = docker image ls -q $bootstrapImage
+    if ([string]::IsNullOrWhiteSpace($bootstrapImageId)) {
         Write-Host "Building bootstrap image..." -ForegroundColor Cyan
         docker build -t $bootstrapImage $scriptsDir
         if ($LASTEXITCODE -ne 0) {
@@ -141,13 +141,15 @@ function Invoke-KeycloakBootstrap {
     
     Write-Host ""
     Write-Host "Creating granular roles:" -ForegroundColor Green
-    Write-Host "   - backup:read     (view backups, stats)" -ForegroundColor Gray
-    Write-Host "   - backup:create   (create backups)" -ForegroundColor Gray
-    Write-Host "   - backup:restore  (restore backups - CRITICAL)" -ForegroundColor Gray
-    Write-Host "   - backup:delete   (delete backups)" -ForegroundColor Gray
-    Write-Host "   - backup:download (download backup files)" -ForegroundColor Gray
-    Write-Host "   - backup:history  (view audit history)" -ForegroundColor Gray
-    Write-Host "   - backup:admin    (full access)" -ForegroundColor Gray
+    Write-Host "   - backup:read      (view backups, stats)" -ForegroundColor Gray
+    Write-Host "   - backup:create    (manual backup runs)" -ForegroundColor Gray
+    Write-Host "   - backup:run       (run scheduled/manual backups)" -ForegroundColor Gray
+    Write-Host "   - backup:configure (configure targets/destinations/schedules)" -ForegroundColor Gray
+    Write-Host "   - backup:restore   (restore backups - CRITICAL)" -ForegroundColor Gray
+    Write-Host "   - backup:delete    (delete backups)" -ForegroundColor Gray
+    Write-Host "   - backup:download  (download backup files)" -ForegroundColor Gray
+    Write-Host "   - backup:history   (view audit history)" -ForegroundColor Gray
+    Write-Host "   - backup:admin     (full access)" -ForegroundColor Gray
     Write-Host ""
     
     $useDefaults = Read-Host "Create default users (admin/operator/viewer)? (Y/n)"
@@ -155,11 +157,11 @@ function Invoke-KeycloakBootstrap {
     if ($useDefaults -notmatch "^[Nn]$") {
         $userArgs = @(
             "--user", "admin:admin:backup:admin",
-            "--user", "operator:operator:backup:read,backup:create,backup:restore,backup:download,backup:history",
+            "--user", "operator:operator:backup:read,backup:create,backup:run,backup:restore,backup:download,backup:history",
             "--user", "viewer:viewer:backup:read"
         )
     } else {
-        Write-Host "Role format: backup:read, backup:create, backup:restore, backup:delete, backup:download, backup:history, backup:admin" -ForegroundColor Gray
+        Write-Host "Role format: backup:read, backup:create, backup:run, backup:configure, backup:restore, backup:delete, backup:download, backup:history, backup:admin" -ForegroundColor Gray
         $customUser = Read-Host "Enter user spec (username:password:role1,role2)"
         if ($customUser) {
             $userArgs = @("--user", $customUser)

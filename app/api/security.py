@@ -1,7 +1,8 @@
 """Security utilities for API authentication.
 
 This module validates Keycloak-issued JWT bearer tokens and enforces
-role-based access control (RBAC) for admin, restore, and delete operations.
+role-based access control (RBAC) for backup access, execution, and
+configuration operations.
 """
 from __future__ import annotations
 
@@ -15,6 +16,8 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 BACKUP_READ_ROLE = "backup:read"
 BACKUP_CREATE_ROLE = "backup:create"
+BACKUP_RUN_ROLE = "backup:run"
+BACKUP_CONFIG_ROLE = "backup:configure"
 BACKUP_RESTORE_ROLE = "backup:restore"
 BACKUP_DELETE_ROLE = "backup:delete"
 BACKUP_DOWNLOAD_ROLE = "backup:download"
@@ -25,11 +28,25 @@ BACKUP_ACCESS_ROLES = (
     BACKUP_ADMIN_ROLE,
     BACKUP_READ_ROLE,
     BACKUP_CREATE_ROLE,
+    BACKUP_RUN_ROLE,
+    BACKUP_CONFIG_ROLE,
     BACKUP_RESTORE_ROLE,
     BACKUP_DELETE_ROLE,
     BACKUP_DOWNLOAD_ROLE,
     BACKUP_HISTORY_ROLE,
 )
+
+BACKUP_RUN_ROLES = (
+    BACKUP_ADMIN_ROLE,
+    BACKUP_CREATE_ROLE,
+    BACKUP_RUN_ROLE,
+)
+
+BACKUP_CONFIGURATION_ROLES = (
+    BACKUP_ADMIN_ROLE,
+    BACKUP_CONFIG_ROLE,
+)
+
 
 BACKUP_DOWNLOAD_ROLES = (
     BACKUP_ADMIN_ROLE,
@@ -71,7 +88,12 @@ def _validate_keycloak_roles(
     if keycloak is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Keycloak authentication is not configured. Set KEYCLOAK_ENABLED=true and configure Keycloak settings.",
+            detail=(
+                "Keycloak authentication is not configured. "
+                "Set KEYCLOAK_ENABLED=true and configure Keycloak settings. "
+                "If Keycloak is running but the realm is not set up, run the bootstrap: "
+                "./quick-start.ps1 (or .sh) -> Option 16 'Bootstrap Keycloak'"
+            ),
         )
 
     try:
@@ -114,6 +136,42 @@ async def verify_admin_key(
         HTTPException: If authentication fails or roles are insufficient.
     """
     return _validate_keycloak_roles(bearer_token, BACKUP_ACCESS_ROLES)
+
+
+async def verify_run_key(
+    bearer_token: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+) -> str:
+    """
+    Verify Keycloak authentication for backup execution endpoints.
+
+    Args:
+        bearer_token: Bearer token credentials from Authorization header.
+
+    Returns:
+        str: Authenticated user identifier.
+
+    Raises:
+        HTTPException: If authentication fails or roles are insufficient.
+    """
+    return _validate_keycloak_roles(bearer_token, BACKUP_RUN_ROLES)
+
+
+async def verify_config_key(
+    bearer_token: Optional[HTTPAuthorizationCredentials] = Security(bearer_scheme),
+) -> str:
+    """
+    Verify Keycloak authentication for configuration endpoints.
+
+    Args:
+        bearer_token: Bearer token credentials from Authorization header.
+
+    Returns:
+        str: Authenticated user identifier.
+
+    Raises:
+        HTTPException: If authentication fails or roles are insufficient.
+    """
+    return _validate_keycloak_roles(bearer_token, BACKUP_CONFIGURATION_ROLES)
 
 
 async def verify_restore_key(

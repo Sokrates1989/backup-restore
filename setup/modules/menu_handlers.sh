@@ -871,19 +871,21 @@ handle_keycloak_bootstrap() {
     
     echo ""
     echo "✅ Creating granular roles:"
-    echo "   - backup:read    (view backups, stats)"
-    echo "   - backup:create  (create backups)"
-    echo "   - backup:restore (restore backups - CRITICAL)"
-    echo "   - backup:delete  (delete backups)"
-    echo "   - backup:admin   (full access)"
+    echo "   - backup:read      (view backups, stats)"
+    echo "   - backup:create    (manual backup runs)"
+    echo "   - backup:run       (run scheduled/manual backups)"
+    echo "   - backup:configure (configure targets/destinations/schedules)"
+    echo "   - backup:restore   (restore backups - CRITICAL)"
+    echo "   - backup:delete    (delete backups)"
+    echo "   - backup:admin     (full access)"
     echo ""
     
     read_prompt "Create default users (admin/operator/viewer)? (Y/n): " use_defaults
     local user_args=""
     if [[ ! "$use_defaults" =~ ^[Nn]$ ]]; then
-        user_args="--user admin:admin:backup:admin --user operator:operator:backup:read,backup:create,backup:restore --user viewer:viewer:backup:read"
+        user_args="--user admin:admin:backup:admin --user operator:operator:backup:read,backup:create,backup:run,backup:restore --user viewer:viewer:backup:read"
     else
-        echo "Role format: backup:read, backup:create, backup:restore, backup:delete, backup:admin"
+        echo "Role format: backup:read, backup:create, backup:run, backup:configure, backup:restore, backup:delete, backup:admin"
         read_prompt "Enter user spec (username:password:role1,role2): " custom_user
         if [ -n "$custom_user" ]; then
             user_args="--user $custom_user"

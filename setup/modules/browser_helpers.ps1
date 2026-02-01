@@ -180,29 +180,29 @@ function Open-Url {
             New-Item -ItemType Directory -Path $edgeProfile -Force | Out-Null
 
             if (Test-Path "/Applications/Google Chrome.app") {
-                & open -na "Google Chrome" --args @($chromeArgs + $Url) 2>$null
+                & open -na "Google Chrome" --args @($chromeArgs + $Url) 2>&1 | Out-Null
                 return
             }
             if (Test-Path "/Applications/Microsoft Edge.app") {
-                & open -na "Microsoft Edge" --args @($edgeArgs + $Url) 2>$null
+                & open -na "Microsoft Edge" --args @($edgeArgs + $Url) 2>&1 | Out-Null
                 return
             }
             if (Test-Path "/Applications/Firefox.app") {
-                & open -na "Firefox" --args -private-window $Url 2>$null
+                & open -na "Firefox" --args -private-window $Url 2>&1 | Out-Null
                 return
             }
-            & open $Url 2>$null
+            & open $Url 2>&1 | Out-Null
             return
         }
 
         # Linux
         if ($IsLinux) {
             $linuxChrome = Get-Command google-chrome -ErrorAction SilentlyContinue
-            if ($linuxChrome) { & $linuxChrome.Source --incognito $Url 2>$null | Out-Null; return }
+            if ($linuxChrome) { & $linuxChrome.Source --incognito $Url 2>&1 | Out-Null; return }
             $linuxFirefox = Get-Command firefox -ErrorAction SilentlyContinue
-            if ($linuxFirefox) { & $linuxFirefox.Source -private-window $Url 2>$null | Out-Null; return }
+            if ($linuxFirefox) { & $linuxFirefox.Source -private-window $Url 2>&1 | Out-Null; return }
             $xdgOpen = Get-Command xdg-open -ErrorAction SilentlyContinue
-            if ($xdgOpen) { & $xdgOpen.Source $Url 2>$null | Out-Null; return }
+            if ($xdgOpen) { & $xdgOpen.Source $Url 2>&1 | Out-Null; return }
         }
 
         Start-Process $Url | Out-Null
@@ -388,12 +388,13 @@ function Show-RelevantPagesDelayed {
     }) -join "`n"
     
     # Write script to a temp file to avoid -EncodedCommand (flagged by some AV software)
+    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
     $tempScript = Join-Path $env:TEMP "backup_restore_browser_open_$([guid]::NewGuid().ToString('N').Substring(0,8)).ps1"
-    $logFile = Join-Path $env:TEMP "backup_restore_browser_open.log"
+    $logFile = Join-Path $env:TEMP "backup_restore_browser_open_$timestamp.log"
     
     $scriptContent = @"
 # Auto-generated script to open browser after services start
-. `$ErrorActionPreference = 'Continue'
+`$ErrorActionPreference = 'Continue'
 . '$browserHelpersFile'
 
 `$logFile = '$logFile'
@@ -479,7 +480,8 @@ Remove-Item -Path '$tempScript' -Force -ErrorAction SilentlyContinue
         $psExe = "powershell"
     }
 
-    Write-Host "[WEB] Browser helper started (log: $logFile)" -ForegroundColor Gray
+    Write-Host "[WEB] Browser helper log: $logFile" -ForegroundColor Gray
+    Write-Host "[WEB] Browser helper started in background" -ForegroundColor Gray
     Start-Process -FilePath $psExe -ArgumentList @(
         "-NoProfile",
         "-ExecutionPolicy",

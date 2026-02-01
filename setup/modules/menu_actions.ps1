@@ -481,26 +481,78 @@ function Start-WithTestDatabases {
     Write-Host ""
     Write-Host "Starting all services with test databases..." -ForegroundColor Cyan
 
-    # Start browser opener in background job
-    $browserJob = Start-Job -ScriptBlock {
-        param($Port, $ComposeFile)
-        $maxWait = 120
-        $waitTime = 0
-        while ($waitTime -lt $maxWait) {
+    if (Get-Command Show-RelevantPagesDelayed -ErrorAction SilentlyContinue) {
+        $webPort = Get-EnvVariable -VariableName "WEB_PORT" -EnvFile ".env" -DefaultValue "8086"
+        $urlsToOpen = @(
+            "http://localhost:$webPort/",
+            "http://localhost:$Port/docs",
+            "http://localhost:5050",
+            "http://localhost:8080",
+            "http://localhost:7475/browser?connectURL=neo4j://localhost:7688",
+            "http://localhost:8082",
+            "http://localhost:8085",
+            "http://localhost:8084",
+            "http://localhost:8090"
+        )
+        Show-RelevantPagesDelayed -ComposeFile $ComposeFile -TimeoutSeconds 120 -Port $Port -UrlsToOpen $urlsToOpen
+    }
+
+    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..") ).Path
+    $logDir = Join-Path $projectRoot (Join-Path "logs" (Join-Path "test-databases" $timestamp))
+    New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+    $composeLogFile = Join-Path $logDir "docker-compose.log"
+    Set-Content -Path $composeLogFile -Value "" -Encoding utf8
+    Write-Host "[LOG] Writing docker-compose container logs to: $composeLogFile" -ForegroundColor Gray
+
+    $envFilePath = (Resolve-Path ".env").Path
+    $composeArgsBase = @(
+        "--ansi", "never",
+        "--progress", "plain",
+        "--env-file", $envFilePath,
+        "-f", $ComposeFile,
+        "-f", $runnerFile,
+        "-f", $testDbFile
+    )
+
+    $logJob = Start-Job -ScriptBlock {
+        param($ProjectRoot, $LogFile, $ComposeArgsBase)
+
+        Set-Location $ProjectRoot
+
+        try {
+            Add-Content -Path $LogFile -Value ("[{0}] docker compose logs -f started" -f (Get-Date)) -Encoding utf8
+        } catch { }
+
+        $deadline = (Get-Date).AddSeconds(60)
+        while ((Get-Date) -lt $deadline) {
             try {
-                $null = Invoke-WebRequest -Uri "http://localhost:$Port/health" -Method Get -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop
-                break
-            } catch {
-                Start-Sleep -Seconds 2
-                $waitTime += 2
-            }
+                $running = & docker compose @ComposeArgsBase ps --services --filter status=running 2>&1
+                if ($running -and $running.Count -gt 0) {
+                    break
+                }
+            } catch { }
+            Start-Sleep -Seconds 1
         }
-    } -ArgumentList $Port, $ComposeFile
 
-    docker compose --env-file .env -f $ComposeFile -f $runnerFile -f $testDbFile up --build --watch
+        try {
+            & docker compose @ComposeArgsBase logs -f --no-color 2>&1 | ForEach-Object {
+                try { Add-Content -Path $LogFile -Value $_ -Encoding utf8 } catch { }
+            }
+        } finally {
+            try {
+                Add-Content -Path $LogFile -Value ("[{0}] docker compose logs -f stopped" -f (Get-Date)) -Encoding utf8
+            } catch { }
+        }
+    } -ArgumentList $projectRoot, $composeLogFile, $composeArgsBase
 
-    Stop-Job $browserJob -ErrorAction SilentlyContinue
-    Remove-Job $browserJob -ErrorAction SilentlyContinue
+    try {
+        & docker compose @composeArgsBase up --build --watch
+    } finally {
+        try { Stop-Job -Job $logJob -Force -ErrorAction SilentlyContinue } catch { }
+        try { Remove-Job -Job $logJob -Force -ErrorAction SilentlyContinue } catch { }
+    }
 }
 
 function Start-WithAdminUIs {

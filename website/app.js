@@ -290,8 +290,9 @@ function showStatus(message, type = 'success', persist = null) {
 function showLogin() {
     loginSection.classList.remove('hidden');
     mainSection.classList.add('hidden');
-    // Hide logout button when logged out
+    // Hide logout button when logged out and reset text
     logoutBtn.classList.add('hidden');
+    logoutBtn.textContent = 'Logout';
 }
 
 /**
@@ -304,6 +305,14 @@ function showMain() {
     mainSection.classList.remove('hidden');
     // Show logout button when logged in
     logoutBtn.classList.remove('hidden');
+    
+    // Show username in logout button brackets
+    if (typeof getKeycloakUser === 'function') {
+        const user = getKeycloakUser();
+        if (user && logoutBtn) {
+            logoutBtn.textContent = `Logout (${user.username || 'User'})`;
+        }
+    }
     
     // Hide history tab if user doesn't have backup:history or backup:admin role
     updateHistoryTabVisibility();
@@ -620,7 +629,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             showMain();
             await switchTab('databases');
-            showStatus(`Welcome, ${user?.name || user?.username || 'User'}!`);
+            // Use only first name from display name, or username as fallback
+            const displayName = user?.name || user?.username || 'User';
+            const firstName = displayName.includes(' ') ? displayName.split(' ')[0] : displayName;
+            showStatus(`Welcome, ${firstName}!`);
             
             // Log login event to audit trail (fire and forget)
             logLoginEvent();

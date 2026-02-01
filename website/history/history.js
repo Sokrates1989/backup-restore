@@ -581,8 +581,8 @@ function renderHistory() {
         return `
             ${controls}
             <div class="load-more-row">
-                <button type="button" class="btn btn-secondary" id="history-load-more" ${loadAllActive ? 'disabled' : ''}>Load More (${remainingLabel})</button>
-                <button type="button" class="btn btn-secondary" id="history-load-all" ${loadAllActive ? 'disabled' : ''}>Load All</button>
+                <button type="button" class="btn btn-secondary" id="history-load-more" ${loadAllActive ? 'disabled' : ''}>Load More</button>
+                <button type="button" class="btn btn-secondary" id="history-load-all" ${loadAllActive ? 'disabled' : ''}>Load All (${remainingLabel})</button>
                 ${loadAllActive ? `<button type="button" class="btn btn-secondary" id="history-cancel-load-all">${cancelRequested ? 'Cancelling...' : 'Cancel'}</button>` : ''}
             </div>
         `;

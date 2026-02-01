@@ -24,7 +24,12 @@ from backend.services.automation.retention import BackupObject
 from backend.services.automation.storage.factory import build_storage_provider
 from backend.services.automation.storage.local import LocalConfig, LocalStorage
 from backend.services.automation.target_service import _normalize_local_test_db_address
-from backend.services.automation.backup_file_crypto import BackupEncryptionError, decrypt_to_temporary_file, is_encrypted_backup_file
+from backend.services.automation.backup_file_crypto import (
+    BackupEncryptionError,
+    decrypt_to_temporary_file,
+    encrypt_file,
+    is_encrypted_backup_file,
+)
 from backend.services.automation.restore_validation import (
     allowed_backup_name_extensions_for_db_type,
     is_backup_name_compatible_with_db_type,
@@ -56,6 +61,7 @@ class BackupExecutionService:
         target_id: str,
         destination_ids: List[str],
         use_local_storage: bool = False,
+        encryption_password: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Perform an immediate backup of a target to specified destinations.
 
@@ -64,6 +70,7 @@ class BackupExecutionService:
             destination_ids: List of destination IDs to upload the backup to.
             use_local_storage: If True, store the backup in default local storage (/app/backups)
                 and ignore destination_ids.
+            encryption_password: Optional password to encrypt the backup before upload.
 
         Returns:
             Dict with run_id, status, backup_filename, and uploads list.
@@ -76,11 +83,14 @@ class BackupExecutionService:
         audit_event_id = str(uuid.uuid4())
         audit_event_created = False
 
+        password = str(encryption_password or "").strip()
+
         logger.info(
-            "Starting manual backup (target_id=%s, destinations=%s, use_local_storage=%s)",
+            "Starting manual backup (target_id=%s, destinations=%s, use_local_storage=%s, encrypted=%s)",
             target_id,
             destination_ids,
             use_local_storage,
+            bool(password),
         )
 
         async with self.handler.AsyncSessionLocal() as session:
@@ -146,12 +156,23 @@ class BackupExecutionService:
             await session.commit()
 
         temp_path: Optional[Path] = None
+        encrypted_path: Optional[Path] = None
 
         try:
             # Create backup file
             filename, temp_path = await self._create_backup_file(target)
             subfolder = self._sanitize_name(target.name)
             backup_filename = f"manual-{subfolder}-{filename}"
+
+            upload_source_path = temp_path
+            if password:
+                encrypted_path = await run_in_threadpool(
+                    self._encrypt_backup_to_temp,
+                    input_path=temp_path,
+                    password=password,
+                )
+                upload_source_path = encrypted_path
+                backup_filename = f"{backup_filename}.enc"
 
             uploads: List[Dict[str, Any]] = []
 
@@ -160,7 +181,7 @@ class BackupExecutionService:
                 dest_filename = f"{subfolder}/{backup_filename}"
                 uploaded = await run_in_threadpool(
                     provider.upload_backup,
-                    local_path=temp_path,
+                    local_path=upload_source_path,
                     dest_name=dest_filename,
                 )
                 uploads.append(
@@ -182,7 +203,7 @@ class BackupExecutionService:
 
                     uploaded = await run_in_threadpool(
                         provider.upload_backup,
-                        local_path=temp_path,
+                        local_path=upload_source_path,
                         dest_name=dest_filename,
                     )
                     uploads.append(
@@ -209,6 +230,7 @@ class BackupExecutionService:
                         "target_id": target_id,
                         "target_name": target.name,
                         "uploads": uploads,
+                        "encrypted": bool(password),
                     }
                 await session.commit()
 
@@ -220,7 +242,7 @@ class BackupExecutionService:
                             evt.status = "success"
                             evt.finished_at = finished_at
                             evt.backup_name = backup_filename
-                            evt.details = {"uploads": uploads}
+                            evt.details = {"uploads": uploads, "encrypted": bool(password)}
                         await session.commit()
                     except Exception:
                         try:
@@ -229,10 +251,11 @@ class BackupExecutionService:
                             pass
 
             logger.info(
-                "Manual backup completed successfully (target_id=%s, destinations=%s, use_local_storage=%s)",
+                "Manual backup completed successfully (target_id=%s, destinations=%s, use_local_storage=%s, encrypted=%s)",
                 target_id,
                 destination_ids,
                 use_local_storage,
+                bool(password),
             )
 
             return {
@@ -275,11 +298,42 @@ class BackupExecutionService:
                             pass
             raise ValueError(f"Backup failed: {exc}")
         finally:
-            if temp_path and temp_path.exists():
-                try:
-                    temp_path.unlink()
-                except Exception:
-                    pass
+            for cleanup_path in (encrypted_path, temp_path):
+                if cleanup_path and cleanup_path.exists():
+                    try:
+                        cleanup_path.unlink()
+                    except Exception:
+                        pass
+
+    @staticmethod
+    def _encrypt_backup_to_temp(*, input_path: Path, password: str) -> Path:
+        """Encrypt a backup artifact to a temporary file.
+
+        Args:
+            input_path: Path to the plaintext backup file.
+            password: Encryption password.
+
+        Returns:
+            Path: Path to the encrypted temporary file.
+
+        Raises:
+            BackupEncryptionError: When encryption fails.
+        """
+        fd, tmp_name = tempfile.mkstemp(suffix=".enc")
+        os.close(fd)
+        out_path = Path(tmp_name)
+        try:
+            encrypt_file(input_path=input_path, output_path=out_path, password=password)
+            return out_path
+        except Exception as exc:
+            try:
+                if out_path.exists():
+                    out_path.unlink()
+            except Exception:
+                pass
+            if isinstance(exc, BackupEncryptionError):
+                raise
+            raise BackupEncryptionError(f"Failed to encrypt backup file: {exc}") from exc
 
     async def restore_now(
         self,

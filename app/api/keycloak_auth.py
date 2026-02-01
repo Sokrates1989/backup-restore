@@ -310,7 +310,12 @@ async def get_current_user(
     if keycloak is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Keycloak authentication is not configured. Set KEYCLOAK_ENABLED=true and configure Keycloak settings.",
+            detail=(
+                "Keycloak authentication is not configured. "
+                "Set KEYCLOAK_ENABLED=true and configure Keycloak settings. "
+                "If Keycloak is running but the realm is not set up, run the bootstrap: "
+                "./quick-start.ps1 (or .sh) -> Option 16 'Bootstrap Keycloak'"
+            ),
         )
     
     if credentials is None:

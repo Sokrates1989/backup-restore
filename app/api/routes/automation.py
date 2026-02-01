@@ -24,7 +24,15 @@ from api.schemas.automation import (
     TargetCreateRequest,
     TargetUpdateRequest,
 )
-from api.security import verify_admin_key, verify_delete_key, verify_download_key, verify_history_key, verify_restore_key
+from api.security import (
+    verify_admin_key,
+    verify_config_key,
+    verify_delete_key,
+    verify_download_key,
+    verify_history_key,
+    verify_restore_key,
+    verify_run_key,
+)
 from backend.database import get_database_handler
 from backend.database.sql_handler import SQLHandler
 from backend.services.automation.destination_service import DestinationService
@@ -93,7 +101,7 @@ async def list_targets(_: str = Depends(verify_admin_key)):
 
 
 @router.post("/targets/test-connection")
-async def test_target_connection(payload: TargetCreateRequest, _: str = Depends(verify_admin_key)):
+async def test_target_connection(payload: TargetCreateRequest, _: str = Depends(verify_config_key)):
     """Test connection to a backup target."""
     
     try:
@@ -108,7 +116,7 @@ async def test_target_connection(payload: TargetCreateRequest, _: str = Depends(
 
 
 @router.post("/targets")
-async def create_target(payload: TargetCreateRequest, _: str = Depends(verify_admin_key)):
+async def create_target(payload: TargetCreateRequest, _: str = Depends(verify_config_key)):
     """Create a backup target."""
 
     try:
@@ -242,7 +250,7 @@ async def log_login_event(
 
 
 @router.put("/targets/{target_id}")
-async def update_target(target_id: str, payload: TargetUpdateRequest, _: str = Depends(verify_admin_key)):
+async def update_target(target_id: str, payload: TargetUpdateRequest, _: str = Depends(verify_config_key)):
     """Update a backup target."""
 
     try:
@@ -259,7 +267,7 @@ async def update_target(target_id: str, payload: TargetUpdateRequest, _: str = D
 
 
 @router.post("/schedules/run-enabled-now")
-async def run_enabled_now(payload: RunEnabledNowRequest, _: str = Depends(verify_admin_key)):
+async def run_enabled_now(payload: RunEnabledNowRequest, _: str = Depends(verify_run_key)):
     """Execute enabled schedules immediately."""
 
     return await ScheduleService(_get_sql_handler()).run_enabled_now(max_schedules=payload.max_schedules)
@@ -371,7 +379,7 @@ async def list_destinations(_: str = Depends(verify_admin_key)):
 
 
 @router.post("/destinations/test-connection")
-async def test_destination_connection(payload: DestinationCreateRequest, _: str = Depends(verify_admin_key)):
+async def test_destination_connection(payload: DestinationCreateRequest, _: str = Depends(verify_config_key)):
     """Test connection to a backup destination."""
     
     try:
@@ -386,7 +394,7 @@ async def test_destination_connection(payload: DestinationCreateRequest, _: str 
 
 
 @router.post("/destinations")
-async def create_destination(payload: DestinationCreateRequest, _: str = Depends(verify_admin_key)):
+async def create_destination(payload: DestinationCreateRequest, _: str = Depends(verify_config_key)):
     """Create a destination."""
 
     try:
@@ -401,7 +409,7 @@ async def create_destination(payload: DestinationCreateRequest, _: str = Depends
 
 
 @router.put("/destinations/{destination_id}")
-async def update_destination(destination_id: str, payload: DestinationUpdateRequest, _: str = Depends(verify_admin_key)):
+async def update_destination(destination_id: str, payload: DestinationUpdateRequest, _: str = Depends(verify_config_key)):
     """Update a destination."""
 
     try:
@@ -436,7 +444,7 @@ async def list_schedules(_: str = Depends(verify_admin_key)):
 
 
 @router.post("/schedules")
-async def create_schedule(payload: ScheduleCreateRequest, _: str = Depends(verify_admin_key)):
+async def create_schedule(payload: ScheduleCreateRequest, _: str = Depends(verify_config_key)):
     """Create a schedule."""
 
     try:
@@ -454,7 +462,7 @@ async def create_schedule(payload: ScheduleCreateRequest, _: str = Depends(verif
 
 
 @router.put("/schedules/{schedule_id}")
-async def update_schedule(schedule_id: str, payload: ScheduleUpdateRequest, _: str = Depends(verify_admin_key)):
+async def update_schedule(schedule_id: str, payload: ScheduleUpdateRequest, _: str = Depends(verify_config_key)):
     """Update a schedule."""
 
     try:
@@ -484,7 +492,7 @@ async def delete_schedule(schedule_id: str, _: str = Depends(verify_delete_key))
 
 
 @router.post("/schedules/{schedule_id}/run-now", response_model=RunNowResponse)
-async def run_now(schedule_id: str, _: str = Depends(verify_admin_key)):
+async def run_now(schedule_id: str, _: str = Depends(verify_run_key)):
     """Trigger a schedule immediately."""
 
     try:
@@ -494,14 +502,14 @@ async def run_now(schedule_id: str, _: str = Depends(verify_admin_key)):
 
 
 @router.post("/runner/run-due")
-async def run_due(payload: RunDueRequest, _: str = Depends(verify_admin_key)):
+async def run_due(payload: RunDueRequest, _: str = Depends(verify_run_key)):
     """Runner endpoint to execute due schedules."""
 
     return await ScheduleService(_get_sql_handler()).run_due(max_schedules=payload.max_schedules)
 
 
 @router.post("/backup-now", response_model=BackupNowResponse)
-async def backup_now(payload: BackupNowRequest, _: str = Depends(verify_admin_key)):
+async def backup_now(payload: BackupNowRequest, _: str = Depends(verify_run_key)):
     """Perform an immediate backup of a target to specified destinations."""
 
     from backend.services.automation.backup_service import BackupExecutionService
@@ -512,6 +520,7 @@ async def backup_now(payload: BackupNowRequest, _: str = Depends(verify_admin_ke
             target_id=payload.target_id,
             destination_ids=payload.destination_ids,
             use_local_storage=payload.use_local_storage,
+            encryption_password=payload.encryption_password,
         )
         return result
     except ValueError as exc:
@@ -521,7 +530,6 @@ async def backup_now(payload: BackupNowRequest, _: str = Depends(verify_admin_ke
 @router.post("/restore-now", response_model=RestoreNowResponse)
 async def restore_now(
     payload: RestoreNowRequest,
-    _: str = Depends(verify_admin_key),
     __: str = Depends(verify_restore_key),
 ):
     """Perform an immediate restore from a backup."""

@@ -24,12 +24,15 @@ async function loadDatabases() {
  */
 function renderDatabases() {
     const container = document.getElementById('databases-list');
+
+    updateDatabaseAccessUI();
     
     if (databases.length === 0) {
         container.innerHTML = '<p class="no-items">No databases configured. Add one to get started.</p>';
         return;
     }
 
+    // Always show all buttons - permission checks happen on click
     container.innerHTML = databases.map(database => `
         <div class="item">
             <div class="item-header">
@@ -52,11 +55,22 @@ function renderDatabases() {
 }
 
 /**
+ * Update database tab controls based on role permissions.
+ * @returns {void}
+ */
+function updateDatabaseAccessUI() {
+    // Always show all buttons - permission checks happen on click
+    // This allows users to see the full UI capabilities even without permissions
+}
+
+/**
  * Show the add/edit database form.
  * @param {Object|null} database Database object when editing, otherwise null.
  * @returns {void}
  */
 function showDatabaseForm(database = null) {
+    // Allow users to see the form UI - permission check happens on save
+
     const form = document.getElementById('database-form');
     const title = document.getElementById('database-form-title');
     
@@ -190,6 +204,11 @@ function editDatabase(id) {
  * @returns {Promise<void>}
  */
 async function testDatabaseConnection() {
+    if (typeof canConfigureBackups === 'function' && !canConfigureBackups()) {
+        showStatus('You do not have permission to configure databases.', 'error', true);
+        return;
+    }
+
     const name = trimValue(document.getElementById('database-name').value);
     const db_type = document.getElementById('database-db-type').value;
     const host = trimValue(document.getElementById('database-host').value);
@@ -248,6 +267,11 @@ async function testDatabaseConnection() {
  * @returns {Promise<void>}
  */
 async function saveDatabase() {
+    if (typeof canConfigureBackups === 'function' && !canConfigureBackups()) {
+        showStatus('You do not have permission to configure databases. Required role: backup:admin or backup:configure', 'error', true);
+        return;
+    }
+
     const id = document.getElementById('database-id').value;
     const name = trimValue(document.getElementById('database-name').value);
     const db_type = document.getElementById('database-db-type').value;
@@ -320,6 +344,14 @@ async function saveDatabase() {
  * @returns {Promise<void>}
  */
 async function deleteDatabase(id) {
+    if (
+        typeof hasAnyKeycloakRole === 'function'
+        && !hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_DELETE_ROLE])
+    ) {
+        showStatus('You do not have permission to delete databases. Required role: backup:admin or backup:delete', 'error', true);
+        return;
+    }
+
     if (!confirm('Are you sure you want to delete this database?')) return;
     
     try {
@@ -400,6 +432,20 @@ function clearDatabaseActionStatus() {
  * @returns {void}
  */
 function showDatabaseActionModal(databaseId, actionType) {
+    const canRun = typeof canRunBackups === 'function' ? canRunBackups() : true;
+    const canRestore = typeof hasAnyKeycloakRole === 'function'
+        ? hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_RESTORE_ROLE])
+        : true;
+
+    if (actionType === 'backup' && !canRun) {
+        showStatus('You do not have permission to run manual backups. Required role: backup:admin, backup:run, or backup:create', 'error', true);
+        return;
+    }
+    if (actionType === 'restore' && !canRestore) {
+        showStatus('You do not have permission to restore backups. Required role: backup:admin or backup:restore', 'error', true);
+        return;
+    }
+
     const database = databases.find(d => d.id === databaseId);
     if (!database) {
         showStatus('Database not found', 'error');
@@ -431,6 +477,7 @@ function showDatabaseActionModal(databaseId, actionType) {
     }
     
     updateDatabaseActionDestinations(actionType);
+    updateDatabaseActionEncryptionVisibility();
     clearDatabaseActionStatus();
     modal.classList.remove('hidden');
 }
@@ -576,19 +623,33 @@ async function loadBackupFilesForDestination(destinationId) {
 function updateDatabaseActionEncryptionVisibility() {
     const groupEl = document.getElementById('database-action-encryption-password-group');
     const inputEl = document.getElementById('database-action-encryption-password');
+    const hintEl = document.getElementById('database-action-encryption-hint');
     const actionType = document.getElementById('database-action-type')?.value || '';
     const backupSelect = document.getElementById('database-action-backup-file');
 
     if (!groupEl || !inputEl) return;
+    if (actionType === 'backup') {
+        groupEl.classList.remove('hidden');
+        if (hintEl) {
+            hintEl.textContent = 'Optional: encrypt this manual backup with a password.';
+        }
+        return;
+    }
     if (actionType !== 'restore' || !backupSelect) {
         groupEl.classList.add('hidden');
         inputEl.value = '';
+        if (hintEl) {
+            hintEl.textContent = '';
+        }
         return;
     }
 
     const selectedOption = backupSelect.options[backupSelect.selectedIndex];
     const encrypted = (selectedOption && selectedOption.getAttribute('data-encrypted') === 'true') || false;
     groupEl.classList.toggle('hidden', !encrypted);
+    if (hintEl) {
+        hintEl.textContent = encrypted ? 'Required for encrypted backups.' : '';
+    }
     if (!encrypted) {
         inputEl.value = '';
     }
@@ -614,6 +675,11 @@ async function executeDatabaseAction() {
     
     try {
         if (actionType === 'backup') {
+            if (typeof canRunBackups === 'function' && !canRunBackups()) {
+                setDatabaseActionStatus('You do not have permission to run manual backups.', 'error', true);
+                return;
+            }
+
             // Execute immediate backup
             setDatabaseActionStatus(`Starting backup of ${database.name} to ${destination.name}...`, 'info', false);
             
@@ -624,11 +690,24 @@ async function executeDatabaseAction() {
             if (!isDefaultLocal) {
                 payload.destination_ids = [destinationId];
             }
+
+            const encryptionPassword = trimValue(document.getElementById('database-action-encryption-password')?.value);
+            if (encryptionPassword) {
+                payload.encryption_password = encryptionPassword;
+            }
             
             const result = await apiCall('/automation/backup-now', 'POST', payload);
 
             showStatus(`Backup completed successfully! File: ${result.backup_filename || 'N/A'}`, 'success');
         } else {
+            if (
+                typeof hasAnyKeycloakRole === 'function'
+                && !hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_RESTORE_ROLE])
+            ) {
+                setDatabaseActionStatus('You do not have permission to restore backups.', 'error', true);
+                return;
+            }
+
             // Execute restore
             const backupFileId = document.getElementById('database-action-backup-file').value;
             
@@ -762,6 +841,8 @@ function initDatabasesTab() {
     document.querySelectorAll('#database-action-modal .modal-close').forEach(btn => {
         btn.addEventListener('click', hideDatabaseActionModal);
     });
+
+    updateDatabaseAccessUI();
 }
 
 window.updateDatabaseActionEncryptionVisibility = updateDatabaseActionEncryptionVisibility;

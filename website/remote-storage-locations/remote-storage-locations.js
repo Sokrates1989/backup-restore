@@ -14,8 +14,19 @@ async function loadRemoteStorageLocations() {
     }
 }
 
+/**
+ * Update remote storage UI controls based on permissions.
+ * @returns {void}
+ */
+function updateRemoteStorageAccessUI() {
+    // Always show all buttons - permission checks happen on click
+    // This allows users to see the full UI capabilities even without permissions
+}
+
 function renderRemoteStorageLocations() {
     const container = document.getElementById('remote-storage-locations-list');
+
+    updateRemoteStorageAccessUI();
 
     const items = remoteStorageLocations.filter(l => l && l.id !== 'local' && l.destination_type !== 'local');
     
@@ -24,13 +35,14 @@ function renderRemoteStorageLocations() {
         return;
     }
 
+    // Always show all buttons - permission checks happen on click
     container.innerHTML = items.map(location => `
         <div class="item">
             <div class="item-header">
                 <h3>${location.name}</h3>
                 <div class="item-actions">
-                    ${location.id === 'local' ? '' : `<button class="btn btn-sm btn-secondary" data-action="dest-edit" data-id="${location.id}">Edit</button>`}
-                    ${location.id === 'local' ? '' : `<button class="btn btn-sm btn-danger" data-action="dest-delete" data-id="${location.id}">Delete</button>`}
+                    ${location.id !== 'local' ? `<button class="btn btn-sm btn-secondary" data-action="dest-edit" data-id="${location.id}">Edit</button>` : ''}
+                    ${location.id !== 'local' ? `<button class="btn btn-sm btn-danger" data-action="dest-delete" data-id="${location.id}">Delete</button>` : ''}
                 </div>
             </div>
             <div class="item-details">
@@ -60,6 +72,8 @@ function getRemoteStorageLocationDetails(location) {
 }
 
 function showRemoteStorageLocationForm(location = null) {
+    // Allow users to see the form UI - permission check happens on save
+
     const form = document.getElementById('remote-storage-location-form');
     const title = document.getElementById('remote-storage-location-form-title');
     const tabRoot = document.getElementById('remote-storage-locations-tab');
@@ -158,6 +172,11 @@ function updateRemoteStorageLocationConfigVisibility() {
 }
 
 async function testRemoteStorageLocationConnection() {
+    if (typeof canConfigureBackups === 'function' && !canConfigureBackups()) {
+        showStatus('You do not have permission to configure storage locations. Required role: backup:admin or backup:configure', 'error', true);
+        return;
+    }
+
     const name = document.getElementById('remote-storage-location-name').value.trim();
     const type = document.getElementById('remote-storage-location-type').value;
 
@@ -245,6 +264,11 @@ async function testRemoteStorageLocationConnection() {
 }
 
 async function saveRemoteStorageLocation() {
+    if (typeof canConfigureBackups === 'function' && !canConfigureBackups()) {
+        showStatus('You do not have permission to configure storage locations.', 'error', true);
+        return;
+    }
+
     const id = document.getElementById('remote-storage-location-id').value;
     const name = document.getElementById('remote-storage-location-name').value.trim();
     const type = document.getElementById('remote-storage-location-type').value;
@@ -340,6 +364,14 @@ async function saveRemoteStorageLocation() {
 }
 
 async function deleteRemoteStorageLocation(id) {
+    if (
+        typeof hasAnyKeycloakRole === 'function'
+        && !hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_DELETE_ROLE])
+    ) {
+        showStatus('You do not have permission to delete storage locations. Required role: backup:admin or backup:delete', 'error', true);
+        return;
+    }
+
     if (!confirm('Are you sure you want to delete this remote storage location?')) return;
     
     try {
@@ -400,6 +432,8 @@ function initRemoteStorageLocationsTab() {
             }
         });
     }
+
+    updateRemoteStorageAccessUI();
 }
 
 function normalizeJsonText(raw) {

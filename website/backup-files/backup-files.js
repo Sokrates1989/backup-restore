@@ -728,6 +728,17 @@ function enrichBackups(items) {
 }
 
 async function downloadBackupDelegated(type, destinationId, backupId, fallbackFilename) {
+    // Check permission on action
+    const canDownload = typeof canDownloadBackups === 'function' ? canDownloadBackups() : false;
+    if (!canDownload) {
+        if (isBackupDetailsModalOpen()) {
+            setBackupDetailsStatus('You do not have permission to download backups. Required role: backup:admin or backup:download', 'error', true);
+        } else {
+            showStatus('You do not have permission to download backups. Required role: backup:admin or backup:download', 'error', true);
+        }
+        return;
+    }
+
     if (type !== 'remote') {
         return await downloadBackup(fallbackFilename);
     }
@@ -915,19 +926,18 @@ function renderBackupFiles() {
         return `
             ${controls}
             <div class="load-more-row">
-                <button type="button" class="btn btn-secondary" id="backup-files-load-more" ${loadAllActive ? 'disabled' : ''}>Load More (${remainingLabel})</button>
-                <button type="button" class="btn btn-secondary" id="backup-files-load-all" ${loadAllActive ? 'disabled' : ''}>Load All</button>
+                <button type="button" class="btn btn-secondary" id="backup-files-load-more" ${loadAllActive ? 'disabled' : ''}>Load More</button>
+                <button type="button" class="btn btn-secondary" id="backup-files-load-all" ${loadAllActive ? 'disabled' : ''}>Load All (${remainingLabel})</button>
                 ${loadAllActive ? `<button type="button" class="btn btn-secondary" id="backup-files-cancel-load-all">${cancelRequested ? 'Cancelling...' : 'Cancel'}</button>` : ''}
             </div>‚
         `;
     };
 
     if (sortValue !== 'db_name' && sortValue !== 'destination') {
+        // Always show all buttons - permission checks happen on click
         container.innerHTML = visibleBackups.map(backup => {
             const typeLabel = backup.type === 'local' ? 'Local File' : 'Remote Storage';
             const downloadFilename = backup.filename;
-            const canDownload = typeof canDownloadBackups === 'function' ? canDownloadBackups() : false;
-            const canRestore = hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_RESTORE_ROLE]);
 
             const encodedId = encodeURIComponent(backup.id || '');
             const encodedType = encodeURIComponent(backup.type || '');
@@ -942,12 +952,8 @@ function renderBackupFiles() {
                     <h3>${backup.display_filename || backup.filename}</h3>
                     <div class="item-actions">
                         <button class="btn btn-sm btn-secondary" data-action="backup-details" data-id="${encodedId}" data-type="${encodedType}" data-destination-id="${encodedDestId}">Details</button>
-                        ${canDownload ? `
-                            <button class="btn btn-sm btn-primary" data-action="backup-download" data-type="${encodedType}" data-destination-id="${encodedDestId}" data-backup-id="${encodedBackupId}" data-filename="${encodedDownloadFilename}">Download</button>
-                        ` : ''}
-                        ${canRestore ? `
-                            <button class="btn btn-sm btn-warning" data-action="backup-restore" data-id="${encodedId}" data-type="${encodedType}" data-destination-id="${encodedDestId}" data-backup-id="${encodedBackupId}" data-filename="${encodedFilename}">Restore</button>
-                        ` : ''}
+                        <button class="btn btn-sm btn-primary" data-action="backup-download" data-type="${encodedType}" data-destination-id="${encodedDestId}" data-backup-id="${encodedBackupId}" data-filename="${encodedDownloadFilename}">Download</button>
+                        <button class="btn btn-sm btn-warning" data-action="backup-restore" data-id="${encodedId}" data-type="${encodedType}" data-destination-id="${encodedDestId}" data-backup-id="${encodedBackupId}" data-filename="${encodedFilename}">Restore</button>
                         <button class="btn btn-sm btn-danger" data-action="backup-delete" data-id="${encodedId}" data-type="${encodedType}" data-destination-id="${encodedDestId}" data-backup-id="${encodedBackupId}" data-filename="${encodedFilename}">Delete</button>
                     </div>
                 </div>
@@ -991,11 +997,10 @@ function renderBackupFiles() {
         const items = groups.get(groupName) || [];
         items.sort((a, b) => getBackupCreatedAtMs(b) - getBackupCreatedAtMs(a));
 
+        // Always show all buttons - permission checks happen on click
         const rendered = items.map(backup => {
             const typeLabel = backup.type === 'local' ? 'Local File' : 'Remote Storage';
             const downloadFilename = backup.filename;
-        const canDownload = typeof canDownloadBackups === 'function' ? canDownloadBackups() : false;
-        const canRestore = hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_RESTORE_ROLE]);
 
             const encodedId = encodeURIComponent(backup.id || '');
             const encodedType = encodeURIComponent(backup.type || '');
@@ -1010,12 +1015,8 @@ function renderBackupFiles() {
                     <h3>${backup.display_filename || backup.filename}</h3>
                     <div class="item-actions">
                         <button class="btn btn-sm btn-secondary" data-action="backup-details" data-id="${encodedId}" data-type="${encodedType}" data-destination-id="${encodedDestId}">Details</button>
-                        ${canDownload ? `
-                            <button class="btn btn-sm btn-primary" data-action="backup-download" data-type="${encodedType}" data-destination-id="${encodedDestId}" data-backup-id="${encodedBackupId}" data-filename="${encodedDownloadFilename}">Download</button>
-                        ` : ''}
-                        ${canRestore ? `
-                            <button class="btn btn-sm btn-warning" data-action="backup-restore" data-id="${encodedId}" data-type="${encodedType}" data-destination-id="${encodedDestId}" data-backup-id="${encodedBackupId}" data-filename="${encodedFilename}">Restore</button>
-                        ` : ''}
+                        <button class="btn btn-sm btn-primary" data-action="backup-download" data-type="${encodedType}" data-destination-id="${encodedDestId}" data-backup-id="${encodedBackupId}" data-filename="${encodedDownloadFilename}">Download</button>
+                        <button class="btn btn-sm btn-warning" data-action="backup-restore" data-id="${encodedId}" data-type="${encodedType}" data-destination-id="${encodedDestId}" data-backup-id="${encodedBackupId}" data-filename="${encodedFilename}">Restore</button>
                         <button class="btn btn-sm btn-danger" data-action="backup-delete" data-id="${encodedId}" data-type="${encodedType}" data-destination-id="${encodedDestId}" data-backup-id="${encodedBackupId}" data-filename="${encodedFilename}">Delete</button>
                     </div>
                 </div>
@@ -1158,53 +1159,62 @@ function wireBackupDetailsModalFooter() {
     const downloadBtn = document.getElementById('download-backup-btn');
     const deleteBtn = document.getElementById('delete-backup-btn');
 
-    // Check role-based permissions
-    const canRestore = hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_RESTORE_ROLE]);
-    const canDownload = typeof canDownloadBackups === 'function' ? canDownloadBackups() : false;
-    const canDelete = hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_DELETE_ROLE]);
-
+    // Always show all buttons - permission checks happen on click
     if (restoreBtn) {
-        if (canRestore) {
-            restoreBtn.classList.remove('hidden');
-            restoreBtn.onclick = async () => {
-                if (!currentModalBackup) return;
-                await restoreBackupFromModal();
-            };
-        } else {
-            restoreBtn.classList.add('hidden');
-        }
+        restoreBtn.classList.remove('hidden');
+        restoreBtn.onclick = async () => {
+            if (!currentModalBackup) return;
+            // Check permission on click
+            const canRestore = hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_RESTORE_ROLE]);
+            if (!canRestore) {
+                setBackupDetailsStatus('You do not have permission to restore backups. Required role: backup:admin or backup:restore', 'error', true);
+                return;
+            }
+            await restoreBackupFromModal();
+        };
     }
 
     if (downloadBtn) {
-        if (canDownload) {
-            downloadBtn.classList.remove('hidden');
-            downloadBtn.onclick = async () => {
-                if (!currentModalBackup) return;
-                const b = currentModalBackup;
-                const destId = b.destination_id || '';
-                const bid = b.backup_id || b.id || '';
-                await downloadBackupDelegated(b.type, destId, bid, b.filename || 'backup');
-            };
-        } else {
-            downloadBtn.classList.add('hidden');
-        }
+        downloadBtn.classList.remove('hidden');
+        downloadBtn.onclick = async () => {
+            if (!currentModalBackup) return;
+            // Check permission on click
+            const canDownload = typeof canDownloadBackups === 'function' ? canDownloadBackups() : false;
+            if (!canDownload) {
+                setBackupDetailsStatus('You do not have permission to download backups. Required role: backup:admin or backup:download', 'error', true);
+                return;
+            }
+            const b = currentModalBackup;
+            const destId = b.destination_id || '';
+            const bid = b.backup_id || b.id || '';
+            await downloadBackupDelegated(b.type, destId, bid, b.filename || 'backup');
+        };
     }
 
     if (deleteBtn) {
-        if (canDelete) {
-            deleteBtn.classList.remove('hidden');
-            deleteBtn.onclick = async () => {
-                if (!currentModalBackup) return;
-                const b = currentModalBackup;
-                await deleteBackup(b.id, b.type, b.destination_id || '', b.backup_id || '', b.filename || '');
-            };
-        } else {
-            deleteBtn.classList.add('hidden');
-        }
+        deleteBtn.classList.remove('hidden');
+        deleteBtn.onclick = async () => {
+            if (!currentModalBackup) return;
+            // Check permission on click
+            const canDelete = hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_DELETE_ROLE]);
+            if (!canDelete) {
+                setBackupDetailsStatus('You do not have permission to delete backups. Required role: backup:admin or backup:delete', 'error', true);
+                return;
+            }
+            const b = currentModalBackup;
+            await deleteBackup(b.id, b.type, b.destination_id || '', b.backup_id || '', b.filename || '');
+        };
     }
 }
 
 async function openRestoreFromFile(id, type, destinationId, backupId, filename) {
+    // Check permission on action
+    const canRestore = hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_RESTORE_ROLE]);
+    if (!canRestore) {
+        showStatus('You do not have permission to restore backups. Required role: backup:admin or backup:restore', 'error', true);
+        return;
+    }
+
     const details = {
         id,
         type,
@@ -1296,6 +1306,17 @@ function hideBackupDetailsModal() {
 }
 
 async function downloadBackup(filename) {
+    // Check permission on action
+    const canDownload = typeof canDownloadBackups === 'function' ? canDownloadBackups() : false;
+    if (!canDownload) {
+        if (isBackupDetailsModalOpen()) {
+            setBackupDetailsStatus('You do not have permission to download backups. Required role: backup:admin or backup:download', 'error', true);
+        } else {
+            showStatus('You do not have permission to download backups. Required role: backup:admin or backup:download', 'error', true);
+        }
+        return;
+    }
+
     try {
         const response = await fetchWithKeycloakAuth(`/backup/download/${encodeURI(filename)}`);
         
@@ -1328,6 +1349,17 @@ async function downloadBackup(filename) {
 }
 
 async function deleteBackup(backupId, type, destinationId, remoteBackupId, remoteName) {
+    // Check permission on action
+    const canDelete = hasAnyKeycloakRole([BACKUP_ADMIN_ROLE, BACKUP_DELETE_ROLE]);
+    if (!canDelete) {
+        if (isBackupDetailsModalOpen()) {
+            setBackupDetailsStatus('You do not have permission to delete backups. Required role: backup:admin or backup:delete', 'error', true);
+        } else {
+            showStatus('You do not have permission to delete backups. Required role: backup:admin or backup:delete', 'error', true);
+        }
+        return;
+    }
+
     if (!confirm('Are you sure you want to delete this backup?')) return;
 
     const preferModal = isBackupDetailsModalOpen() && currentModalBackup && String(currentModalBackup.id || '') === String(backupId || '');
